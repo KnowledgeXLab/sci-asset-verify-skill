@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "description": "用例覆盖下限：按资产类型规定最少给定用例数，以及必须包含的用例种类。低于下限时报告必须标注“覆盖不足”，不得宣称闭环。",
+  "rule": "每个类型：cases >= min_cases；若该类型在 require_kinds 中，还必须至少有一组非 success 期望（非法输入/边界/结构检查）。全部用例被跳过（skipped）视为未执行，按覆盖不足处理。",
+  "default": {
+    "min_cases": 2,
+    "min_executed": 1
+  },
+  "by_type": {
+    "data": { "min_cases": 3, "min_executed": 2, "why": "至少覆盖：实体属性与声明一致、领域规则、已知取值/结构核对" },
+    "tool": { "min_cases": 3, "min_executed": 2, "why": "至少覆盖：一次成功业务调用、一次非法输入（预期错误）、一次结果比对" },
+    "model": { "min_cases": 2, "min_executed": 2, "why": "至少覆盖：给定输入推理、边界或错误输入" },
+    "skill": { "min_cases": 2, "min_executed": 1, "why": "至少覆盖：端到端链路 + 产物完整性" },
+    "task": { "min_cases": 2, "min_executed": 1, "why": "至少覆盖：按任务定义跑输入→预期输出，及约束条件" },
+    "environment": { "min_cases": 1, "min_executed": 1, "why": "依赖导入与最小调用" },
+    "trajectory": { "min_cases": 1, "min_executed": 1, "why": "结构可解析 + 引用一致" },
+    "benchmark": { "min_cases": 2, "min_executed": 2, "why": "评测入口可执行 + 比较器对已知相等/不等判定正确" }
+  },
+  "require_kinds": {
+    "tool": { "negative_expected": 1, "why": "必须含一组预期错误用例（非法参数/拒绝执行），否则无法证明错误语义" },
+    "model": { "negative_expected": 1, "why": "必须含一组边界或错误输入" },
+    "skill": { "negative_expected": 0 },
+    "benchmark": { "negative_expected": 1, "why": "比较器必须对不相等的输入判为不通过" }
+  }
+}

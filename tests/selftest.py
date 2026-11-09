@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""skill 自测：对七个脚本做正例 / 负例断言，不依赖任何真实资产包。
+
+用法：
+  python tests/selftest.py            # 跑全部
+  python tests/selftest.py -v         # 保留临时目录并打印每个脚本输出
+
+设计原则
+--------
+* 只用标准库 + skill 自带的 vendor/openpyxl，**不联网、不依赖真实交付包**
+* 每个检查都断言"该被拦住的必须被拦住"，而不是只看退出码是 0
+* 失败时打印该步骤的 stdout/stderr，便于定位
+
+退出码：0 全部通过；1 有失败。
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+SKILL = Path(__file__).resolve().parents[1]
+SCRIPTS = SKILL / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+RESULTS: list[tuple[str, bool, str]] = []
+VERBOSE = "-v" in sys.argv
+
+
+def record(name: str, ok: bool, detail: str = "") -> None:
+    RESULTS.append((name, ok, detail))
+    print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail and not ok else ""))
+
+
+def run(args: list[str], cwd: Path, env_extra: dict | None = None, timeout: int = 180):
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if env_extra:
+        env.update(env_extra)
+    proc = subprocess.run([sys.executable, *args], cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=env, timeout=timeout)
+    if VERBOSE:
+        print(f"    $ {' '.join(Path(a).name if a.endswith('.py') else a for a in args)}")
+        print(f"      rc={proc.returncode} out={proc.stdout.strip()[:300]}")
+    return proc
+
+
+# --------------------------------------------------------------------------- fixtures
+def minimal_envelope() -> dict:
+    return {
+        "schema_version": "1.0.0",
+        "asset_id": "sciasset://example/data/sample",
+        "asset_type": "data",
+        "name": "示例数据资产",
+        "description": "自测用的最小合规数据资产。",
+        "asset_version": "1.0.0",
+        "lifecycle": "draft",
+        "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:data-processing"}],
+        "provenance": {
+            "created_time": "2026-01-01T00:00:00+08:00",
+            "provider": [{"name": "示例单位", "role": "provider"}],
+            "source": {"kind": "original"},
+        },
+        "governance": {"license": "LicenseRef-Example", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"], "modalities": ["CSV"]},
+                 "artifacts": [{"uri": "data/sample/part.csv", "media_type": "text/csv"}],
+                 "domain_attributes": {}, "asset_protocol": {"name": "example"}},
+    }
+
+
+def valid_rows() -> dict:
+    return {"rows": [{
+        "资产名称": "示例数据资产", "资产类型": "data", "领域Profile": "地球科学",
+        "资产摘要": "自测用的最小合规数据资产。", "任务|操作标签": "operation:data-processing",
+        "科学对象": "样点", "资产提供单位": "示例单位", "联系人": "待补",
+        "来源|产出方式": "original", "版本": "1.0.0", "输入说明": "文件", "输出说明": "文件",
+        "运行环境|资源要求": "CPU", "敏感级别": "内部",
+    }], "cases": [{"用例编号": "c1", "资产名称": "示例数据资产", "资产版本": "1.0.0",
+                   "执行状态": "completed", "验证结论": "pass"}]}
+
+
+# --------------------------------------------------------------------------- T1 包络校验
+def t1_envelope(tmp: Path) -> None:
+    print("\n[1/6] validate_envelope.py — 包络只校验不构造")
+    case = tmp / "t1"
+    case.mkdir()
+
+    def check(doc: dict, name: str, expect_ok: bool, expect_path: str = "") -> None:
+        d = case / name
+        d.mkdir(exist_ok=True)
+        f = d / "asset.json"
+        f.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        out = d / "report.json"
+        proc = run([str(SCRIPTS / "validate_envelope.py"), str(d), "--json-out", str(out)], case)
+        rep = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+        res = (rep.get("results") or [{}])[0]
+        errs = res.get("errors") or []
+        hit = any(expect_path in (e.get("path") or "") for e in errs)
+        ok = (proc.returncode == 0 and not errs) if expect_ok else (proc.returncode == 1 and hit)
+        record(f"{'正例' if expect_ok else '负例'}：{name}", ok,
+               f"rc={proc.returncode} errors={[e.get('path') for e in errs][:3]}")
+
+    check(minimal_envelope(), "合规资产", True)
+
+    bad = minimal_envelope(); bad.pop("asset_version")
+    check(bad, "缺 asset_version", False, "asset_version")
+
+    bad = minimal_envelope(); bad["asset_version"] = "1.0"
+    check(bad, "版本非语义化", False, "asset_version")
+
+    bad = minimal_envelope(); bad["lifecycle"] = "archived"
+    check(bad, "lifecycle 非法", False, "lifecycle")
+
+    bad = minimal_envelope(); bad["spec"]["artifacts"][0]["uri"] = "/opt/secret/part.csv"
+    check(bad, "artifact 用了绝对路径", False, "spec.artifacts[0].uri")
+
+    bad = minimal_envelope(); bad["governance"]["risk_level"] = "prohibited"
+    check(bad, "prohibited 却带可下载内容", False, "spec.artifacts")
+
+    bad = minimal_envelope(); bad["asset_id"] = "sciasset://example/tool/sample"
+    check(bad, "asset_id 类型段与 asset_type 不一致", False, "asset_id")
+
+    # 同名 asset_id 内容不一致 → 两者都被标记冲突
+    d = case / "冲突"
+    d.mkdir()
+    a = minimal_envelope(); b = minimal_envelope(); b["description"] = "另一份不一致的描述。"
+    (d / "a.json").write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    (d / "b.json").write_text(json.dumps(b, ensure_ascii=False), encoding="utf-8")
+    out = d / "report.json"
+    proc = run([str(SCRIPTS / "validate_envelope.py"), str(d / "a.json"), str(d / "b.json"),
+                "--json-out", str(out)], case)
+    rep = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    both = [r for r in (rep.get("results") or []) if r.get("errors")]
+    record("负例：同名 asset_id 内容冲突（两份都标记）", proc.returncode == 1 and len(both) == 2,
+           f"rc={proc.returncode} 标记数={len(both)}")
+
+
+# --------------------------------------------------------------------------- T2 清单生成与复检
+def t2_list(tmp: Path) -> None:
+    print("\n[2/6] build_list.py + check_list.py — 生成即自检")
+    import _deps
+    _deps.ensure_openpyxl(verbose=False)
+    from openpyxl import load_workbook
+
+    case = tmp / "t2"
+    case.mkdir()
+    rows = case / "rows.json"
+    rows.write_text(json.dumps(valid_rows(), ensure_ascii=False), encoding="utf-8")
+    xlsx = case / "清单.xlsx"
+    proc = run([str(SCRIPTS / "build_list.py"), "--rows", str(rows), "--out", str(xlsx)], case)
+    rep = case / "check-list-report.json"
+    body = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
+    record("正例：生成 24 列清单并自检通过",
+           proc.returncode == 0 and (body.get("summary") or {}).get("errors") == 0,
+           f"rc={proc.returncode} summary={body.get('summary')}")
+
+    def tamper(name: str, mutate, expect_frag: str) -> None:
+        d = case / f"负例_{name}"
+        d.mkdir()
+        shutil.copy(xlsx, d / "清单.xlsx")
+        wb = load_workbook(d / "清单.xlsx")
+        mutate(wb)
+        wb.save(d / "清单.xlsx")
+        out = d / "report.json"
+        p = run([str(SCRIPTS / "check_list.py"), str(d / "清单.xlsx"), "--json-out", str(out)], case)
+        r = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+        msgs = " ".join(x.get("message", "") for x in (r.get("errors") or []))
+        record(f"负例：{name}", p.returncode == 1 and expect_frag in msgs, f"rc={p.returncode} msg={msgs[:80]}")
+
+    def _header(wb):
+        wb["资产明细"].cell(row=1, column=1).value = "资产名字"
+
+    def _enum(wb):
+        wb["资产明细"].cell(row=2, column=2).value = "unknown"
+
+    def _required(wb):
+        wb["资产明细"].cell(row=2, column=1).value = ""
+
+    def _semver(wb):
+        wb["资产明细"].cell(row=2, column=12).value = "1.0"
+
+    def _dup(wb):
+        ws = wb["资产明细"]
+        for c in range(1, ws.max_column + 1):
+            ws.cell(row=3, column=c).value = ws.cell(row=2, column=c).value
+
+    def _dangling(wb):
+        ws = wb["用例明细"]
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(row=1, column=c).value == "资产名称":
+                ws.cell(row=2, column=c).value = "不存在的资产"
+                break
+
+    tamper("表头被改", _header, "表头")
+    tamper("枚举值非法", _enum, "不在 schema options 内")
+    tamper("必填为空", _required, "必填")
+    tamper("版本非语义化", _semver, "语义化")
+    tamper("行标识重复", _dup, "重复")
+    tamper("用例明细引用不存在的资产", _dangling, "不存在")
+
+
+# --------------------------------------------------------------------------- T3 覆盖度门禁
+def t3_coverage(tmp: Path) -> None:
+    print("\n[3/6] check_coverage.py — 低于下限必须拦住")
+    case = tmp / "t3"
+    case.mkdir()
+
+    def make(n_cases: int, executed: int) -> Path:
+        cases = []
+        for i in range(n_cases):
+            c = {"case_id": f"c{i}", "asset_id": "sciasset://example/tool/x", "asset_type": "tool",
+                 "execution_status": "completed" if i < executed else "planned",
+                 "validation_status": "pass" if i < executed else "not_evaluated",
+                 "expected_kind": "success"}
+            if i == n_cases - 1:      # 末位固定为预期错误用例，满足 tool 的 negative_expected 要求
+                c["expected_kind"] = "error"
+                c["kind"] = "rejection"
+            cases.append(c)
+        d = case / f"n{n_cases}e{executed}"
+        d.mkdir()
+        (d / "cases.json").write_text(json.dumps({"cases": cases}, ensure_ascii=False), encoding="utf-8")
+        (d / "inventory.json").write_text(json.dumps({"assets": [{"asset_id": "sciasset://example/tool/x",
+                                                                  "asset_type": "tool"}]}), encoding="utf-8")
+        (d / "validation-report.md").write_text("# r\n\n## 5. 判定\n", encoding="utf-8")
+        return d
+
+    d = make(1, 1)
+    proc = run([str(SCRIPTS / "check_coverage.py"), "--cases", str(d / "cases.json"),
+                "--inventory", str(d / "inventory.json"), "--run-dir", str(d),
+                "--report", str(d / "validation-report.md")], case)
+    cov = json.loads((d / "coverage.json").read_text(encoding="utf-8")) if (d / "coverage.json").exists() else {}
+    record("负例：tool 只有 1 组用例（下限 3）→ 判覆盖不足且退出码 1",
+           proc.returncode == 1 and cov.get("verdict") == "insufficient",
+           f"rc={proc.returncode} verdict={cov.get('verdict')}")
+
+    d = make(4, 3)
+    proc = run([str(SCRIPTS / "check_coverage.py"), "--cases", str(d / "cases.json"),
+                "--inventory", str(d / "inventory.json"), "--run-dir", str(d),
+                "--report", str(d / "validation-report.md")], case)
+    cov = json.loads((d / "coverage.json").read_text(encoding="utf-8")) if (d / "coverage.json").exists() else {}
+    record("正例：tool 4 组、执行 3 组 → 覆盖充足、退出码 0",
+           proc.returncode == 0 and cov.get("verdict") == "sufficient",
+           f"rc={proc.returncode} verdict={cov.get('verdict')}")
+
+
+# --------------------------------------------------------------------------- T4 副本自检
+def t4_work_copy(tmp: Path) -> None:
+    print("\n[4/6] work_copy.py — 副本 init 自检与清理")
+    case = tmp / "t4"
+    pkg = case / "pkg"
+    (pkg / "sub").mkdir(parents=True)
+    (pkg / "a.txt").write_text("a\n", encoding="utf-8")
+    (pkg / "sub" / "b.txt").write_text("bb\n", encoding="utf-8")
+    sums = subprocess.run(["sha256sum", "a.txt", "sub/b.txt"], cwd=pkg, capture_output=True, text=True)
+    (pkg / "SHA256SUMS").write_text(sums.stdout, encoding="utf-8")
+    work = case / "work"
+
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-t4", "--work-root", str(work)], case)
+    state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
+    record("正例：init 复制并自检文件数/字节/摘要",
+           proc.returncode == 0 and (state.get("init_verify") or {}).get("ok") is True,
+           f"rc={proc.returncode} verify={(state.get('init_verify') or {}).get('ok')}")
+
+    # 在副本里删掉一个文件，再 init：副本已存在被复用 → 自检应失败并删副本
+    copy = Path(state["work_copy"])
+    (copy / "sub" / "b.txt").unlink()
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-t4", "--work-root", str(work)], case)
+    record("负例：副本缺文件时 init 自检失败、删副本、退出码 1",
+           proc.returncode == 1 and not copy.exists(),
+           f"rc={proc.returncode} 副本仍在={copy.exists()}")
+
+    proc = run([str(SCRIPTS / "work_copy.py"), "clean", str(pkg), "--run-id", "run-t4", "--verify"], case)
+    state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
+    vac = state.get("verify_after_clean") or {}
+    record("正例：clean 删副本并复核原包摘要",
+           proc.returncode == 0 and vac.get("bad_total") == 0,
+           f"rc={proc.returncode} bad={vac.get('bad_total')}")
+
+
+# --------------------------------------------------------------------------- T5 证据保留
+def t5_prune(tmp: Path) -> None:
+    print("\n[5/6] prune_evidence.py — 只留报告类证据")
+    run_dir = tmp / "t5" / "run-t5"
+    (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
+    (run_dir / "refs").mkdir()
+    (run_dir / "registration").mkdir()
+    (run_dir / "tool" / "work" / "case1" / "big.tif").write_bytes(b"0" * 4096)
+    (run_dir / "tool" / "correctness_report.json").write_text('{"cases":[]}', encoding="utf-8")
+    (run_dir / "refs" / "frozen.npy").write_bytes(b"1" * 128)
+    (run_dir / "registration" / "清单.xlsx").write_bytes(b"2" * 64)
+    (run_dir / "validation-report.md").write_text("# r\n\n## 5. 判定\n", encoding="utf-8")
+
+    run([str(SCRIPTS / "prune_evidence.py"), "--run", str(run_dir), "--dry-run"], tmp / "t5")
+    record("正例：--dry-run 只预览，不删文件也不落盘",
+           (run_dir / "tool" / "work" / "case1" / "big.tif").exists()
+           and not (run_dir / "evidence-prune.json").exists(),
+           "dry-run 却发生了删除或写了记录")
+
+    run([str(SCRIPTS / "prune_evidence.py"), "--run", str(run_dir)], tmp / "t5")
+    rec = json.loads((run_dir / "evidence-prune.json").read_text(encoding="utf-8"))
+    kept = all((run_dir / p).exists() for p in ("tool/correctness_report.json", "refs/frozen.npy",
+                                                "registration/清单.xlsx", "validation-report.md"))
+    record("正例：实跑清掉 */work/、保留报告与冻结参考值",
+           not (run_dir / "tool" / "work").exists() and kept and rec.get("pruned_items", 0) >= 1,
+           f"pruned={rec.get('pruned_items')} 保留={kept}")
+
+
+# --------------------------------------------------------------------------- T6 Sage 探测
+def t6_sage(tmp: Path) -> None:
+    print("\n[6/6] sage_probe.py — 需求判定、配置缺失向用户索取")
+    case = tmp / "t6"
+    plain = case / "plain"
+    (plain / "data").mkdir(parents=True)
+    (plain / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://example/data/x",
+                                                     "asset_type": "data"}]), encoding="utf-8")
+    out = case / "need_plain.json"
+    run([str(SCRIPTS / "sage_probe.py"), "detect", str(plain), "--json-out", str(out)], case)
+    need = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：纯数据包判定为无需 Sage 测试", need.get("needed") is False, f"needed={need.get('needed')}")
+
+    llm = case / "llm"
+    (llm / "skill").mkdir(parents=True)
+    (llm / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://example/skill/x",
+                                                   "asset_type": "skill"}]), encoding="utf-8")
+    (llm / "skill" / "workflow.env.example").write_text("LLM_BASE_URL=http://x/v1\nLLM_MODEL=m\n",
+                                                        encoding="utf-8")
+    out = case / "need_llm.json"
+    run([str(SCRIPTS / "sage_probe.py"), "detect", str(llm), "--json-out", str(out)], case)
+    need = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：含大模型 API 证据的包判定为需要测试",
+           need.get("needed") is True and need.get("evidence"), f"needed={need.get('needed')}")
+
+    # 隔离 HOME → 系统里找不到 Sage 配置 → 必须退出码 3 并打印索取清单
+    fake_home = case / "home"
+    fake_home.mkdir(exist_ok=True)
+    env = {"HOME": str(fake_home)}
+    for k in ("SAGE_BASE_URL", "SAGE_MODEL", "SAGE_API_KEY", "SAGE_LLM_BASE_URL",
+              "SAGE_LLM_MODEL", "SAGE_LLM_API_KEY"):
+        env[k] = ""
+    proc = run([str(SCRIPTS / "sage_probe.py"), "config", "--json-out", str(case / "cfg.json")],
+               case, env_extra=env)
+    cfg = json.loads((case / "cfg.json").read_text(encoding="utf-8")) if (case / "cfg.json").exists() else {}
+    record("负例：找不到 Sage 配置 → 退出码 3 且给出索取清单",
+           proc.returncode == 3 and "SAGE_BASE_URL" in proc.stdout and cfg.get("status") == "missing_config",
+           f"rc={proc.returncode} status={cfg.get('status')}")
+
+    probe_env = dict(env, DUMMY_SAGE_KEY="dummy")
+    proc = run([str(SCRIPTS / "sage_probe.py"), "config", "--base-url", "http://127.0.0.1:9/v1",
+                "--model", "x", "--api-key-env", "DUMMY_SAGE_KEY", "--probe",
+                "--json-out", str(case / "cfg2.json")], case, env_extra=probe_env)
+    record("负例：配置齐全但探测不通 → 退出码 4", proc.returncode == 4, f"rc={proc.returncode}")
+
+    run([str(SCRIPTS / "sage_probe.py"), "report", str(case), "--status", "blocked_missing_config",
+         "--note", "自测"], case)
+    rep = json.loads((case / "sage-a1.5-report.json").read_text(encoding="utf-8"))
+    record("正例：结论落盘且显式标注不计入判定",
+           rep.get("is_acceptance_criterion") is False and rep.get("status") == "blocked_missing_config",
+           f"criterion={rep.get('is_acceptance_criterion')}")
+
+
+# --------------------------------------------------------------------------- main
+def main() -> int:
+    tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
+    print(f"skill 自测：{SKILL}")
+    print(f"临时目录：{tmp}")
+    try:
+        for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage):
+            try:
+                fn(tmp)
+            except Exception as exc:  # noqa: BLE001
+                record(f"{fn.__name__} 异常", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        if VERBOSE:
+            print(f"\n（-v：临时目录保留在 {tmp}）")
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    passed = sum(1 for _, ok, _ in RESULTS if ok)
+    total = len(RESULTS)
+    print(f"\n{'=' * 60}\n自测结果：{passed}/{total} 通过" + ("" if passed == total else "  ← 有失败"))
+    if passed != total:
+        for name, ok, detail in RESULTS:
+            if not ok:
+                print(f"  - {name}：{detail}")
+    return 0 if passed == total else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

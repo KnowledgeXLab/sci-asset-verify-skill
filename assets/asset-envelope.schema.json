@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sciasset.local/schemas/asset-envelope-1.0.0.json",
+  "title": "科学智能体资产公共包络（规范 v1.0）",
+  "description": "校验资产描述文件（asset.json / catalog 条目）是否符合《科学智能体资产统一表征体系设计 v1.0》§4 公共包络、§5 类型规范、§6 治理要求与 §7 生命周期枚举。本 schema 只用于校验已有描述文件，不用于代替提交方构造包络。",
+  "$comment": "来源：规范 §4（公共包络）、§5.1-5.8（八类类型规范）、§6（provenance/governance）、§7（lifecycle）。类型专有要求用 if/then 表达；validator 另对 role 取值、字段未知等给出 warning 级提示。",
+  "type": "object",
+  "required": ["schema_version", "asset_id", "asset_type", "name", "description", "asset_version", "lifecycle", "domains", "provenance", "governance", "spec"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "描述文件遵循的规范版本，与资产版本相互独立。"
+    },
+    "asset_id": {
+      "type": "string",
+      "pattern": "^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/(data|tool|model|environment|skill|task|trajectory|benchmark)/[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "稳定标识，推荐 sciasset://{namespace}/{type}/{slug}；不得包含版本号，类型段必须与 asset_type 一致。"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": ["data", "tool", "model", "environment", "skill", "task", "trajectory", "benchmark"]
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "asset_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$",
+      "description": "语义化版本。"
+    },
+    "lifecycle": {
+      "type": "string",
+      "enum": ["draft", "validated", "published", "deprecated", "withdrawn"],
+      "description": "§7：draft→validated→published→deprecated→withdrawn。deprecated 必须提供替代资产或弃用原因。"
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "pattern": "^domain:[a-z0-9-]+$" } }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^sciasset://" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "task_classes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^(problem|operation|stage|task):[a-z0-9-]+$" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "anyOf": [{ "required": ["created_time"] }, { "required": ["published_time"] }],
+      "required": ["provider", "source"],
+      "properties": {
+        "created_time": { "type": "string" },
+        "published_time": { "type": "string" },
+        "provider": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "role": { "type": "string" }
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["original", "derived", "generated"] },
+            "uri": { "type": "string" },
+            "description": { "type": "string" },
+            "derived_from": { "type": "array" }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "enum": ["derived", "generated"] } }, "required": ["kind"] },
+              "then": { "anyOf": [{ "required": ["uri"] }, { "required": ["derived_from"] }] }
+            }
+          ]
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "required": ["license", "access", "risk_level", "privacy", "usage_constraints"],
+      "properties": {
+        "license": { "type": "string", "minLength": 1 },
+        "access": { "type": "string", "enum": ["public", "restricted", "private", "internal"] },
+        "risk_level": { "type": "string", "enum": ["low", "medium", "high", "prohibited"] },
+        "privacy": { "type": "string" },
+        "usage_constraints": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "extensions": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "required": ["metadata", "artifacts", "domain_attributes", "asset_protocol"],
+      "properties": {
+        "metadata": { "type": "object" },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uri", "media_type"],
+            "properties": {
+              "id": { "type": "string" },
+              "artifact_type": { "type": "string" },
+              "uri": { "type": "string", "minLength": 1 },
+              "media_type": { "type": "string", "minLength": 1 },
+              "role": { "type": "string" },
+              "path": { "type": "string" },
+              "sha256": { "type": "string" },
+              "bytes": { "type": "integer" }
+            }
+          }
+        },
+        "domain_attributes": { "type": "object" },
+        "asset_protocol": { "type": "object" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "§5.1 Data：必须有数据实体；metadata 需声明格式或数据模型。",
+      "if": { "properties": { "asset_type": { "const": "data" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "spec": {
+            "properties": {
+              "metadata": { "anyOf": [{ "required": ["format"] }, { "required": ["data_model"] }] },
+              "artifacts": { "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "§5.2 Tool：必须声明接口类型，且实现/描述文件可达。",
+      "if": { "properties": { "asset_type": { "const": "tool" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "spec": {
+            "properties": {
+              "metadata": { "required": ["interface_type"] },
+              "artifacts": { "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "§5.3 Model：必须声明模型类型，权重或服务实体可达。",
+      "if": { "properties": { "asset_type": { "const": "model" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "spec": {
+            "properties": {
+              "metadata": { "required": ["model_type"] },
+              "artifacts": { "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "§5.4 Environment：镜像/锁文件/环境定义可达。",
+      "if": { "properties": { "asset_type": { "const": "environment" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": { "spec": { "properties": { "artifacts": { "minItems": 1 } } } }
+      }
+    },
+    {
+      "$comment": "§5.5 Skill：至少一个任务概念，指令文件可达。",
+      "if": { "properties": { "asset_type": { "const": "skill" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "task_classes": { "minItems": 1 },
+          "spec": { "properties": { "artifacts": { "minItems": 1 } } }
+        }
+      }
+    },
+    {
+      "$comment": "§5.6 Task：至少一个任务概念。",
+      "if": { "properties": { "asset_type": { "const": "task" } }, "required": ["asset_type"] },
+      "then": { "properties": { "task_classes": { "minItems": 1 } } }
+    },
+    {
+      "$comment": "§5.7 Trajectory：必须关联任务，入口文件可达。",
+      "if": { "properties": { "asset_type": { "const": "trajectory" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "tasks": { "minItems": 1 },
+          "spec": { "properties": { "artifacts": { "minItems": 1 } } }
+        }
+      }
+    },
+    {
+      "$comment": "§5.8 Benchmark：asset_protocol.evaluate 至少含 datasets、metrics 与 entrypoint。",
+      "if": { "properties": { "asset_type": { "const": "benchmark" } }, "required": ["asset_type"] },
+      "then": {
+        "properties": {
+          "task_classes": { "minItems": 1 },
+          "spec": {
+            "properties": {
+              "asset_protocol": {
+                "anyOf": [
+                  { "required": ["evaluate"] },
+                  { "required": ["readme", "prepare", "use", "validate"] }
+                ],
+                "properties": {
+                  "evaluate": {
+                    "type": "object",
+                    "required": ["metrics"],
+                    "properties": {
+                      "datasets": { "type": "array", "minItems": 1 },
+                      "entrypoint": { "type": "string" },
+                      "metrics": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object",
+                          "required": ["id"],
+                          "properties": {
+                            "id": { "type": "string" },
+                            "direction": { "type": "string", "enum": ["maximize", "minimize"] },
+                            "aggregation": { "type": "string" }
+                          }
+                        }
+                      },
+                      "submission": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "§6.2 硬约束：risk_level=prohibited 只允许登记审计元数据，不得提供可执行内容或下载位置。",
+      "if": {
+        "properties": { "governance": { "properties": { "risk_level": { "const": "prohibited" } }, "required": ["risk_level"] } },
+        "required": ["governance"]
+      },
+      "then": { "properties": { "spec": { "properties": { "artifacts": { "maxItems": 0 } } } } }
+    }
+  ]
+}

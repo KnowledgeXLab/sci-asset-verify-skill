@@ -1,0 +1,309 @@
+{
+  "schema_version": "1.0.0",
+  "name": "对外发版资产清单",
+  "description": "资产提供方提交给外部单位的资产目录表头与字段说明。本文件是登记表的唯一标准：填写时以本文件的 24 个字段为准，不检查、不套用用户自定义模板；确需改用其他 schema 时由用户显式指定并记录在 schema-snapshot.json。",
+  "authority": {
+    "spec": "《科学智能体资产统一表征体系设计 v1.0》",
+    "spec_section": "7. 对外发版资产清单（7.3 字段说明 24 列）",
+    "note": "字段名称、顺序、类型与选项取自该规范 §7.3 的表头定义；相比内部管理清单，本文件去掉了资产编号、校验、资产校验报告、记录人、集成负责人、集成状态这 6 个内部字段。飞书 CLI 在外发环境不可用，故把表头固化在本文件。",
+    "captured_at": "2026-11-05"
+  },
+  "sheet_name": "资产明细",
+  "row_key": [
+    "资产名称",
+    "版本"
+  ],
+  "excluded_internal_fields": [
+    "资产编号",
+    "校验",
+    "资产校验报告",
+    "记录人",
+    "集成负责人",
+    "目前集成状态"
+  ],
+  "naming_notes": [
+    "上游表列名为「资产提供单位」，本清单沿用该名称（历史文档中的「提供单位」指同一字段）。",
+    "「资产协议」不占列：写在资产描述文件 asset.json 的 spec.asset_protocol（repository_uri + revision + path）。",
+    "「验证报告路径」不占列：写入 registration/field-evidence.json；必要时在「质量说明」末尾一句指路。",
+    "表头中的 | 为 ASCII 竖线，写入 Excel 时保留原样，不替换为全角。"
+  ],
+  "file_type_options": [
+    "text",
+    "select_text"
+  ],
+  "fields": [
+    {
+      "order": 1,
+      "header": "资产名称",
+      "type": "text",
+      "required": true,
+      "definition": "外部可读的名称，写清科学对象、功能与必要规格（≤25 字），不使用内部代号；与 asset.json 的 name 一致。",
+      "source_field": "name",
+      "example": "区域 A 造山型金矿数据资产"
+    },
+    {
+      "order": 2,
+      "header": "资产类型",
+      "type": "select",
+      "required": true,
+      "options": [
+        "data",
+        "tool",
+        "model",
+        "environment",
+        "skill",
+        "task",
+        "trajectory",
+        "benchmark"
+      ],
+      "definition": "八选一，与 asset.json 的 asset_type 一致。",
+      "source_field": "asset_type",
+      "example": "tool"
+    },
+    {
+      "order": 3,
+      "header": "领域Profile",
+      "type": "select",
+      "required": true,
+      "options": [
+        "地球科学",
+        "高能物理",
+        "生物育种",
+        "疾病诊断",
+        "化学智能",
+        "新药创制",
+        "材料科学",
+        "量子物理",
+        "生物结构",
+        "其他说明"
+      ],
+      "definition": "填清单内的中文领域名；与 asset.json 的 domains[].id（domain:*）一一对应，机器处理以 ID 为准。跨领域可多选。",
+      "source_field": "domains[].id",
+      "example": "地球科学"
+    },
+    {
+      "order": 4,
+      "header": "资产摘要",
+      "type": "text",
+      "required": true,
+      "definition": "一到两句话说清：解决什么问题、核心能力、适用边界（19–110 字，句末「。」）。",
+      "source_field": "description",
+      "example": "由训练坐标与观测值计算查询坐标处的连续标量插值，输出逐点插值数组。"
+    },
+    {
+      "order": 5,
+      "header": "任务|操作标签",
+      "type": "select",
+      "required": true,
+      "options": [
+        "problem:change-detection",
+        "problem:survival-analysis",
+        "operation:data-acquisition",
+        "operation:data-processing",
+        "operation:analysis",
+        "operation:prediction",
+        "operation:simulation",
+        "operation:optimization",
+        "operation:decision-support",
+        "stage:hypothesis",
+        "stage:experiment-design",
+        "stage:verification",
+        "task:remote-sensing-change-analysis"
+      ],
+      "definition": "只取注册词表前缀 problem:* / operation:* / stage:* / task:*，不自造标签；同一单元格用「; 」分隔。task、skill、trajectory、benchmark 四类至少一个。对应 asset.json 的 task_classes[].id。",
+      "source_field": "task_classes[].id",
+      "example": "operation:data-processing"
+    },
+    {
+      "order": 6,
+      "header": "任务描述",
+      "type": "text",
+      "required": false,
+      "required_note": "建议必填",
+      "definition": "人能读懂的任务说明：给定条件、处理目标、预期产出（30–80 字）；与标签互补，不重复标签文字。",
+      "source_field": "description / spec.metadata",
+      "example": "给定训练点坐标与观测值，按反距离权重计算查询点插值，返回与查询顺序一致的数组。"
+    },
+    {
+      "order": 7,
+      "header": "科学对象",
+      "type": "text",
+      "required": true,
+      "definition": "实际处理的科学实体，顿号分隔 2–6 个名词短语，不加句号（分子、事件、品系、病例、靶点、蛋白质、晶体、栅格、量子态等）。",
+      "source_field": "spec.domain_attributes",
+      "example": "训练点坐标、观测标量场、查询点坐标"
+    },
+    {
+      "order": 8,
+      "header": "资产提供单位",
+      "type": "text",
+      "required": true,
+      "definition": "资产提供方或责任单位全称。",
+      "source_field": "provenance.provider[].name",
+      "example": "示例单位（机构全称）"
+    },
+    {
+      "order": 9,
+      "header": "联系人",
+      "type": "text",
+      "required": true,
+      "definition": "对接人姓名，必要时补联系方式；写入前去除首尾空格。",
+      "source_field": "交付材料 / 用户提供",
+      "example": "联系人姓名"
+    },
+    {
+      "order": 10,
+      "header": "项目负责人",
+      "type": "text",
+      "required": false,
+      "definition": "提供方项目内的负责人（「姓名 - 单位」或姓名），用于验收与责任对齐；无可留空。",
+      "source_field": "交付材料 / 用户提供",
+      "example": "负责人姓名 - 示例单位"
+    },
+    {
+      "order": 11,
+      "header": "来源|产出方式",
+      "type": "text",
+      "required": true,
+      "definition": "采集、实验、仿真、模型生成、智能体运行、专家整理、自研封装等；派生资产须说明上游来源并指向证据文件。",
+      "source_field": "provenance.source",
+      "example": "derived：封装既有实现，源码与来源映射见 source_provenance.json"
+    },
+    {
+      "order": 12,
+      "header": "版本",
+      "type": "text",
+      "required": true,
+      "definition": "语义化版本（MAJOR.MINOR.PATCH，如 3.1.1），与 asset.json 的 asset_version 一致；去掉 v 前缀，缺位补 0（v1.0→1.0.0、2026.08→2026.8.0）。无发布版本的运行轨迹类资产用 build 元数据承载运行批次：0.0.0+run.YYYYMMDD.NNN。",
+      "source_field": "asset_version",
+      "example": "3.1.1"
+    },
+    {
+      "order": 13,
+      "header": "格式|接口",
+      "type": "text",
+      "required": false,
+      "required_note": "条件必填（有实体文件的资产必填）",
+      "definition": "数据格式、服务接口、Schema、容器镜像等；可执行资产必须写清调用方式与入口命令。",
+      "source_field": "spec.metadata / spec.artifacts[].media_type",
+      "example": "CLI（run_tool.py interpolate-idw --input request.json --output-dir <dir>）"
+    },
+    {
+      "order": 14,
+      "header": "规模|数量",
+      "type": "text",
+      "required": false,
+      "definition": "样本量、文件数、参数量、记录数、文件大小等，注明单位与统计口径（例如「payload 文件 484 个」）。",
+      "source_field": "spec.metadata",
+      "example": "1 个 CLI 工具；输入输出 Schema 各 1 份；给定用例 9 组"
+    },
+    {
+      "order": 15,
+      "header": "时间范围",
+      "type": "text",
+      "required": false,
+      "definition": "数据采集、实验、运行或适用的时间范围；按输入实时计算的资产写「不适用（每次调用按输入重算）」。",
+      "source_field": "provenance / spec.metadata",
+      "example": "整理快照 2026-10-13"
+    },
+    {
+      "order": 16,
+      "header": "空间|坐标|实验条件",
+      "type": "text",
+      "required": false,
+      "definition": "空间范围、坐标参考系、空间分辨率、实验条件、设备与测量条件，多项用「；」分隔。",
+      "source_field": "spec.domain_attributes",
+      "example": "平台网格 114×92、1000 m（EPSG:32620 假定）"
+    },
+    {
+      "order": 17,
+      "header": "输入说明",
+      "type": "text",
+      "required": true,
+      "required_note": "可执行资产必填",
+      "definition": "输入字段、格式、单位、必需与可选参数；文件类输入写清命名与目录约定。",
+      "source_field": "spec.metadata 输入合同",
+      "example": "请求 JSON 必填 arrays（含 coords_train/y_train/coords_predict）、coordinate_reference_system；可选 power/search_radius/k/eps"
+    },
+    {
+      "order": 18,
+      "header": "输出说明",
+      "type": "text",
+      "required": true,
+      "required_note": "可执行资产必填",
+      "definition": "输出实体、格式、单位与数量；同时写清失败时的返回形式（错误描述与退出码）。",
+      "source_field": "spec.metadata 输出合同",
+      "example": "interpolated_values.npy（float64，[n_query]，单位同 y_train）；失败写 error.json 并返回非零退出码"
+    },
+    {
+      "order": 19,
+      "header": "依赖资源",
+      "type": "text",
+      "required": false,
+      "definition": "必需的数据、模型、服务或软件库；跨资产依赖写清被依赖资产名称，第三方库指向依赖锁文件。",
+      "source_field": "spec.artifacts + 交叉依赖",
+      "example": "数据资产 <被依赖的数据资产名>；第三方库见 requirements.lock.txt"
+    },
+    {
+      "order": 20,
+      "header": "运行环境|资源要求",
+      "type": "text",
+      "required": true,
+      "required_note": "可执行资产必填",
+      "definition": "操作系统、运行时与关键依赖版本、CPU/GPU、内存、网络与访问策略。",
+      "source_field": "spec.metadata.runtime",
+      "example": "Linux；Python 3.12；仅需 CPU；输出目录须为空"
+    },
+    {
+      "order": 21,
+      "header": "评价指标|验收条件",
+      "type": "text",
+      "required": false,
+      "required_note": "建议必填",
+      "definition": "先概括验收覆盖哪几类检查（解析解、独立复算、参考库直算、模拟真值、回归基线、非法输入、实体属性一致性、领域规则等），再写通过标准与阈值；通过率必须注明分母与未执行范围，不得只写「N/N 通过」。",
+      "source_field": "cases.json / comparison.json / 已有验证报告",
+      "example": "9 组用例（解析解 8、非法输入 1）；逐值 atol=1e-12；9/9 通过"
+    },
+    {
+      "order": 22,
+      "header": "敏感级别",
+      "type": "select",
+      "required": true,
+      "options": [
+        "内部",
+        "敏感",
+        "高度敏感"
+      ],
+      "definition": "三选一；含个人、医疗或受限第三方资料的资产不得填「内部」。对应 governance.access / privacy。",
+      "source_field": "governance.access / governance.privacy",
+      "example": "敏感"
+    },
+    {
+      "order": 23,
+      "header": "质量说明",
+      "type": "text",
+      "required": false,
+      "required_note": "建议必填",
+      "definition": "抽检与测试结果、已知缺陷、适用范围、不确定性与待确认字段；一句话为主，必要时指出影响使用的实际问题。",
+      "source_field": "验证报告 / branch 报告",
+      "example": "解析解与非法输入用例 9/9 通过；search_radius 内无近邻时回退全部训练点，不构成严格无支持区遮罩。"
+    },
+    {
+      "order": 24,
+      "header": "资产关联",
+      "type": "text",
+      "required": false,
+      "required_note": "建议必填",
+      "definition": "与其它资产的关系（依赖、派生、被任务或基准引用），写资产名称或 asset_id；无关系填「不适用」。",
+      "source_field": "provenance / 交叉依赖",
+      "example": "区域 A 造山型金矿数据资产"
+    }
+  ],
+  "use_rules": [
+    "填写前读取本文件，按 fields[].header 顺序建表头；不要复制其他单位的模板表头，也不要为了适配某个模板改写字段集。",
+    "用户显式指定另一份 schema 时，把该 schema 落成 registration/schema-snapshot.json 并记录与本文件的差异；否则一律以本文件为准。",
+    "枚举字段的取值必须落在 options 内；options 之外的值先确认是否属于新的注册词表。",
+    "表格是人读索引；机器可读以资产描述文件（asset.json 包络）为准，两者冲突时以描述文件为准并回填表格。",
+    "用例明细单独一个 sheet，按「资产名称 + 版本」关联资产明细。"
+  ]
+}
