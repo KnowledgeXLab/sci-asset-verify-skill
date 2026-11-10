@@ -10,7 +10,7 @@
   },
   "sheet_name": "资产明细",
   "row_key": [
-    "资产名称",
+    "资产ID",
     "版本"
   ],
   "excluded_internal_fields": [
@@ -25,7 +25,8 @@
     "上游表列名为「资产提供单位」，本清单沿用该名称（历史文档中的「提供单位」指同一字段）。",
     "「资产协议」不占列：写在资产描述文件 asset.json 的 spec.asset_protocol（repository_uri + revision + path）。",
     "「验证报告路径」不占列：写入 registration/field-evidence.json；必要时在「质量说明」末尾一句指路。",
-    "表头中的 | 为 ASCII 竖线，写入 Excel 时保留原样，不替换为全角。"
+    "表头中的 | 为 ASCII 竖线，写入 Excel 时保留原样，不替换为全角。",
+    "「资产ID」不含版本号（规范 §4.1 要求 asset_id 稳定），版本由「版本」列表达；行标识为「资产ID + 版本」。"
   ],
   "file_type_options": [
     "text",
@@ -34,6 +35,15 @@
   "fields": [
     {
       "order": 1,
+      "header": "资产ID",
+      "type": "text",
+      "required": true,
+      "definition": "格式 {project-id}/{namespace}/{asset-type}/{slug}，与 asset.json 的 asset_id 一一对应（去掉 sciasset:// 前缀），**不含版本号**；版本由「版本」列表达。由 scripts/asset_ids.py 从包络自动生成，不手写。",
+      "source_field": "asset_id（去掉 sciasset:// 前缀）",
+      "example": "2026ZD123456/earth/data/east-china-rs-change-detection"
+    },
+    {
+      "order": 2,
       "header": "资产名称",
       "type": "text",
       "required": true,
@@ -42,7 +52,7 @@
       "example": "区域 A 造山型金矿数据资产"
     },
     {
-      "order": 2,
+      "order": 3,
       "header": "资产类型",
       "type": "select",
       "required": true,
@@ -61,7 +71,7 @@
       "example": "tool"
     },
     {
-      "order": 3,
+      "order": 4,
       "header": "领域Profile",
       "type": "select",
       "required": true,
@@ -82,7 +92,7 @@
       "example": "地球科学"
     },
     {
-      "order": 4,
+      "order": 5,
       "header": "资产摘要",
       "type": "text",
       "required": true,
@@ -91,7 +101,7 @@
       "example": "由训练坐标与观测值计算查询坐标处的连续标量插值，输出逐点插值数组。"
     },
     {
-      "order": 5,
+      "order": 6,
       "header": "任务|操作标签",
       "type": "select",
       "required": true,
@@ -115,7 +125,7 @@
       "example": "operation:data-processing"
     },
     {
-      "order": 6,
+      "order": 7,
       "header": "任务描述",
       "type": "text",
       "required": false,
@@ -125,7 +135,7 @@
       "example": "给定训练点坐标与观测值，按反距离权重计算查询点插值，返回与查询顺序一致的数组。"
     },
     {
-      "order": 7,
+      "order": 8,
       "header": "科学对象",
       "type": "text",
       "required": true,
@@ -134,7 +144,7 @@
       "example": "训练点坐标、观测标量场、查询点坐标"
     },
     {
-      "order": 8,
+      "order": 9,
       "header": "资产提供单位",
       "type": "text",
       "required": true,
@@ -143,7 +153,7 @@
       "example": "示例单位（机构全称）"
     },
     {
-      "order": 9,
+      "order": 10,
       "header": "联系人",
       "type": "text",
       "required": true,
@@ -152,7 +162,7 @@
       "example": "联系人姓名"
     },
     {
-      "order": 10,
+      "order": 11,
       "header": "项目负责人",
       "type": "text",
       "required": false,
@@ -161,7 +171,7 @@
       "example": "负责人姓名 - 示例单位"
     },
     {
-      "order": 11,
+      "order": 12,
       "header": "来源|产出方式",
       "type": "text",
       "required": true,
@@ -170,7 +180,7 @@
       "example": "derived：封装既有实现，源码与来源映射见 source_provenance.json"
     },
     {
-      "order": 12,
+      "order": 13,
       "header": "版本",
       "type": "text",
       "required": true,
@@ -179,7 +189,7 @@
       "example": "3.1.1"
     },
     {
-      "order": 13,
+      "order": 14,
       "header": "格式|接口",
       "type": "text",
       "required": false,
@@ -189,7 +199,7 @@
       "example": "CLI（run_tool.py interpolate-idw --input request.json --output-dir <dir>）"
     },
     {
-      "order": 14,
+      "order": 15,
       "header": "规模|数量",
       "type": "text",
       "required": false,
@@ -198,7 +208,7 @@
       "example": "1 个 CLI 工具；输入输出 Schema 各 1 份；给定用例 9 组"
     },
     {
-      "order": 15,
+      "order": 16,
       "header": "时间范围",
       "type": "text",
       "required": false,
@@ -207,7 +217,7 @@
       "example": "整理快照 2026-10-13"
     },
     {
-      "order": 16,
+      "order": 17,
       "header": "空间|坐标|实验条件",
       "type": "text",
       "required": false,
@@ -216,7 +226,7 @@
       "example": "平台网格 114×92、1000 m（EPSG:32620 假定）"
     },
     {
-      "order": 17,
+      "order": 18,
       "header": "输入说明",
       "type": "text",
       "required": true,
@@ -226,7 +236,7 @@
       "example": "请求 JSON 必填 arrays（含 coords_train/y_train/coords_predict）、coordinate_reference_system；可选 power/search_radius/k/eps"
     },
     {
-      "order": 18,
+      "order": 19,
       "header": "输出说明",
       "type": "text",
       "required": true,
@@ -236,7 +246,7 @@
       "example": "interpolated_values.npy（float64，[n_query]，单位同 y_train）；失败写 error.json 并返回非零退出码"
     },
     {
-      "order": 19,
+      "order": 20,
       "header": "依赖资源",
       "type": "text",
       "required": false,
@@ -245,7 +255,7 @@
       "example": "数据资产 <被依赖的数据资产名>；第三方库见 requirements.lock.txt"
     },
     {
-      "order": 20,
+      "order": 21,
       "header": "运行环境|资源要求",
       "type": "text",
       "required": true,
@@ -255,7 +265,7 @@
       "example": "Linux；Python 3.12；仅需 CPU；输出目录须为空"
     },
     {
-      "order": 21,
+      "order": 22,
       "header": "评价指标|验收条件",
       "type": "text",
       "required": false,
@@ -265,7 +275,7 @@
       "example": "9 组用例（解析解 8、非法输入 1）；逐值 atol=1e-12；9/9 通过"
     },
     {
-      "order": 22,
+      "order": 23,
       "header": "敏感级别",
       "type": "select",
       "required": true,
@@ -279,7 +289,7 @@
       "example": "敏感"
     },
     {
-      "order": 23,
+      "order": 24,
       "header": "质量说明",
       "type": "text",
       "required": false,
@@ -289,7 +299,7 @@
       "example": "解析解与非法输入用例 9/9 通过；search_radius 内无近邻时回退全部训练点，不构成严格无支持区遮罩。"
     },
     {
-      "order": 24,
+      "order": 25,
       "header": "资产关联",
       "type": "text",
       "required": false,
@@ -304,6 +314,14 @@
     "用户显式指定另一份 schema 时，把该 schema 落成 registration/schema-snapshot.json 并记录与本文件的差异；否则一律以本文件为准。",
     "枚举字段的取值必须落在 options 内；options 之外的值先确认是否属于新的注册词表。",
     "表格是人读索引；机器可读以资产描述文件（asset.json 包络）为准，两者冲突时以描述文件为准并回填表格。",
-    "用例明细单独一个 sheet，按「资产名称 + 版本」关联资产明细。"
-  ]
+    "用例明细单独一个 sheet，按「资产名称 + 版本」关联资产明细。",
+    "填「资产ID」列时先跑 `python scripts/asset_ids.py --package <资产根目录> --rows <rows.json> --inject`，从包络写回（去掉 sciasset:// 前缀，不拼版本）；不要手工拼。"
+  ],
+  "id_rules": {
+    "list_column": "资产ID",
+    "format": "{project-id}/{namespace}/{asset-type}/{slug}",
+    "pattern": "^([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)/(data|tool|model|environment|skill|task|trajectory|benchmark)/([a-z0-9][a-z0-9._-]*)$",
+    "derive_from": "asset.json 的 asset_id 去掉 sciasset:// 前缀",
+    "consistency": "资产ID 的类型段必须与「资产类型」列一致；资产ID 不含版本号，版本只写在「版本」列"
+  }
 }

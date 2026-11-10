@@ -49,6 +49,9 @@ def main(argv=None) -> int:
     headers = [f['header'] for f in fields]
     by_header = {f['header']: f for f in fields}
     row_key = schema.get('row_key', ['资产名称', '版本'])
+    id_rules = schema.get('id_rules') or {}
+    id_col = id_rules.get('list_column') or '资产ID'
+    id_re = re.compile(id_rules['pattern']) if id_rules.get('pattern') else None
 
     try:
         wb = load_workbook(args.xlsx, data_only=False)
@@ -65,6 +68,7 @@ def main(argv=None) -> int:
 
     rows_checked = 0
     keys = {}
+    asset_names = set()
     if ws is not None:
         actual = [(c.value or '').strip() if isinstance(c.value, str) else c.value for c in ws[1]]
         # 去掉尾部空列
@@ -108,10 +112,28 @@ def main(argv=None) -> int:
                                            'message': f'取值 {p!r} 不在 schema options 内'})
                 if h == '版本' and not SEMVER.match(str(val)):
                     errors.append({'where': f'{sheet_name}!{h}{r}', 'message': f'版本应为语义化版本：{val!r}'})
+                if h == id_col and id_re is not None:
+                    sid = str(val)
+                    m = id_re.match(sid)
+                    if not m:
+                        errors.append({'where': f'{sheet_name}!{h}{r}',
+                                       'message': f'资产ID 不符合 {id_rules.get("format")}：{sid!r}'})
+                    else:
+                        seg_type = m.group(3)
+                        vcol = str(row.get('版本') or '').strip()
+                        tcol = str(row.get('资产类型') or '').strip()
+                        if vcol and str(val).endswith('-' + vcol):
+                            errors.append({'where': f'{sheet_name}!{h}{r}',
+                                           'message': f'资产ID 不应包含版本号（版本由「版本」列表达）：{val!r}'})
+                        if tcol and seg_type != tcol:
+                            errors.append({'where': f'{sheet_name}!{h}{r}',
+                                           'message': f'资产ID 类型段 {seg_type!r} 与「资产类型」列 {tcol!r} 不一致'})
                 if h == '任务|操作标签':
                     for p in [x.strip() for x in re.split(r'[;；]', str(val)) if x.strip()]:
                         if not re.match(r'^(problem|operation|stage|task):[a-z0-9-]+$', p):
                             errors.append({'where': f'{sheet_name}!{h}{r}', 'message': f'标签前缀不合法：{p!r}'})
+            if row.get('资产名称'):
+                asset_names.add(str(row['资产名称']).strip())
             key = tuple(str(row.get(k, '')).strip() for k in row_key)
             if all(key):
                 if key in keys:
@@ -130,7 +152,7 @@ def main(argv=None) -> int:
                 errors.append({'where': f'{case_sheet}!1', 'message': '用例明细缺少「资产名称」列（本清单无资产编号列）'})
             else:
                 ci = hdr2.index('资产名称')
-                names = {k[0] for k in keys}
+                names = asset_names
                 dangling = set()
                 for r in range(2, ws2.max_row + 1):
                     v = ws2.cell(row=r, column=ci + 1).value

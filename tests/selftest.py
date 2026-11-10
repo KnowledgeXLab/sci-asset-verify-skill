@@ -53,7 +53,7 @@ def run(args: list[str], cwd: Path, env_extra: dict | None = None, timeout: int 
 def minimal_envelope() -> dict:
     return {
         "schema_version": "1.0.0",
-        "asset_id": "sciasset://example/data/sample",
+        "asset_id": "sciasset://2026ZD123456/earth/data/sample",
         "asset_type": "data",
         "name": "示例数据资产",
         "description": "自测用的最小合规数据资产。",
@@ -76,6 +76,7 @@ def minimal_envelope() -> dict:
 
 def valid_rows() -> dict:
     return {"rows": [{
+        "资产ID": "2026ZD123456/earth/data/sample",
         "资产名称": "示例数据资产", "资产类型": "data", "领域Profile": "地球科学",
         "资产摘要": "自测用的最小合规数据资产。", "任务|操作标签": "operation:data-processing",
         "科学对象": "样点", "资产提供单位": "示例单位", "联系人": "待补",
@@ -87,7 +88,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/6] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/7] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -123,8 +124,14 @@ def t1_envelope(tmp: Path) -> None:
     bad = minimal_envelope(); bad["governance"]["risk_level"] = "prohibited"
     check(bad, "prohibited 却带可下载内容", False, "spec.artifacts")
 
-    bad = minimal_envelope(); bad["asset_id"] = "sciasset://example/tool/sample"
+    bad = minimal_envelope(); bad["asset_id"] = "sciasset://2026ZD123456/earth/tool/sample"
     check(bad, "asset_id 类型段与 asset_type 不一致", False, "asset_id")
+
+    bad = minimal_envelope(); bad["asset_id"] = "sciasset://mineralmind/data/sample"
+    check(bad, "旧的三段格式（缺 project-id）", False, "asset_id")
+
+    bad = minimal_envelope(); bad["asset_id"] = "sciasset://2026ZD123456/earth/data/sample-1.0.0"
+    check(bad, "asset_id 带版本号", False, "asset_id")
 
     # 同名 asset_id 内容不一致 → 两者都被标记冲突
     d = case / "冲突"
@@ -143,7 +150,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/6] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/7] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -173,22 +180,43 @@ def t2_list(tmp: Path) -> None:
         msgs = " ".join(x.get("message", "") for x in (r.get("errors") or []))
         record(f"负例：{name}", p.returncode == 1 and expect_frag in msgs, f"rc={p.returncode} msg={msgs[:80]}")
 
+    def col(wb, name):
+        ws = wb["资产明细"]
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(row=1, column=c).value == name:
+                return c
+        raise KeyError(name)
+
     def _header(wb):
         wb["资产明细"].cell(row=1, column=1).value = "资产名字"
 
     def _enum(wb):
-        wb["资产明细"].cell(row=2, column=2).value = "unknown"
+        wb["资产明细"].cell(row=2, column=col(wb, "资产类型")).value = "unknown"
 
     def _required(wb):
-        wb["资产明细"].cell(row=2, column=1).value = ""
+        wb["资产明细"].cell(row=2, column=col(wb, "资产名称")).value = ""
 
     def _semver(wb):
-        wb["资产明细"].cell(row=2, column=12).value = "1.0"
+        wb["资产明细"].cell(row=2, column=col(wb, "版本")).value = "1.0"
 
     def _dup(wb):
         ws = wb["资产明细"]
         for c in range(1, ws.max_column + 1):
             ws.cell(row=3, column=c).value = ws.cell(row=2, column=c).value
+
+    def _id_ver(wb):
+        ws = wb["资产明细"]
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(row=1, column=c).value == "资产ID":
+                ws.cell(row=2, column=c).value = "2026ZD123456/earth/data/sample-1.0.0"
+                break
+
+    def _id_fmt(wb):
+        ws = wb["资产明细"]
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(row=1, column=c).value == "资产ID":
+                ws.cell(row=2, column=c).value = "mineralmind/data/sample"
+                break
 
     def _dangling(wb):
         ws = wb["用例明细"]
@@ -203,18 +231,20 @@ def t2_list(tmp: Path) -> None:
     tamper("版本非语义化", _semver, "语义化")
     tamper("行标识重复", _dup, "重复")
     tamper("用例明细引用不存在的资产", _dangling, "不存在")
+    tamper("资产ID 带了版本号", _id_ver, "不应包含版本号")
+    tamper("资产ID 格式不合法", _id_fmt, "资产ID")
 
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/6] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/7] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
     def make(n_cases: int, executed: int) -> Path:
         cases = []
         for i in range(n_cases):
-            c = {"case_id": f"c{i}", "asset_id": "sciasset://example/tool/x", "asset_type": "tool",
+            c = {"case_id": f"c{i}", "asset_id": "sciasset://2026ZD123456/earth/tool/x", "asset_type": "tool",
                  "execution_status": "completed" if i < executed else "planned",
                  "validation_status": "pass" if i < executed else "not_evaluated",
                  "expected_kind": "success"}
@@ -225,7 +255,7 @@ def t3_coverage(tmp: Path) -> None:
         d = case / f"n{n_cases}e{executed}"
         d.mkdir()
         (d / "cases.json").write_text(json.dumps({"cases": cases}, ensure_ascii=False), encoding="utf-8")
-        (d / "inventory.json").write_text(json.dumps({"assets": [{"asset_id": "sciasset://example/tool/x",
+        (d / "inventory.json").write_text(json.dumps({"assets": [{"asset_id": "sciasset://2026ZD123456/earth/tool/x",
                                                                   "asset_type": "tool"}]}), encoding="utf-8")
         (d / "validation-report.md").write_text("# r\n\n## 5. 判定\n", encoding="utf-8")
         return d
@@ -251,7 +281,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/6] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/7] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -285,7 +315,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/6] prune_evidence.py — 只留报告类证据")
+    print("\n[5/7] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -313,11 +343,11 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/6] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/7] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
-    (plain / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://example/data/x",
+    (plain / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://2026ZD123456/earth/data/x",
                                                      "asset_type": "data"}]), encoding="utf-8")
     out = case / "need_plain.json"
     run([str(SCRIPTS / "sage_probe.py"), "detect", str(plain), "--json-out", str(out)], case)
@@ -326,7 +356,7 @@ def t6_sage(tmp: Path) -> None:
 
     llm = case / "llm"
     (llm / "skill").mkdir(parents=True)
-    (llm / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://example/skill/x",
+    (llm / "catalog.json").write_text(json.dumps([{"asset_id": "sciasset://2026ZD123456/earth/skill/x",
                                                    "asset_type": "skill"}]), encoding="utf-8")
     (llm / "skill" / "workflow.env.example").write_text("LLM_BASE_URL=http://x/v1\nLLM_MODEL=m\n",
                                                         encoding="utf-8")
@@ -364,13 +394,53 @@ def t6_sage(tmp: Path) -> None:
            f"criterion={rep.get('is_acceptance_criterion')}")
 
 
+# --------------------------------------------------------------------------- T7 资产ID 生成
+def t7_asset_ids(tmp: Path) -> None:
+    print("\n[7/7] asset_ids.py — 从包络生成清单资产ID")
+    pkg = tmp / "t7" / "pkg"
+    (pkg / "data" / "a").mkdir(parents=True)
+    (pkg / "catalog.json").write_text(json.dumps([
+        {"asset_id": "sciasset://2026ZD123456/earth/data/sample", "asset_type": "data",
+         "name": "示例数据资产", "asset_version": "1.0.0"},
+        {"asset_id": "sciasset://2026ZD123456/earth/tool/run", "asset_type": "tool",
+         "name": "示例轨迹工具", "asset_version": "0.0.0+run.20260825.001"},
+    ], ensure_ascii=False), encoding="utf-8")
+    out = tmp / "t7" / "ids.json"
+    proc = run([str(SCRIPTS / "asset_ids.py"), "--package", str(pkg), "--json-out", str(out)], tmp / "t7")
+    got = json.loads(out.read_text(encoding="utf-8"))
+    ids = [r["list_asset_id"] for r in got["rows"]]
+    record("正例：asset_id 去掉前缀即为清单资产ID（不含版本）",
+           proc.returncode == 0
+           and "2026ZD123456/earth/data/sample" in ids
+           and "2026ZD123456/earth/tool/run" in ids,
+           f"rc={proc.returncode} ids={ids}")
+
+    rows = tmp / "t7" / "rows.json"
+    rows.write_text(json.dumps({"rows": [
+        {"资产名称": "示例数据资产", "版本": "1.0.0"},
+        {"资产名称": "示例轨迹工具", "版本": "0.0.0+run.20260825.001"}]}, ensure_ascii=False), encoding="utf-8")
+    proc = run([str(SCRIPTS / "asset_ids.py"), "--package", str(pkg), "--rows", str(rows), "--inject"], tmp / "t7")
+    back = json.loads(rows.read_text(encoding="utf-8"))["rows"]
+    record("正例：--inject 按「资产名称+版本」写回 rows.json",
+           proc.returncode == 0 and all(r.get("资产ID") for r in back),
+           f"rc={proc.returncode} rows={[r.get('资产ID') for r in back]}")
+
+    bad = tmp / "t7" / "bad"
+    (bad / "x").mkdir(parents=True)
+    (bad / "catalog.json").write_text(json.dumps([
+        {"asset_id": "sciasset://mineralmind/data/sample", "asset_type": "data",
+         "name": "旧格式", "asset_version": "1.0.0"}], ensure_ascii=False), encoding="utf-8")
+    proc = run([str(SCRIPTS / "asset_ids.py"), "--package", str(bad), "--check"], tmp / "t7")
+    record("负例：包络仍是三段格式 → --check 退出码 1", proc.returncode == 1, f"rc={proc.returncode}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
     print(f"skill 自测：{SKILL}")
     print(f"临时目录：{tmp}")
     try:
-        for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage):
+        for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage, t7_asset_ids):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

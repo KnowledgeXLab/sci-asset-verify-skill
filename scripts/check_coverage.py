@@ -36,11 +36,17 @@ def load(p):
     return json.loads(Path(p).read_text(encoding='utf-8'))
 
 
+TYPES = ('data', 'tool', 'model', 'environment', 'skill', 'task', 'trajectory', 'benchmark')
+
+
 def asset_type_of(case):
-    """从 asset_id（sciasset://ns/{type}/{slug}）取类型。"""
+    """从 asset_id 取类型：兼容 v1.1 的 sciasset://{project}/{ns}/{type}/{slug} 与旧的 {ns}/{type}/{slug}。"""
     aid = str(case.get('asset_id') or '')
-    m = re.match(r'^sciasset://[^/]+/([a-z]+)/', aid)
-    if m:
+    m = re.match(r'^sciasset://[^/]+/([^/]+)/([^/]+)/[^/]+$', aid)      # 四段
+    if m and m.group(2) in TYPES:
+        return m.group(2)
+    m = re.match(r'^sciasset://[^/]+/([^/]+)/[^/]+$', aid)             # 三段（旧）
+    if m and m.group(1) in TYPES:
         return m.group(1)
     return str(case.get('asset_type') or 'unknown')
 

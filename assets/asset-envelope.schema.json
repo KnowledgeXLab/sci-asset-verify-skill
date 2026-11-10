@@ -14,8 +14,8 @@
     },
     "asset_id": {
       "type": "string",
-      "pattern": "^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/(data|tool|model|environment|skill|task|trajectory|benchmark)/[A-Za-z0-9][A-Za-z0-9._-]*$",
-      "description": "稳定标识，推荐 sciasset://{namespace}/{type}/{slug}；不得包含版本号，类型段必须与 asset_type 一致。"
+      "pattern": "^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9-]*/(data|tool|model|environment|skill|task|trajectory|benchmark)/[a-z0-9][a-z0-9._-]*$",
+      "description": "稳定标识，格式 sciasset://{project-id}/{namespace}/{asset-type}/{slug}（规范 v1.1 §4.1）；不得包含版本号，类型段必须与 asset_type 一致。"
     },
     "asset_type": {
       "type": "string",

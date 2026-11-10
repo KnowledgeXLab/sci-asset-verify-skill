@@ -35,7 +35,11 @@ TOP_LEVEL = ['schema_version', 'asset_id', 'asset_type', 'name', 'description', 
              'extensions', 'spec']
 SPEC_KEYS = ['metadata', 'artifacts', 'domain_attributes', 'asset_protocol']
 SEMVER = re.compile(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$')
-ASSET_ID = re.compile(r'^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/(data|tool|model|environment|skill|task|trajectory|benchmark)/[A-Za-z0-9][A-Za-z0-9._-]*$')
+# 规范 v1.1 §4.1：sciasset://{project-id}/{namespace}/{asset-type}/{slug}，不含版本号
+ASSET_ID = re.compile(r'^sciasset://([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)'
+                      r'/(data|tool|model|environment|skill|task|trajectory|benchmark)/([a-z0-9][a-z0-9._-]*)$')
+ASSET_ID_LEGACY = re.compile(r'^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*'
+                             r'/(data|tool|model|environment|skill|task|trajectory|benchmark)/[A-Za-z0-9][A-Za-z0-9._-]*$')
 DOMAIN_ID = re.compile(r'^domain:[a-z0-9-]+$')
 CLASS_ID = re.compile(r'^(problem|operation|stage|task):[a-z0-9-]+$')
 ABS_PATH = re.compile(r'^(/|[A-Za-z]:[\\/]|\\\\|file://)')
@@ -271,9 +275,27 @@ def check(asset, file):
     if isinstance(aid, str):
         m = ASSET_ID.match(aid)
         if not m:
-            r.err('asset_id', f'不符合 sciasset://{{namespace}}/{{type}}/{{slug}}，实际 {aid!r}')
-        elif atype and m.group(1) != atype:
-            r.err('asset_id', f'类型段 {m.group(1)!r} 与 asset_type {atype!r} 不一致')
+            if ASSET_ID_LEGACY.match(aid):
+                r.err('asset_id', '缺少 project-id 段：规范 v1.1 §4.1 要求 '
+                                  'sciasset://{project-id}/{namespace}/{asset-type}/{slug}，实际 '
+                                  f'{aid!r}')
+            else:
+                r.err('asset_id', '不符合 sciasset://{project-id}/{namespace}/{asset-type}/{slug}'
+                                  f'（§4.1），实际 {aid!r}')
+        else:
+            project, name_space, seg_type, slug = m.groups()
+            if atype and seg_type != atype:
+                r.err('asset_id', f'类型段 {seg_type!r} 与 asset_type {atype!r} 不一致')
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', project):
+                r.err('asset_id', f'project-id 段不合法：{project!r}')
+            if name_space != name_space.lower():
+                r.warn('asset_id', f'namespace 建议小写连字符：{name_space!r}')
+            if slug != slug.lower():
+                r.warn('asset_id', f'slug 建议小写：{slug!r}')
+            av0 = str(asset.get('asset_version') or '')
+            if av0 and slug.endswith('-' + av0):
+                r.err('asset_id', 'asset_id 不得包含版本号（§4.1）；版本由 asset_version 表达，'
+                                  '清单里的资产ID 才拼版本')
         if atype and str(atype) in aid and aid.rstrip('/').endswith(str(asset.get('asset_version'))):
             r.warn('asset_id', 'asset_id 以版本号结尾；规范要求 asset_id 稳定且不含版本号（§4.1）')
     if atype is not None and atype not in ASSET_TYPES:

@@ -15,7 +15,7 @@
 
 ## 表头以内置 schema 为准
 
-填表标准是 skill 自带的 `assets/external-list-schema.json`：对外发版清单 24 个字段的**名称、顺序、类型、枚举取值与填写口径**都在里面（取自规范 §7.3，字段类型与选项取自线上清单快照）。飞书 CLI 在外发环境不可用，因此表头固化在该文件里。
+填表标准是 skill 自带的 `assets/external-list-schema.json`：对外发版清单 25 个字段的**名称、顺序、类型、枚举取值与填写口径**都在里面（取自规范 §7.3，字段类型与选项取自线上清单快照）。飞书 CLI 在外发环境不可用，因此表头固化在该文件里。
 
 规则：
 
@@ -25,43 +25,44 @@
 4. 用户**显式指定**另一份 schema 时才例外：把该 schema 落成 `registration/schema-snapshot.json`，在 `registration/field-map.json` 里逐字段列出与内置 schema 的差异（缺失/多余/改名/枚举不同），否则一律以内置 schema 为准。
 5. **用 `scripts/build_list.py` 生成表格，生成即自检**：`python scripts/build_list.py --rows rows.json --out registration/科学数字资产清单.xlsx`。脚本按 schema 建表头、加枚举下拉、写「用例明细」「字段口径说明」，并自动调用 `scripts/check_list.py` 校验表头顺序、枚举、必填、版本格式、`资产名称+版本` 唯一、用例明细引用可解析，结果落盘为 `registration/check-list-report.json`（可用 `--check-json-out` 指定路径）；不通过时非 0 退出并保留 xlsx。已有表格需单独复检时用 `python scripts/check_list.py <xlsx>`。脚本报 error 时先修数据，不要改 schema 迁就。
 
-## 24 个字段
+## 25 个字段
 
 下表是 `assets/external-list-schema.json` 的可读摘要；**权威定义以 JSON 为准**（含每列的 options 与示例）。`|` 为表头里的 ASCII 竖线，写入时保留原表头。
 
 | # | 字段 | 类型 | 必填 | 填写要求 | 主要来源（asset.json） |
 |---|---|---|---|---|---|
-| 1 | 资产名称 | 文本 | 必填 | 外部可读；科学对象+功能+必要规格，≤25 字，不用内部代号 | `name` |
-| 2 | 资产类型 | 单选 | 必填 | data/tool/model/environment/skill/task/trajectory/benchmark 八选一 | `asset_type` |
-| 3 | 领域Profile | 单选/多选 | 必填 | 填清单内的中文领域名；与 `domains[].id`（`domain:*`）一一对应，机器处理以 ID 为准 | `domains` |
-| 4 | 资产摘要 | 长文本 | 必填 | 一到两句：解决什么问题、核心能力、适用边界 | `description` |
-| 5 | 任务\|操作标签 | 多选 | 必填 | 只取注册词表 `problem:*`/`operation:*`/`stage:*`/`task:*`，不自造；task/skill/trajectory/benchmark 至少一个 | `task_classes[].id` |
-| 6 | 任务描述 | 长文本 | 建议必填 | 给定条件、处理目标、预期产出；与标签互补 | `spec.metadata` |
-| 7 | 科学对象 | 文本 | 必填 | 实际处理的科学实体，2–6 个名词短语 | `spec.domain_attributes` |
-| 8 | 资产提供单位 | 文本 | 必填 | 提供方或责任单位全称 | `provenance.provider` |
-| 9 | 联系人 | 文本 | 必填 | 只写姓名，必要时补联系方式；写入前 strip | 交付材料/用户提供 |
-| 10 | 项目负责人 | 文本 | 选填 | `姓名 - 单位` 或姓名 | 交付材料/用户提供 |
-| 11 | 来源\|产出方式 | 文本 | 必填 | 采集/实验/仿真/模型生成/专家整理/自研封装；派生须写上游 | `provenance.source` |
-| 12 | 版本 | 文本 | 必填 | 语义化版本，与 `asset_version` 一致，不保留 `v` 前缀差异 | `asset_version` |
-| 13 | 格式\|接口 | 文本/多选 | 条件必填 | 数据格式、服务接口、Schema、镜像；可执行资产写清调用方式与入口 | `spec.metadata`/`spec.artifacts[].media_type` |
-| 14 | 规模\|数量 | 文本 | 选填 | 数量+单位，多项用"；"，注明统计口径 | `spec.metadata` |
-| 15 | 时间范围 | 文本 | 选填 | 采集/实验/运行/适用时间；无则写"不适用（按输入重算）" | `provenance`/`spec.metadata` |
-| 16 | 空间\|坐标\|实验条件 | 长文本 | 选填 | 空间范围、CRS、分辨率、实验与测量条件 | `spec.domain_attributes` |
-| 17 | 输入说明 | 长文本 | 可执行资产必填 | 字段/格式/单位/必填性；文件类写清命名与目录约定 | `spec.metadata` 输入合同 |
-| 18 | 输出说明 | 长文本 | 可执行资产必填 | 输出实体/格式/单位/数量，以及失败时的返回形式 | `spec.metadata` 输出合同 |
-| 19 | 依赖资源 | 文本 | 选填 | 必需的数据、模型、服务、库；跨资产依赖写清资产名称 | `spec.artifacts` + 交叉依赖 |
-| 20 | 运行环境\|资源要求 | 长文本 | 可执行资产必填 | 系统、运行时与依赖版本、CPU/GPU、内存、网络与访问策略 | `spec.metadata.runtime` |
-| 21 | 评价指标\|验收条件 | 长文本 | 建议必填 | 先写覆盖了哪几类检查与检查点，再写阈值与通过数量；不得只写"N/N 通过" | 本次 `cases.json`/`comparison.json` 或已有报告 |
-| 22 | 敏感级别 | 单选 | 必填 | `内部`/`敏感`/`高度敏感`；含个人、医疗或受限第三方资料的资产不得填「内部」 | `governance.access`/`privacy` |
-| 23 | 质量说明 | 长文本 | 建议必填 | 抽检与测试结果、已知缺陷、适用范围、不确定性与待确认字段 | 本次报告或已有报告 |
-| 24 | 资产关联 | 关联/文本 | 建议必填 | 依赖/派生/被引用关系，写资产名称或 `asset_id` | `provenance`/交叉依赖 |
+| 1 | 资产ID | 文本 | 必填 | 格式 `{project-id}/{namespace}/{asset-type}/{slug}`，即包络 `asset_id` 去掉 `sciasset://` 前缀；**不含版本号**，版本由「版本」列表达。用 scripts/asset_ids.py 生成，不手写 | `asset_id` |
+| 2 | 资产名称 | 文本 | 必填 | 外部可读；科学对象+功能+必要规格，≤25 字，不用内部代号 | `name` |
+| 3 | 资产类型 | 单选 | 必填 | data/tool/model/environment/skill/task/trajectory/benchmark 八选一 | `asset_type` |
+| 4 | 领域Profile | 单选/多选 | 必填 | 填清单内的中文领域名；与 `domains[].id`（`domain:*`）一一对应，机器处理以 ID 为准 | `domains` |
+| 5 | 资产摘要 | 长文本 | 必填 | 一到两句：解决什么问题、核心能力、适用边界 | `description` |
+| 6 | 任务\|操作标签 | 多选 | 必填 | 只取注册词表 `problem:*`/`operation:*`/`stage:*`/`task:*`，不自造；task/skill/trajectory/benchmark 至少一个 | `task_classes[].id` |
+| 7 | 任务描述 | 长文本 | 建议必填 | 给定条件、处理目标、预期产出；与标签互补 | `spec.metadata` |
+| 8 | 科学对象 | 文本 | 必填 | 实际处理的科学实体，2–6 个名词短语 | `spec.domain_attributes` |
+| 9 | 资产提供单位 | 文本 | 必填 | 提供方或责任单位全称 | `provenance.provider` |
+| 10 | 联系人 | 文本 | 必填 | 只写姓名，必要时补联系方式；写入前 strip | 交付材料/用户提供 |
+| 11 | 项目负责人 | 文本 | 选填 | `姓名 - 单位` 或姓名 | 交付材料/用户提供 |
+| 12 | 来源\|产出方式 | 文本 | 必填 | 采集/实验/仿真/模型生成/专家整理/自研封装；派生须写上游 | `provenance.source` |
+| 13 | 版本 | 文本 | 必填 | 语义化版本，与 `asset_version` 一致，不保留 `v` 前缀差异 | `asset_version` |
+| 14 | 格式\|接口 | 文本/多选 | 条件必填 | 数据格式、服务接口、Schema、镜像；可执行资产写清调用方式与入口 | `spec.metadata`/`spec.artifacts[].media_type` |
+| 15 | 规模\|数量 | 文本 | 选填 | 数量+单位，多项用"；"，注明统计口径 | `spec.metadata` |
+| 16 | 时间范围 | 文本 | 选填 | 采集/实验/运行/适用时间；无则写"不适用（按输入重算）" | `provenance`/`spec.metadata` |
+| 17 | 空间\|坐标\|实验条件 | 长文本 | 选填 | 空间范围、CRS、分辨率、实验与测量条件 | `spec.domain_attributes` |
+| 18 | 输入说明 | 长文本 | 可执行资产必填 | 字段/格式/单位/必填性；文件类写清命名与目录约定 | `spec.metadata` 输入合同 |
+| 19 | 输出说明 | 长文本 | 可执行资产必填 | 输出实体/格式/单位/数量，以及失败时的返回形式 | `spec.metadata` 输出合同 |
+| 20 | 依赖资源 | 文本 | 选填 | 必需的数据、模型、服务、库；跨资产依赖写清资产名称 | `spec.artifacts` + 交叉依赖 |
+| 21 | 运行环境\|资源要求 | 长文本 | 可执行资产必填 | 系统、运行时与依赖版本、CPU/GPU、内存、网络与访问策略 | `spec.metadata.runtime` |
+| 22 | 评价指标\|验收条件 | 长文本 | 建议必填 | 先写覆盖了哪几类检查与检查点，再写阈值与通过数量；不得只写"N/N 通过" | 本次 `cases.json`/`comparison.json` 或已有报告 |
+| 23 | 敏感级别 | 单选 | 必填 | `内部`/`敏感`/`高度敏感`；含个人、医疗或受限第三方资料的资产不得填「内部」 | `governance.access`/`privacy` |
+| 24 | 质量说明 | 长文本 | 建议必填 | 抽检与测试结果、已知缺陷、适用范围、不确定性与待确认字段 | 本次报告或已有报告 |
+| 25 | 资产关联 | 关联/文本 | 建议必填 | 依赖/派生/被引用关系，写资产名称或 `asset_id` | `provenance`/交叉依赖 |
 
 模板若把某字段限定为"是/空"（如内部清单的"校验"），按模板标记，结论写进「质量说明」「评价指标|验收条件」或证据文件，不写进该字段。
 
 ## 一资产一行
 
 - 每个独立资产在「资产明细」恰好一行：权重、配置、文档、数据分片作为组成文件；独立数据集、模型、工具、skill 分别登记。
-- 对外清单没有内部编号列，行标识用「资产名称 + 版本」；生成 `registration/asset-row-map.json`，记录 `资产名称`、`asset_id`、`version`、`sheet`、`row`、`case_ids`、登记状态，并核对它与 inventory 的资产集合完全相等。
+- 行标识用「资产ID + 版本」（资产ID 不含版本号，靠两列一起保证唯一），不用「资产名称 + 版本」；生成 `registration/asset-row-map.json`，记录 `资产名称`、`asset_id`、`version`、`sheet`、`row`、`case_ids`、登记状态，并核对它与 inventory 的资产集合完全相等。
 - 若用户另有内部编号规则，编号写在 `asset-row-map.json` 与 `field-evidence.json`，不进对外清单。
 - 多个 case 不增加资产行；case_ids 只在行映射与用例明细中出现。
 
