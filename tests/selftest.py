@@ -79,7 +79,7 @@ def valid_rows() -> dict:
         "资产ID": "2026ZD123456/earth/data/sample",
         "资产名称": "示例数据资产", "资产类型": "data", "领域Profile": "地球科学",
         "资产摘要": "自测用的最小合规数据资产。", "任务|操作标签": "operation:data-processing",
-        "科学对象": "样点", "资产提供单位": "示例单位", "联系人": "待补",
+        "科学对象": "样点", "资产提供单位": "示例单位",
         "来源|产出方式": "original", "版本": "1.0.0", "输入说明": "文件", "输出说明": "文件",
         "运行环境|资源要求": "CPU", "敏感级别": "内部",
     }], "cases": [{"用例编号": "c1", "资产名称": "示例数据资产", "资产版本": "1.0.0",
@@ -88,7 +88,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/7] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/8] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -150,7 +150,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/7] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/8] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -163,7 +163,7 @@ def t2_list(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "build_list.py"), "--rows", str(rows), "--out", str(xlsx)], case)
     rep = case / "check-list-report.json"
     body = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
-    record("正例：生成 24 列清单并自检通过",
+    record("正例：生成 23 列清单并自检通过",
            proc.returncode == 0 and (body.get("summary") or {}).get("errors") == 0,
            f"rc={proc.returncode} summary={body.get('summary')}")
 
@@ -237,7 +237,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/7] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/8] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -281,7 +281,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/7] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/8] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -315,7 +315,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/7] prune_evidence.py — 只留报告类证据")
+    print("\n[5/8] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -343,7 +343,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/7] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/8] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -396,7 +396,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/7] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/8] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -434,13 +434,70 @@ def t7_asset_ids(tmp: Path) -> None:
     record("负例：包络仍是三段格式 → --check 退出码 1", proc.returncode == 1, f"rc={proc.returncode}")
 
 
+# --------------------------------------------------------------------------- T8 外部资产引用
+def t8_external_refs(tmp: Path) -> None:
+    print("\n[8/8] external_refs.py — 外部资产引用校验与「资产关联」列")
+    base = tmp / "t8"
+    pkg = base / "pkg"
+    (pkg / "data" / "scotia").mkdir(parents=True)
+    (pkg / "catalog.json").write_text(json.dumps([{
+        "asset_id": "sciasset://2026ZD123456/earth/data/sample", "asset_type": "data",
+        "name": "示例数据资产", "asset_version": "1.0.0"}], ensure_ascii=False), encoding="utf-8")
+    rows = base / "rows.json"
+    rows.write_text(json.dumps({"rows": [{"资产ID": "2026ZD123456/earth/data/sample",
+                                          "资产名称": "示例数据资产", "版本": "1.0.0"}]},
+                               ensure_ascii=False), encoding="utf-8")
+
+    proc = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg)], base)
+    record("正例：无 external_assets.json 时合规跳过",
+           proc.returncode == 0 and "未发现" in proc.stdout, f"rc={proc.returncode}")
+
+    (pkg / "external_assets.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
+                    "target_path": "data/scotia", "media_type": "inode/directory"}]},
+        ensure_ascii=False), encoding="utf-8")
+    out = base / "refs.json"
+    proc = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--rows", str(rows),
+                "--inject", "--json-out", str(out)], base)
+    cell = json.loads(rows.read_text(encoding="utf-8"))["rows"][0].get("资产关联", "")
+    record("正例：合法引用写入「资产关联」列（required 缺省按 true）",
+           proc.returncode == 0 and "外部资产引用：" in cell
+           and "sciasset://2026ZD123456/earth/data/raw" in cell
+           and "（required" in cell,
+           f"rc={proc.returncode} cell={cell[:90]}")
+
+    def bad_write(name, mutate, expect):
+        p2 = base / name
+        (p2 / "data" / "scotia").mkdir(parents=True)
+        doc = {"schema_version": "1.0.0", "assets": [
+            {"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
+             "target_path": "data/scotia"}]}
+        mutate(doc)
+        (p2 / "external_assets.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        pr = run([str(SCRIPTS / "external_refs.py"), "--package", str(p2), "--check",
+                  "--json-out", str(p2 / "r.json")], base)
+        rep = json.loads((p2 / "r.json").read_text(encoding="utf-8"))
+        msgs = " ".join(x["message"] for x in rep.get("problems") or [])
+        record(f"负例：{name}", pr.returncode == 1 and expect in msgs, f"rc={pr.returncode} msg={msgs[:80]}")
+
+    bad_write("三段资产编号", lambda d: d["assets"][0].__setitem__(
+        "asset_id", "sciasset://mineralmind/data/raw"), "不含版本号")
+    bad_write("绝对路径", lambda d: d["assets"][0].__setitem__(
+        "target_path", "/abs/path.nc"), "相对任务包根")
+    bad_write("缺版本", lambda d: d["assets"][0].pop("asset_version"), "缺少 asset_version")
+    bad_write("越出包根", lambda d: d["assets"][0].__setitem__(
+        "target_path", "../outside.nc"), "不得包含")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
     print(f"skill 自测：{SKILL}")
     print(f"临时目录：{tmp}")
     try:
-        for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage, t7_asset_ids):
+        for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
+               t7_asset_ids, t8_external_refs):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

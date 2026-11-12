@@ -39,9 +39,11 @@ python scripts/work_copy.py clean <资产根目录> --run-id <run_id> --verify  
 
 ## 2. 资产登记填表（对外发版资产清单）
 
-读取 [references/registration.md](references/registration.md)，逐列填法、长度基准和真实样例见 [references/registration-examples.md](references/registration-examples.md)。填的是**对外发版资产清单**（规范 §7，25 列，首列为资产ID），不是内部管理清单；内部管理用的资产编号、校验、资产校验报告、记录人、集成负责人、集成状态不进对外清单。
+读取 [references/registration.md](references/registration.md)，逐列填法、长度基准和真实样例见 [references/registration-examples.md](references/registration-examples.md)。填的是**对外发版资产清单**（规范 §7，23 列，首列为资产ID），不是内部管理清单；内部管理用的资产编号、校验、资产校验报告、记录人、集成负责人、集成状态不进对外清单。
 
-**表头以 skill 内置 schema 为准**：填表标准是 `assets/external-list-schema.json`（对外发版清单 25 个字段的名称、顺序、类型、枚举与填写口径，取自规范 §7.3）。**不检查、不套用用户自定义模板**，也不为了适配某个模板改写字段集；飞书 CLI 在外发环境不可用，故表头已固化在该文件里。用户显式指定另一份 schema 时，才把该 schema 落成 `registration/schema-snapshot.json` 并记录与内置 schema 的差异，否则一律以内置为准。**资产ID 由包络生成，不手写**：先跑 `python scripts/asset_ids.py --package <资产根目录> --rows rows.json --inject`，它把包络里的 `asset_id` 去掉 `sciasset://` 前缀写进「资产ID」列，即 `{project-id}/{namespace}/{asset-type}/{slug}`——**不含版本号**（规范 §4.1 要求 asset_id 稳定），版本由清单的「版本」列表达。
+**表头以 skill 内置 schema 为准**：填表标准是 `assets/external-list-schema.json`（对外发版清单 23 个字段的名称、顺序、类型、枚举与填写口径，取自规范 §7.3）。**不检查、不套用用户自定义模板**，也不为了适配某个模板改写字段集；飞书 CLI 在外发环境不可用，故表头已固化在该文件里。用户显式指定另一份 schema 时，才把该 schema 落成 `registration/schema-snapshot.json` 并记录与内置 schema 的差异，否则一律以内置为准。**资产ID 由包络生成，不手写**：先跑 `python scripts/asset_ids.py --package <资产根目录> --rows rows.json --inject`，它把包络里的 `asset_id` 去掉 `sciasset://` 前缀写进「资产ID」列，即 `{project-id}/{namespace}/{asset-type}/{slug}`——**不含版本号**（规范 §4.1 要求 asset_id 稳定），版本由清单的「版本」列表达。
+
+**外部资产引用是可选文件，存在即校验**：包根目录若有 `external_assets.json`（声明包内未随附、需平台按资产编号解析的资产），先跑 `python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject`；它校验 asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用，通过后把引用明细写进清单最后一列「资产关联」（`required` 可不填，缺省视为 true）。文件不存在则跳过，该列保持原值。校验不通过时必须停下修包，不能带着不合规的引用继续登记。
 
 **用脚本生成表格，生成即自检**：把每行内容整理成 `rows.json`（`{"rows":[{...}],"cases":[{...}]}`，键名与 schema 的 `header` 一致），然后
 
@@ -53,7 +55,7 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 **不需要事先安装 openpyxl**：`scripts/_deps.py` 依次尝试「环境已装的 → skill 自带 `vendor/`（openpyxl 3.1.5 + et_xmlfile 2.0.0，纯 Python 随仓库分发）→ 自动安装到 `vendor/`」，三者都不成才报错并给出修复命令（`ACI_ASSET_VERIFY_AUTO_INSTALL=0` 可关闭自动安装，离线环境靠 `vendor/`）。生成日志会打印实际用的 openpyxl 版本与来源，写报告时可据此注明。
 
-输出 `registration/科学数字资产清单.xlsx`（由 build_list.py 生成并通过自检）、`registration/check-list-report.json`（自检结果落盘）、`registration/field-evidence.json`、`registration/asset-row-map.json`。严格执行"一资产一行"：每个独立资产在资产明细恰好一行，25 个字段逐项处理；行标识用「资产ID + 版本」，`asset_id` 记在 asset-row-map.json，内部编号（如有）记在行映射与证据文件。以 asset-row-map.json 核对 inventory 与 Excel 的登记集合；缺 case/真值/执行条件也必须登记。**资产协议不入表**——它只写在 `asset.json` 的 `spec.asset_protocol`；验证报告路径写 field-evidence.json，必要时在「质量说明」末尾一句指路。表内描述简短、口径一致，详细来源与执行状态放证据文件；仅填表时可直接采用匹配当前资产与版本的已有报告结论。
+输出 `registration/科学数字资产清单.xlsx`（由 build_list.py 生成并通过自检）、`registration/check-list-report.json`（自检结果落盘）、`registration/field-evidence.json`、`registration/asset-row-map.json`。严格执行"一资产一行"：每个独立资产在资产明细恰好一行，23 个字段逐项处理；行标识用「资产ID + 版本」，`asset_id` 记在 asset-row-map.json，内部编号（如有）记在行映射与证据文件。以 asset-row-map.json 核对 inventory 与 Excel 的登记集合；缺 case/真值/执行条件也必须登记。**资产协议不入表**——它只写在 `asset.json` 的 `spec.asset_protocol`；验证报告路径写 field-evidence.json，必要时在「质量说明」末尾一句指路。表内描述简短、口径一致，详细来源与执行状态放证据文件；仅填表时可直接采用匹配当前资产与版本的已有报告结论。
 
 登记表填写和平台实体注册分别记状态；登记表本身不是验收结论，结论以 `validation-report.md` 为准。若用户要求平台注册，按平台当前 schema 生成实体、按引用依赖顺序提交，并保存实体 ID/回执。没有平台接口时完成表格和可生成的实体草稿，标记“平台未注册”，保留所需信息，不能把填完 Excel 称为平台注册成功。
 

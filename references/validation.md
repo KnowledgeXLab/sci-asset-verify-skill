@@ -42,6 +42,8 @@ python scripts/check_coverage.py --cases <run>/cases.json --inventory <run>/inve
     --run-dir <run> --report <run>/validation-report.md
 ```
 
+外部资产引用（若包根有 `external_assets.json`）在登记阶段由 `scripts/external_refs.py` 校验，其结果写入清单「资产关联」列；用例执行阶段据此确认被引用资产是否真的可达，不可达时按 `required` 决定是否阻断。
+
 脚本按 `asset_id` 的类型段统计 planned/executed/passed/skipped，与下限比较，把覆盖度小节注入报告（`<!-- coverage:begin -->` 标记块，重复运行原地替换），并写 `coverage.json`。任何类型低于下限或包内有该类型资产却没有用例时：报告必须写「覆盖不足」，**不得宣称闭环完成**；脚本以非 0 退出（`--no-gate` 可只出报告不拦截）。
 
 缺真值标 not_evaluated；未执行标 skipped/blocked；预期错误满足协议可 pass。分母保留全部计划 case，分别给出 planned/executed/pass/fail/blocked/skipped/not_evaluated；通过率明确分母，零分母写不适用。

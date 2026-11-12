@@ -128,6 +128,13 @@ def main(argv=None) -> int:
                         if tcol and seg_type != tcol:
                             errors.append({'where': f'{sheet_name}!{h}{r}',
                                            'message': f'资产ID 类型段 {seg_type!r} 与「资产类型」列 {tcol!r} 不一致'})
+                if h == '资产关联':
+                    for tok in re.findall(r'sciasset://[^\s；;，,（）()]+', str(val)):
+                        if not re.match(r'^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9-]*/'
+                                        r'(data|tool|model|environment|skill|task|trajectory|benchmark)/'
+                                        r'[a-z0-9][a-z0-9._-]*$', tok):
+                            errors.append({'where': f'{sheet_name}!{h}{r}',
+                                           'message': f'资产关联里的资产编号格式不合法（应为四段、不含版本号）：{tok!r}'})
                 if h == '任务|操作标签':
                     for p in [x.strip() for x in re.split(r'[;；]', str(val)) if x.strip()]:
                         if not re.match(r'^(problem|operation|stage|task):[a-z0-9-]+$', p):

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "name": "对外发版资产清单",
-  "description": "资产提供方提交给外部单位的资产目录表头与字段说明。本文件是登记表的唯一标准：填写时以本文件的 24 个字段为准，不检查、不套用用户自定义模板；确需改用其他 schema 时由用户显式指定并记录在 schema-snapshot.json。",
+  "description": "资产提供方提交给外部单位的资产目录表头与字段说明。本文件是登记表的唯一标准：填写时以本文件的 23 个字段为准，不检查、不套用用户自定义模板；确需改用其他 schema 时由用户显式指定并记录在 schema-snapshot.json。",
   "authority": {
     "spec": "《科学智能体资产统一表征体系设计 v1.0》",
     "spec_section": "7. 对外发版资产清单（7.3 字段说明 24 列）",
@@ -19,14 +19,16 @@
     "资产校验报告",
     "记录人",
     "集成负责人",
-    "目前集成状态"
+    "目前集成状态",
+    "联系人",
+    "项目负责人"
   ],
   "naming_notes": [
-    "上游表列名为「资产提供单位」，本清单沿用该名称（历史文档中的「提供单位」指同一字段）。",
     "「资产协议」不占列：写在资产描述文件 asset.json 的 spec.asset_protocol（repository_uri + revision + path）。",
     "「验证报告路径」不占列：写入 registration/field-evidence.json；必要时在「质量说明」末尾一句指路。",
     "表头中的 | 为 ASCII 竖线，写入 Excel 时保留原样，不替换为全角。",
-    "「资产ID」不含版本号（规范 §4.1 要求 asset_id 稳定），版本由「版本」列表达；行标识为「资产ID + 版本」。"
+    "「资产ID」不含版本号（规范 §4.1 要求 asset_id 稳定），版本由「版本」列表达；行标识为「资产ID + 版本」。",
+    "「联系人」「项目负责人」自 v1.2 起不再进对外清单，对接人与责任归属在项目台账维护。"
   ],
   "file_type_options": [
     "text",
@@ -154,24 +156,6 @@
     },
     {
       "order": 10,
-      "header": "联系人",
-      "type": "text",
-      "required": true,
-      "definition": "对接人姓名，必要时补联系方式；写入前去除首尾空格。",
-      "source_field": "交付材料 / 用户提供",
-      "example": "联系人姓名"
-    },
-    {
-      "order": 11,
-      "header": "项目负责人",
-      "type": "text",
-      "required": false,
-      "definition": "提供方项目内的负责人（「姓名 - 单位」或姓名），用于验收与责任对齐；无可留空。",
-      "source_field": "交付材料 / 用户提供",
-      "example": "负责人姓名 - 示例单位"
-    },
-    {
-      "order": 12,
       "header": "来源|产出方式",
       "type": "text",
       "required": true,
@@ -180,7 +164,7 @@
       "example": "derived：封装既有实现，源码与来源映射见 source_provenance.json"
     },
     {
-      "order": 13,
+      "order": 11,
       "header": "版本",
       "type": "text",
       "required": true,
@@ -189,7 +173,7 @@
       "example": "3.1.1"
     },
     {
-      "order": 14,
+      "order": 12,
       "header": "格式|接口",
       "type": "text",
       "required": false,
@@ -199,7 +183,7 @@
       "example": "CLI（run_tool.py interpolate-idw --input request.json --output-dir <dir>）"
     },
     {
-      "order": 15,
+      "order": 13,
       "header": "规模|数量",
       "type": "text",
       "required": false,
@@ -208,7 +192,7 @@
       "example": "1 个 CLI 工具；输入输出 Schema 各 1 份；给定用例 9 组"
     },
     {
-      "order": 16,
+      "order": 14,
       "header": "时间范围",
       "type": "text",
       "required": false,
@@ -217,7 +201,7 @@
       "example": "整理快照 2026-10-13"
     },
     {
-      "order": 17,
+      "order": 15,
       "header": "空间|坐标|实验条件",
       "type": "text",
       "required": false,
@@ -226,7 +210,7 @@
       "example": "平台网格 114×92、1000 m（EPSG:32620 假定）"
     },
     {
-      "order": 18,
+      "order": 16,
       "header": "输入说明",
       "type": "text",
       "required": true,
@@ -236,7 +220,7 @@
       "example": "请求 JSON 必填 arrays（含 coords_train/y_train/coords_predict）、coordinate_reference_system；可选 power/search_radius/k/eps"
     },
     {
-      "order": 19,
+      "order": 17,
       "header": "输出说明",
       "type": "text",
       "required": true,
@@ -246,7 +230,7 @@
       "example": "interpolated_values.npy（float64，[n_query]，单位同 y_train）；失败写 error.json 并返回非零退出码"
     },
     {
-      "order": 20,
+      "order": 18,
       "header": "依赖资源",
       "type": "text",
       "required": false,
@@ -255,7 +239,7 @@
       "example": "数据资产 <被依赖的数据资产名>；第三方库见 requirements.lock.txt"
     },
     {
-      "order": 21,
+      "order": 19,
       "header": "运行环境|资源要求",
       "type": "text",
       "required": true,
@@ -265,7 +249,7 @@
       "example": "Linux；Python 3.12；仅需 CPU；输出目录须为空"
     },
     {
-      "order": 22,
+      "order": 20,
       "header": "评价指标|验收条件",
       "type": "text",
       "required": false,
@@ -275,7 +259,7 @@
       "example": "9 组用例（解析解 8、非法输入 1）；逐值 atol=1e-12；9/9 通过"
     },
     {
-      "order": 23,
+      "order": 21,
       "header": "敏感级别",
       "type": "select",
       "required": true,
@@ -289,7 +273,7 @@
       "example": "敏感"
     },
     {
-      "order": 24,
+      "order": 22,
       "header": "质量说明",
       "type": "text",
       "required": false,
@@ -299,7 +283,7 @@
       "example": "解析解与非法输入用例 9/9 通过；search_radius 内无近邻时回退全部训练点，不构成严格无支持区遮罩。"
     },
     {
-      "order": 25,
+      "order": 23,
       "header": "资产关联",
       "type": "text",
       "required": false,
@@ -323,5 +307,17 @@
     "pattern": "^([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)/(data|tool|model|environment|skill|task|trajectory|benchmark)/([a-z0-9][a-z0-9._-]*)$",
     "derive_from": "asset.json 的 asset_id 去掉 sciasset:// 前缀",
     "consistency": "资产ID 的类型段必须与「资产类型」列一致；资产ID 不含版本号，版本只写在「版本」列"
+  },
+  "removed_fields": {
+    "联系人": "v1.2 起移出对外清单（对接人由项目台账维护）",
+    "项目负责人": "v1.2 起移出对外清单（责任对齐在项目台账维护）"
+  },
+  "external_refs": {
+    "file": "external_assets.json",
+    "location": "资产包根目录（可选文件）",
+    "target_column": "资产关联",
+    "schema": "assets/external-assets.schema.json",
+    "spec_source": "《课题5 地学科学问题收集包核验报告》附：外部资产引用格式",
+    "fill_rule": "存在该文件时先跑 scripts/external_refs.py 校验并生成「资产关联」列内容；不存在时该列保持原值（可由人工按依赖关系填写）。"
   }
 }
