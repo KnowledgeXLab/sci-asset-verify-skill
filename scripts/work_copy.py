@@ -31,6 +31,12 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 STATE_NAME = 'work-copy.json'
 RUNS_DIR = 'asset-runs'
 
@@ -57,7 +63,7 @@ def load_state(asset_root: Path, run_id: str) -> dict | None:
 def save_state(asset_root: Path, run_id: str, state: dict) -> Path:
     p = state_path(asset_root, run_id)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    p.write_text(json.dumps(_stamp(state), ensure_ascii=False, indent=2), encoding='utf-8')
     return p
 
 

@@ -25,6 +25,12 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 DEFAULT_MIN = Path(__file__).resolve().parents[1] / 'assets' / 'case-minimums.json'
 BEGIN, END = '<!-- coverage:begin -->', '<!-- coverage:end -->'
 TYPE_CN = {'data': 'data 数据', 'tool': 'tool 工具', 'model': 'model 模型',
@@ -162,7 +168,7 @@ def main(argv=None) -> int:
 
     json_out = Path(args.json_out) if args.json_out else out_dir / 'coverage.json'
     json_out.parent.mkdir(parents=True, exist_ok=True)
-    json_out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    json_out.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
 
     # ---- markdown 小节
     lines = [BEGIN, '### 用例覆盖度（按资产类型）', '']

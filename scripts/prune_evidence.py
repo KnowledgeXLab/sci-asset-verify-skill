@@ -39,6 +39,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 KEEP_SUFFIX = {'.md', '.json', '.txt', '.log', '.xlsx'}
 # 目录名命中即整目录清理：逐 case 工作目录，以及由包内脚本可重建的数据/参考工作目录
 REGENERABLE_DIRS = {'work', '_prepared', 'refwork', 'data-offline', 'data-all', 'prepared-data', 'mmwf-data'}
@@ -256,7 +262,7 @@ def main(argv=None) -> int:
         'report_note_injected': note,
     }
     if not args.dry_run:      # --dry-run 只预览，不落盘、不改台账
-        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        out_path.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps({k: payload[k] for k in ('run', 'pruned_items', 'pruned_bytes', 'bytes_before',
                                               'bytes_after', 'ledger_marks', 'report_note_injected')},
                      ensure_ascii=False, indent=2))

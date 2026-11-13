@@ -93,7 +93,15 @@ python scripts/prune_evidence.py --run <资产根目录>/asset-runs/<run_id> [--
 
 它按保留规则删掉 `*/work/`、`_prepared/`/`refwork/`/`data-all/`/`data-offline/` 这类可重建目录、`deployment/probes/*/out/` 与 `registration/` 之外的大体积实体文件，把清理清单与前后体积写进 `evidence-prune.json`，给 `cases.json`/`comparison.json` 里被删的 `actual_output` 打 `actual_pruned: true`，并把「证据保留口径」小节注入 `validation-report.md`。不要用 `rm -rf` 手工删——台账标记、报告口径和清理记录要一起落下。需要留原始输出时加 `--keep-work`（只清大体积实体文件）。
 
-完成条件：清单中所有 case 都有执行状态和证据；预期失败用例收到约定错误算通过，运行环境故障不能代替预期错误；`evidence-prune.json` 存在且 `validation-report.md` 含「证据保留口径」。
+**收尾最后一步：写上校验 skill 版本**（必须在 prune 之后）：
+
+```
+python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
+```
+
+它把「校验工具版本」小节写到 `validation-report.md` **末尾**（`<!-- validation-tool:begin/end -->` 标记块，幂等），并给 run 内所有 dict 型证据 JSON 补 `skill` 字段（`{name, version, commit, version_source}`）。各脚本产出的 JSON 由脚本自己打戳；`cases.json`/`comparison.json`/`state.json` 这类由执行方整理的台账靠这一步补齐。版本号唯一来源是仓库根 `VERSION` 文件，有 git 时同时记提交号。补录历史批次用 `--version/--commit` 显式指定，正常流程不要用。
+
+完成条件：清单中所有 case 都有执行状态和证据；预期失败用例收到约定错误算通过，运行环境故障不能代替预期错误；`evidence-prune.json` 存在且 `validation-report.md` 含「证据保留口径」与「校验工具版本」两个小节。
 
 ## 5. 真值比较、报告和回填
 

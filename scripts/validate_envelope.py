@@ -24,6 +24,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 SCHEMA_FILE = pathlib.Path(__file__).resolve().parents[1] / 'assets' / 'asset-envelope.schema.json'
 
 ASSET_TYPES = ['data', 'tool', 'model', 'environment', 'skill', 'task', 'trajectory', 'benchmark']
@@ -655,7 +661,7 @@ def main(argv=None):
                    'summary': {'assets': 0, 'passed': 0, 'failed': 0, 'warnings': 0},
                    'read_errors': read_errors, 'results': []}
         if args.json_out:
-            pathlib.Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+            pathlib.Path(args.json_out).write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 2
     if not assets:
@@ -707,7 +713,7 @@ def main(argv=None):
     if args.json_out:
         out = pathlib.Path(args.json_out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        out.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
 
     if args.quiet:
         print(f"assets={payload['summary']['assets']} passed={payload['summary']['passed']} "

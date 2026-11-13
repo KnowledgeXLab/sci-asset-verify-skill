@@ -88,7 +88,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/8] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/9] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -186,7 +186,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/8] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/9] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -273,7 +273,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/8] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/9] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -317,7 +317,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/8] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/9] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -351,7 +351,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/8] prune_evidence.py — 只留报告类证据")
+    print("\n[5/9] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -391,7 +391,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/8] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/9] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -462,7 +462,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/8] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/9] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -502,7 +502,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/8] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/9] external_refs.py — 外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
     (pkg / "data" / "scotia").mkdir(parents=True)
@@ -556,6 +556,65 @@ def t8_external_refs(tmp: Path) -> None:
         "target_path", "../outside.nc"), "不得包含")
 
 
+# --------------------------------------------------------------------------- T9 版本可追溯
+def t9_version_stamp(tmp: Path) -> None:
+    print("\n[9/9] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
+    out = tmp / "t9" / "v.json"
+    (tmp / "t9").mkdir(parents=True, exist_ok=True)
+    proc = run([str(SCRIPTS / "_version.py")], tmp / "t9")
+    info = json.loads(proc.stdout)
+    record("正例：VERSION 文件是版本单一来源，且能取到提交号",
+           info.get("version") == ver and info.get("name") == "sci-asset-verify-skill",
+           f"version={info.get('version')} VERSION={ver}")
+
+    # 生产者 JSON 自带 skill 版本
+    pkg = tmp / "t9" / "pkg"
+    (pkg / "data").mkdir(parents=True)
+    (pkg / "data" / "a.csv").write_text("x", encoding="utf-8")
+    (pkg / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD123456/earth/data/s",
+        "asset_type": "data", "name": "示例数据", "description": "d", "asset_version": "1.0.0",
+        "lifecycle": "draft", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:data-processing"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00Z",
+                       "provider": [{"name": "p", "role": "author"}], "source": {"kind": "original"}},
+        "governance": {"license": "L", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]},
+                 "artifacts": [{"uri": "data/a.csv", "media_type": "text/csv"}],
+                 "domain_attributes": {}, "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    env = tmp / "t9" / "envelope.json"
+    run([str(SCRIPTS / "validate_envelope.py"), str(pkg), "--json-out", str(env)], tmp / "t9")
+    got = json.loads(env.read_text(encoding="utf-8")).get("skill") or {}
+    record("正例：包络报告带 skill 版本", got.get("version") == ver,
+           f"version={got.get('version')}")
+
+    ids = tmp / "t9" / "ids.json"
+    run([str(SCRIPTS / "asset_ids.py"), "--package", str(pkg), "--json-out", str(ids)], tmp / "t9")
+    got = json.loads(ids.read_text(encoding="utf-8")).get("skill") or {}
+    record("正例：资产ID 映射带 skill 版本", got.get("version") == ver, f"version={got.get('version')}")
+
+    # 报告末尾小节 + 幂等 + 台账补戳
+    r = tmp / "t9" / "run"
+    r.mkdir()
+    (r / "validation-report.md").write_text("# 报告\n\n## 1. 结论\n通过。\n", encoding="utf-8")
+    (r / "cases.json").write_text(json.dumps({"cases": [{"case_id": "c1"}]}), encoding="utf-8")
+    run([str(SCRIPTS / "stamp_report.py"), "--run", str(r)], tmp / "t9")
+    txt = (r / "validation-report.md").read_text(encoding="utf-8")
+    record("正例：报告末尾写入「校验工具版本」，且台账补上 skill 字段",
+           "## 校验工具版本" in txt and ver in txt
+           and json.loads((r / "cases.json").read_text(encoding="utf-8")).get("skill", {}).get("version") == ver,
+           "小节或台账缺版本")
+
+    run([str(SCRIPTS / "stamp_report.py"), "--run", str(r)], tmp / "t9")
+    txt2 = (r / "validation-report.md").read_text(encoding="utf-8")
+    record("正例：重复执行不重复追加小节（幂等）", txt2.count("<!-- validation-tool:begin -->") == 1,
+           f"出现 {txt2.count('<!-- validation-tool:begin -->')} 次")
+    record("正例：版本落在报告的最后", txt2.rstrip().endswith("<!-- validation-tool:end -->"),
+           "末尾不是版本小节")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -563,7 +622,7 @@ def main() -> int:
     print(f"临时目录：{tmp}")
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
-               t7_asset_ids, t8_external_refs):
+               t7_asset_ids, t8_external_refs, t9_version_stamp):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

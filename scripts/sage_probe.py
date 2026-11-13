@@ -41,6 +41,12 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 LLM_ASSET_TYPES = {'skill', 'task', 'trajectory', 'benchmark', 'model'}
 ENV_KEYS = {
     'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
@@ -325,7 +331,7 @@ def write_report(run: Path, status: str, note: str, extra: dict | None = None) -
         'need': need, 'config': {k: v for k, v in cfg.items() if k != 'api_key'},
         'evidence': extra or {},
     }
-    (run / 'sage-a1.5-report.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    (run / 'sage-a1.5-report.json').write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
     return payload
 
 
@@ -360,7 +366,7 @@ def main(argv=None) -> int:
         payload = detect(Path(args.asset_root).expanduser().resolve())
         if args.json_out:
             p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+            p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps({k: payload[k] for k in ('needed', 'reasons', 'asset_types')}, ensure_ascii=False, indent=2))
         if not payload['needed']:
             print(payload['nothing_to_do'], file=sys.stderr)
@@ -387,7 +393,7 @@ def main(argv=None) -> int:
                 rc = 0 if out['probe_ok'] else 4
         if args.json_out:
             p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding='utf-8')
+            p.write_text(json.dumps(_stamp(out), ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps({k: out.get(k) for k in ('status', 'base_url', 'model', 'api_key_present', 'missing')},
                          ensure_ascii=False, indent=2))
         if rc == 3:

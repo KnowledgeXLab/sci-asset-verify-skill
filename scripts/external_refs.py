@@ -31,6 +31,12 @@ import re
 import sys
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 FILE = 'external_assets.json'
 ASSET_ID = re.compile(r'^sciasset://([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)/'
                       r'(data|tool|model|environment|skill|task|trajectory|benchmark)/'
@@ -136,7 +142,7 @@ def main(argv=None) -> int:
         print(f'未发现 {FILE}（可选文件，合规）')
         if args.json_out:
             p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+            p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
         return 0
 
     payload['file'] = str(target)
@@ -188,7 +194,7 @@ def main(argv=None) -> int:
 
     if args.json_out:
         p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
 
     if args.check and problems:
         print(f'校验未通过：{len(problems)} 条问题')

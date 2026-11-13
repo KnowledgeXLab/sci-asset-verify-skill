@@ -30,6 +30,12 @@ import re
 import sys
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 ASSET_ID = re.compile(r'^sciasset://([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)'
                       r'/(data|tool|model|environment|skill|task|trajectory|benchmark)/([a-z0-9][a-z0-9._-]*)$')
 TYPES = 'data|tool|model|environment|skill|task|trajectory|benchmark'
@@ -124,7 +130,7 @@ def main(argv=None) -> int:
                'problems': problems, 'rows': rows}
     if args.json_out:
         p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
 
     for r in rows:
         print(f"  {str(r['asset_name'])[:28]:28s} {str(r['asset_type']):12s} "

@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部九个脚本，共 49 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十个脚本，共 55 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -128,13 +128,23 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           九个自检脚本
+scripts/           十个自检脚本
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+### 1.2-beta.4 — 2026-11-13
+
+校验过程本身可追溯：报告与每份证据 JSON 都写明用的是哪个版本的校验 skill。
+
+- 新增 `VERSION` 文件作为版本唯一来源；`scripts/_version.py` 统一读取（有 git 时同时取提交号，无 git 时记 `unknown`）
+- 所有生产者脚本产出的 JSON（`envelope-report.json`、`asset-ids.json`、`check-list-report.json`、`coverage.json`、`work-copy.json`、`evidence-prune.json`、`sage-*.json`、`external-refs` 报告）都带 `skill: {name, version, commit, version_source}`
+- 新增 `scripts/stamp_report.py`：把「校验工具版本」小节写到 `validation-report.md` **末尾**（幂等标记块），并给 run 内所有 dict 型证据 JSON 补齐 `skill` 字段（`cases.json`/`comparison.json`/`state.json` 等由执行方整理的台账靠它补）
+- 报告完成条件增加「含校验工具版本小节」
+- 自测 49 → **55 项断言**（VERSION 单一来源、两个生产者 JSON 打戳、报告末尾小节、幂等）
 
 ### 1.2-beta.3 — 2026-11-13
 
@@ -209,4 +219,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，49 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，55 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。

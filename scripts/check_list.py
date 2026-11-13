@@ -18,6 +18,12 @@ import re
 import sys
 from pathlib import Path
 
+try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
+    from _version import stamp as _stamp
+except Exception:                        # noqa: BLE001
+    def _stamp(payload):
+        return payload
+
 DEFAULT_SCHEMA = Path(__file__).resolve().parents[1] / 'assets' / 'external-list-schema.json'
 SEMVER = re.compile(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$')
 
@@ -173,7 +179,7 @@ def main(argv=None) -> int:
                'summary': {'errors': len(errors), 'warnings': len(warnings)},
                'errors': errors[:80], 'warnings': warnings[:40]}
     if args.json_out:
-        Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        Path(args.json_out).write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
     print(f"rows={rows_checked} errors={len(errors)} warnings={len(warnings)}")
     for e in payload['errors'][:20]:
         print(f"  ERROR {e['where']}: {e['message']}")
