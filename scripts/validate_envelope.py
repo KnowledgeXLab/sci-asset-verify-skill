@@ -22,6 +22,7 @@ import pathlib
 import re
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 SCHEMA_FILE = pathlib.Path(__file__).resolve().parents[1] / 'assets' / 'asset-envelope.schema.json'
 
@@ -253,6 +254,72 @@ def check_format_consistency(md, arts, r, atype):
                f'声明了 {sorted(missing)}，但 artifacts 中没有对应类型的实体')
 
 
+HASH_MAX_MB = 64                     # 声明的 sha256 只对不超过该体积的文件做实测校验
+CHECK_ARTIFACT_FILES = True          # 是否核对本地实体路径/体积/摘要（--no-artifact-files 可关）
+SCHEME = re.compile(r'^[A-Za-z][A-Za-z0-9+.-]*://')
+
+
+def _resolve_local(base: Path, uri: str):
+    """相对 asset.json 所在目录解析本地实体路径；宽容地向上找到第 3 级。
+
+    返回 (path, levels)：levels=0 表示按规范解析命中；>0 表示实际在上级目录命中（需提醒）。
+    """
+    from urllib.parse import unquote
+    rels = [uri]
+    dec = unquote(uri)                     # uri 允许百分号编码，解码后再找文件
+    if dec != uri:
+        rels.append(dec)
+    rel = uri.lstrip('./') if uri.startswith('./') else uri
+    cands = [base]
+    for _ in range(3):
+        cands.append(cands[-1].parent)
+    for r_ in rels:
+        if r_.startswith('./'):
+            r_ = r_[2:]
+        for i, d in enumerate(cands):
+            p = (d / r_).resolve()
+            if p.exists():
+                return p, i
+    return (base / rels[-1].lstrip('./')).resolve(), None
+
+
+def check_artifacts(arts, atype, r):
+    """本地实体：路径必须可达；声明了体积/摘要就核对（大文件跳过哈希并提示）。"""
+    import hashlib
+    base = Path(r.file).resolve().parent
+    for i, a in enumerate(arts):
+        uri = str(a.get('uri') or '')
+        if not uri or SCHEME.match(uri):
+            continue                      # 远程实体不在本地校验范围
+        path, level = _resolve_local(base, uri)
+        if not path.exists():
+            r.err(f'spec.artifacts[{i}].uri',
+                  f'包内找不到该实体：{uri!r}（按 asset.json 所在目录解析为 {path}）')
+            continue
+        if level:
+            r.warn(f'spec.artifacts[{i}].uri',
+                   f'实体实际在上 {level} 级目录命中（{path}）；uri 应相对 asset.json 所在目录书写')
+        size = a.get('size_bytes')
+        if isinstance(size, int) and path.is_file():
+            actual = path.stat().st_size
+            if actual != size:
+                r.err(f'spec.artifacts[{i}].size_bytes', f'声明 {size} 字节，实际 {actual} 字节')
+        want = a.get('sha256')
+        if want and path.is_file():
+            mb = path.stat().st_size / 1048576
+            if mb > HASH_MAX_MB:
+                r.warn(f'spec.artifacts[{i}].sha256',
+                       f'文件 {mb:.0f}MB 超过 {HASH_MAX_MB}MB，未实测摘要（可用 --hash-max-mb 调整）')
+            else:
+                h = hashlib.sha256()
+                with open(path, 'rb') as f:
+                    for c in iter(lambda: f.read(1 << 20), b''):
+                        h.update(c)
+                if not str(want).lower().startswith(h.hexdigest()[:len(str(want))]):
+                    r.err(f'spec.artifacts[{i}].sha256',
+                          f'摘要不符：声明 {str(want)[:12]}…，实际 {h.hexdigest()[:12]}…')
+
+
 def check(asset, file):
     r = Result(file, asset)
 
@@ -409,6 +476,8 @@ def check(asset, file):
                 role = a.get('role')
                 if role and not re.match(r'^[a-z0-9][a-z0-9._-]*$', str(role)):
                     r.warn(f'spec.artifacts[{i}].role', f'role 建议用「小写+连字符」的稳定取值：{role!r}')
+            if CHECK_ARTIFACT_FILES:
+                check_artifacts(arts, atype, r)
 
         check_format_consistency(md, arts, r, atype)
 
@@ -458,23 +527,82 @@ def check(asset, file):
     return r
 
 
-def optional_jsonschema_check(assets):
-    """有 jsonschema 时用内置 schema 复核一遍，返回额外提示列表。"""
-    try:
-        import jsonschema  # type: ignore
-    except Exception:  # noqa: BLE001
-        return None, []
+def builtin_schema_validate(inst, schema, path=''):
+    """内置轻量 JSON Schema 校验：覆盖包络 schema 实际用到的关键字。
+
+    支持 type/required/properties/items/minItems/minLength/pattern/enum/const/allOf/anyOf。
+    遇到未支持的关键字不静默放过——由调用方在结果里标注覆盖范围。
+    """
+    errs = []
+
+    def type_ok(v, t):
+        return {
+            'object': isinstance(v, dict), 'array': isinstance(v, list),
+            'string': isinstance(v, str), 'integer': isinstance(v, int) and not isinstance(v, bool),
+            'number': isinstance(v, (int, float)) and not isinstance(v, bool),
+            'boolean': isinstance(v, bool), 'null': v is None,
+        }.get(t, True)
+
+    t = schema.get('type')
+    if t and not type_ok(inst, t):
+        return [(path or '(root)', f'应为 {t}')]
+    if 'const' in schema and inst != schema['const']:
+        errs.append((path or '(root)', f'应为常量 {schema["const"]!r}'))
+    if 'enum' in schema and inst not in schema['enum']:
+        errs.append((path or '(root)', f'取值不在枚举内：{inst!r}'))
+    if isinstance(inst, str):
+        if 'minLength' in schema and len(inst) < schema['minLength']:
+            errs.append((path or '(root)', f'长度应 ≥{schema["minLength"]}'))
+        if 'pattern' in schema and not re.search(schema['pattern'], inst):
+            errs.append((path or '(root)', f'不匹配 pattern {schema["pattern"]!r}'))
+    if isinstance(inst, dict):
+        for req in schema.get('required') or []:
+            if req not in inst:
+                errs.append((f'{path}/{req}'.strip('/'), f'缺少必需字段 {req}'))
+        for k, sub in (schema.get('properties') or {}).items():
+            if k in inst and isinstance(sub, dict):
+                errs += builtin_schema_validate(inst[k], sub, f'{path}/{k}'.strip('/'))
+    if isinstance(inst, list):
+        if 'minItems' in schema and len(inst) < schema['minItems']:
+            errs.append((path or '(root)', f'元素数应 ≥{schema["minItems"]}'))
+        if isinstance(schema.get('items'), dict):
+            for i, it in enumerate(inst):
+                errs += builtin_schema_validate(it, schema['items'], f'{path}/{i}'.strip('/'))
+    for sub in schema.get('allOf') or []:
+        errs += builtin_schema_validate(inst, sub, path)
+    if schema.get('anyOf'):
+        if not any(not builtin_schema_validate(inst, sub, path) for sub in schema['anyOf']):
+            errs.append((path or '(root)', 'anyOf 的所有分支都不满足'))
+    return errs
+
+
+def optional_jsonschema_check(assets, engine='auto'):
+    """用内置 schema 复核一遍。有 jsonschema 用它，没有就用内置轻量实现——绝不静默跳过。"""
     if not SCHEMA_FILE.exists():
-        return None, []
+        return 'schema 文件缺失，未做交叉校验', []
     schema = json.loads(SCHEMA_FILE.read_text(encoding='utf-8'))
-    validator = jsonschema.Draft202012Validator(schema)
     notes = []
+    use = engine
+    if use in ('auto', 'jsonschema'):
+        try:
+            import jsonschema  # type: ignore
+            validator = jsonschema.Draft202012Validator(schema)
+            for file, asset in assets:
+                errs = sorted(validator.iter_errors(asset), key=lambda e: list(e.path))[:5]
+                for e in errs:
+                    notes.append({'file': str(file), 'asset_id': asset.get('asset_id'),
+                                  'path': '/'.join(str(x) for x in e.path) or '(root)',
+                                  'message': e.message})
+            return f'jsonschema {jsonschema.__version__}', notes
+        except Exception:  # noqa: BLE001
+            if use == 'jsonschema':
+                return 'jsonschema 不可用（已按要求不降级）', []
+    kw = 'type/required/properties/items/minItems/minLength/pattern/enum/const/allOf/anyOf'
     for file, asset in assets:
-        errs = sorted(validator.iter_errors(asset), key=lambda e: list(e.path))[:5]
-        for e in errs:
-            path = '/'.join(str(x) for x in e.path) or '(root)'
-            notes.append({'file': str(file), 'asset_id': asset.get('asset_id'), 'path': path, 'message': e.message})
-    return jsonschema.__version__, notes
+        for path, msg in builtin_schema_validate(asset, schema)[:5]:
+            notes.append({'file': str(file), 'asset_id': asset.get('asset_id'),
+                          'path': path, 'message': msg})
+    return f'builtin（{kw}）', notes
 
 
 def main(argv=None):
@@ -483,7 +611,16 @@ def main(argv=None):
     ap.add_argument('--json-out', help='把结果写成 JSON 报告')
     ap.add_argument('--strict', action='store_true', help='warning 也视为失败')
     ap.add_argument('--quiet', action='store_true', help='只输出汇总')
+    ap.add_argument('--hash-max-mb', type=int, default=64,
+                    help='声明了 sha256 的文件，超过该体积只提示不实测（默认 64MB）')
+    ap.add_argument('--schema-engine', choices=['auto', 'jsonschema', 'builtin'], default='auto',
+                    help='schema 交叉校验引擎：auto=有 jsonschema 就用，否则用内置轻量实现')
+    ap.add_argument('--no-artifact-files', action='store_true',
+                    help='不核对 artifacts 的本地路径/体积/摘要（仅用于实体不随包交付的场景）')
     args = ap.parse_args(argv)
+    global HASH_MAX_MB, CHECK_ARTIFACT_FILES
+    HASH_MAX_MB = args.hash_max_mb
+    CHECK_ARTIFACT_FILES = not args.no_artifact_files
 
     assets, read_errors = collect_assets(args.paths)
     if not assets and read_errors:
@@ -523,7 +660,7 @@ def main(argv=None):
             r.err('asset_id', f'同一 asset_id 在 {first.file} 有内容不一致的描述（§7 要求唯一）')
     results = merged
 
-    jsonschema_version, schema_notes = optional_jsonschema_check(assets)
+    jsonschema_version, schema_notes = optional_jsonschema_check(assets, args.schema_engine)
 
     failed = [r for r in results if r.errors]
     warn_count = sum(len(r.warnings) for r in results)
@@ -535,7 +672,7 @@ def main(argv=None):
         'inputs': [str(p) for p in args.paths],
         'summary': {'assets': len(results), 'passed': len(results) - len(failed), 'failed': len(failed),
                     'warnings': warn_count,
-                    'jsonschema_cross_check': (f'jsonschema {jsonschema_version}' if jsonschema_version else '未安装，跳过')},
+                    'jsonschema_cross_check': jsonschema_version or 'schema 文件缺失，未做交叉校验'},
         'read_errors': read_errors,
         'results': [r.as_dict() for r in results],
         'jsonschema_cross_check_notes': schema_notes,

@@ -92,9 +92,22 @@ def t1_envelope(tmp: Path) -> None:
     case = tmp / "t1"
     case.mkdir()
 
-    def check(doc: dict, name: str, expect_ok: bool, expect_path: str = "") -> None:
+    def make_artifacts(d: Path, doc: dict) -> None:
+        """本地实体必须真实存在，否则新增的路径校验会判缺失。"""
+        for a in (doc.get("spec") or {}).get("artifacts") or []:
+            uri = str(a.get("uri") or "")
+            if not uri or "://" in uri or uri.startswith("/"):
+                continue
+            f = d / uri
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x", encoding="utf-8")
+
+    def check(doc: dict, name: str, expect_ok: bool, expect_path: str = "",
+              make_files: bool = True) -> None:
         d = case / name
         d.mkdir(exist_ok=True)
+        if make_files:
+            make_artifacts(d, doc)
         f = d / "asset.json"
         f.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         out = d / "report.json"
@@ -124,6 +137,14 @@ def t1_envelope(tmp: Path) -> None:
     bad = minimal_envelope(); bad["governance"]["risk_level"] = "prohibited"
     check(bad, "prohibited 却带可下载内容", False, "spec.artifacts")
 
+    bad = minimal_envelope()
+    bad["spec"]["artifacts"][0]["uri"] = "missing/nope.csv"
+    check(bad, "声明的实体不在包内", False, "spec.artifacts[0].uri", make_files=False)
+
+    bad = minimal_envelope()
+    bad["spec"]["artifacts"][0]["sha256"] = "0" * 64
+    check(bad, "实体摘要与声明不符", False, "sha256")
+
     bad = minimal_envelope(); bad["asset_id"] = "sciasset://2026ZD123456/earth/tool/sample"
     check(bad, "asset_id 类型段与 asset_type 不一致", False, "asset_id")
 
@@ -143,6 +164,10 @@ def t1_envelope(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "validate_envelope.py"), str(d / "a.json"), str(d / "b.json"),
                 "--json-out", str(out)], case)
     rep = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    record("正例：schema 交叉校验有引擎标签，不再静默跳过",
+           "builtin" in str(rep.get("summary", {}).get("jsonschema_cross_check"))
+           or "jsonschema" in str(rep.get("summary", {}).get("jsonschema_cross_check")),
+           f"engine={rep.get('summary', {}).get('jsonschema_cross_check')}")
     both = [r for r in (rep.get("results") or []) if r.get("errors")]
     record("负例：同名 asset_id 内容冲突（两份都标记）", proc.returncode == 1 and len(both) == 2,
            f"rc={proc.returncode} 标记数={len(both)}")
@@ -365,6 +390,24 @@ def t6_sage(tmp: Path) -> None:
     need = json.loads(out.read_text(encoding="utf-8"))
     record("正例：含大模型 API 证据的包判定为需要测试",
            need.get("needed") is True and need.get("evidence"), f"needed={need.get('needed')}")
+
+    # 资产放在子目录（无根级 asset.json）+ 无 LLM 证据 → 类型被识别，但不需要测
+    deep = case / "deep"
+    (deep / "a" / "b").mkdir(parents=True)
+    (deep / "a" / "b" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/skill/deep", "asset_type": "skill"}, ensure_ascii=False),
+        encoding="utf-8")
+    out = case / "need_deep.json"
+    run([str(SCRIPTS / "sage_probe.py"), "detect", str(deep), "--json-out", str(out)], case)
+    need = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：子目录里的 asset.json 也被读到，但类型不单独构成需要测",
+           need.get("asset_types") == ["skill"] and need.get("needed") is False,
+           f"types={need.get('asset_types')} needed={need.get('needed')}")
+
+    out = case / "need_forced.json"
+    run([str(SCRIPTS / "sage_probe.py"), "detect", str(deep), "--assume-llm", "--json-out", str(out)], case)
+    need = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：--assume-llm 可人工强制判为需要测", need.get("needed") is True, f"needed={need.get('needed')}")
 
     # 隔离 HOME → 系统里找不到 Sage 配置 → 必须退出码 3 并打印索取清单
     fake_home = case / "home"

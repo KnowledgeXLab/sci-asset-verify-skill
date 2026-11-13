@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部九个脚本，共 40 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部九个脚本，共 45 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -135,6 +135,15 @@ vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+### 1.2-beta.2 — 2026-11-13
+
+包络校验收紧，Sage 需求判定改为证据驱动。
+
+- `validate_envelope.py` 新增实体核对：本地 `spec.artifacts[].uri` 必须真实可达（支持百分号编码路径、容忍向上 1–3 级命中并告警）；声明了 `size_bytes` 逐字节比对；声明了 `sha256` 且体积 ≤64MB 的实测摘要（大文件只提示，`--hash-max-mb` 可调），`--no-artifact-files` 可关闭
+- schema 交叉校验不再静默跳过：环境有 `jsonschema` 就用它，没有则回退内置轻量实现（覆盖 type/required/properties/items/minItems/minLength/pattern/enum/const/allOf/anyOf），报告里如实标注用的是哪个引擎
+- `sage_probe.py detect` 改为**递归**读取子目录 `asset.json`；资产类型只作提示，是否需要在 Sage 上测只由「包内是否出现大模型 API 配置/调用证据」决定；新增 `--assume-llm` 供人工强制
+- 自测扩到 **45 项断言**（实体缺失、摘要不符、schema 引擎标签、detect 递归与强制开关）
 
 ### 1.2-beta.1 — 2026-11-12
 
@@ -188,4 +197,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，40 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，45 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。

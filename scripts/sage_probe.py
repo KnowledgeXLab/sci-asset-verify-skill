@@ -58,6 +58,13 @@ PATTERNS = [
 ]
 SCAN_SUFFIX = {'.py', '.json', '.md', '.example', '.env', '.yaml', '.yml', '.txt', '.sh', '.toml'}
 SKIP_PARTS = {'asset-runs', '.git', '__pycache__', 'node_modules'}
+
+
+class _Force:
+    assume_llm = False
+
+
+args_force = _Force()
 MAX_HITS = 8
 
 
@@ -74,25 +81,40 @@ def detect(root: Path) -> dict:
     reasons, evidence = [], []
     if not root.is_dir():
         return {'needed': False, 'error': f'目录不存在：{root}', 'reasons': [], 'evidence': []}
-    # 1) 资产类型
-    catalog = None
+    # 1) 资产类型（包根 + 子目录都要读：资产常放在 <包>/<资产名>/asset.json）
+    assets = []
     for name in ('catalog.json', 'asset.json'):
         p = root / name
         if p.exists():
             try:
-                catalog = load_json(p)
+                doc = load_json(p)
             except Exception:  # noqa: BLE001
-                catalog = None
-            break
-    assets = []
-    if isinstance(catalog, list):
-        assets = catalog
-    elif isinstance(catalog, dict):
-        assets = catalog.get('assets') or ([catalog] if 'asset_id' in catalog else [])
+                doc = None
+            if isinstance(doc, list):
+                assets = doc
+            elif isinstance(doc, dict):
+                assets = doc.get('assets') or ([doc] if 'asset_id' in doc else [])
+            if assets:
+                break
+    if not assets:
+        for f in sorted(root.rglob('asset.json')):
+            rel = f.relative_to(root)
+            if SKIP_PARTS & set(rel.parts):
+                continue
+            try:
+                doc = load_json(f)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(doc, dict) and 'asset_id' in doc:
+                assets.append(doc)
     types = sorted({a.get('asset_type') for a in assets if a.get('asset_type')})
     llm_types = [t for t in types if t in LLM_ASSET_TYPES]
+    # 类型只作线索，不单独构成「需要测」：skill/task 等类型本身不代表一定调用大模型，
+    # 真正的判据是包内是否出现大模型 API 的配置/调用证据（下面第 2 步）。
     if llm_types:
-        reasons.append('包内含 ' + '、'.join(llm_types) + ' 类型资产（可能由大模型驱动）')
+        type_hint = '包内含 ' + '、'.join(llm_types) + ' 类型资产（仅作提示，需看是否有大模型 API 证据）'
+    else:
+        type_hint = None
 
     # 2) 文本证据
     hits = {}
@@ -122,9 +144,12 @@ def detect(root: Path) -> dict:
     evidence = list(hits.values())
     if evidence:
         reasons.append('包内检出大模型 API 相关配置/调用（%d 处证据）' % len(evidence))
-    needed = bool(llm_types or evidence)
+    needed = bool(evidence) or bool(getattr(args_force, 'assume_llm', False))
+    if needed and type_hint:
+        reasons.insert(0, type_hint)
     return {
         'checked_at': now(), 'asset_root': str(root), 'asset_types': types,
+        'type_hint': type_hint, 'assumed': bool(getattr(args_force, 'assume_llm', False)),
         'needed': needed, 'reasons': reasons, 'evidence': evidence,
         'nothing_to_do': None if needed else '包内没有大模型 API 调用迹象，Sage A1.5 测试不适用（not_applicable_no_llm_asset）',
     }
@@ -310,6 +335,8 @@ def main(argv=None) -> int:
 
     d = sub.add_parser('detect', help='扫描资产包是否需要 Sage 测试')
     d.add_argument('asset_root')
+    d.add_argument('--assume-llm', action='store_true',
+                   help='包内没有明显证据、但人工确认涉及大模型时强制判为需要测试')
     d.add_argument('--json-out')
 
     c = sub.add_parser('config', help='解析并可选探测 Sage 配置')
@@ -328,6 +355,8 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == 'detect':
+
+        args_force.assume_llm = getattr(args, 'assume_llm', False)
         payload = detect(Path(args.asset_root).expanduser().resolve())
         if args.json_out:
             p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)

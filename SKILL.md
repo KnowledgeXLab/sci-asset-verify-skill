@@ -15,7 +15,7 @@ description: 科学数字资产交付与验收：阅读资产包并提炼使用�
 
 在原始资产根目录下创建 `<资产根目录>/asset-runs/<run_id>/`，中间结果和最终产物统一放入该目录。后文产物路径均相对此 run 目录。每次新运行使用唯一 run_id；恢复时复用原目录。保留原始资产文件，盘点时排除 asset-runs，避免将运行产物再次登记为资产。写入：
 - `inventory.json`：资产 ID/类型/版本/来源路径/关键文件 SHA256/关联资产/证据路径/待补信息。
-- `envelope-report.json`：**只校验、不构造**。用 `scripts/validate_envelope.py` 校验包内已有资产描述文件（`asset.json`/`catalog.json`）是否符合规范 §4 公共包络（schema 见 `assets/asset-envelope.schema.json`，含 §5 类型专有要求与 §6/§7 约束），逐资产给出 error/warning 与字段路径；包内没有描述文件时记 `no_envelope` 并说明缺失，不由 skill 代写包络。
+- `envelope-report.json`：**只校验、不构造**。用 `scripts/validate_envelope.py` 校验包内已有资产描述文件（`asset.json`/`catalog.json`）是否符合规范 §4 公共包络（schema 见 `assets/asset-envelope.schema.json`，含 §5 类型专有要求与 §6/§7 约束），逐资产给出 error/warning 与字段路径，并核对**本地实体是否真的在包内**（路径可达、`size_bytes`/`sha256` 一致，≤64MB 的文件实测摘要）；schema 交叉校验有 `jsonschema` 就用、没有就用内置轻量实现，报告中如实标注引擎；包内没有描述文件时记 `no_envelope` 并说明缺失，不由 skill 代写包络。
 - `usage.md`：各资产用途、适用边界、输入字段及单位、输出字段及单位、运行环境、实际入口与示例命令；明确本地路径、服务端路径和下载 URL。
 - `state.json`：各阶段 pending/running/completed/failed/blocked/not_applicable 的**分型值**（见第 3 步）、产物路径及恢复入口。
 
@@ -102,7 +102,7 @@ python scripts/prune_evidence.py --run <资产根目录>/asset-runs/<run_id> [--
 
 ## 6. Sage A1.5 附加测试（不计入判定）
 
-涉及大模型 API 调用的资产（skill、workflow/agent、task、trajectory、benchmark 等）必须在 **Sage A1.5** 上再跑一遍。它回答的是"换到核验方的大模型后端还兼不兼容"，**不是资产合格与否的判据**：结果写进报告独立小节与 `sage-a1.5-report.json`，不进入通过率分母、不进覆盖度门禁，也不改变第 5 步的结论。
+涉及大模型 API 调用的资产（skill、workflow/agent、task、trajectory、benchmark 等）必须在 **Sage A1.5** 上再跑一遍。是否需要测由 `sage_probe.py detect` 判定：递归读取包内 `asset.json`，但**类型只作提示**，真正的判据是包内是否出现 `LLM_*`/`OPENAI_*`/`chat/completions`/model-backed 等证据（人工可 `--assume-llm` 强制）。它回答的是"换到核验方的大模型后端还兼不兼容"，**不是资产合格与否的判据**：结果写进报告独立小节与 `sage-a1.5-report.json`，不进入通过率分母、不进覆盖度门禁，也不改变第 5 步的结论。
 
 先判定要不要测：
 
