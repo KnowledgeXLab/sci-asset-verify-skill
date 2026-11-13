@@ -136,62 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-### 1.2-beta.7 — 2026-11-13
-
-按专项约定：**校验 skill 既不核验、也不生成包根 `SHA256SUMS`**。
-
-- `work_copy.py` 的副本自检与 `clean --verify` 只比文件数/字节数，`init_verify.sums_checked=false` 并在 `sums_note` 写明"按约定不核验 SHA256SUMS"；此前那条剔除 `asset-runs/` 条目的逻辑一并移除
-- 实体级完整性仍由 `validate_envelope.py` 按 `asset.json` 声明的 `size_bytes`/`sha256` 逐个核对——包根汇总清单不再是判据，也不再作为失败来源
-- `SKILL.md`、`references/local-assets.md` 改口径：不生成、不核验该文件；需要时只作旁证
-- 自测 63 项断言（改写 2 项：有 SHA256SUMS 也不核验、clean 只核文件数/字节数）
-
-### 1.2-beta.6 — 2026-11-13
-
-三个包并行核验时暴露的两处适配问题。
-
-- 实体体积兼容 `bytes` / `size` 别名：规范字段是 `size_bytes`，但实际交付里有包写成 `bytes`，此前会**静默跳过体积核对**（只核了 sha256）。现在等价处理并提示改用规范字段
-- `work_copy.py init` 不再被「SHA256SUMS 混入 `asset-runs/` 条目」判死：副本核验时剔除这类条目并记录 `excluded_asset_runs` 与整改建议（此前遇到这种包会建副本失败、删副本并退出 1，两个 3.1.2 包都是这个情况）
-- 自测 60 → **63 项断言**（bytes 别名命中/不符、SHA256SUMS 混入 run 产物时 init 仍通过）
-
-### 1.2-beta.5 — 2026-11-13
-
-报告的问题清单固定三级，且"没问题"也要明说。
-
-- 问题清单统一按 **P0 阻断 / P1 重要 / P2 建议** 罗列，每条带编号（`P0-1`…）、问题与证据、影响或整改要求；某一级为空写「无」，三级全空写「未发现问题」
-- 新增 `scripts/check_report.py`：缺「问题清单」小节、缺分级标注、三级全空却未写「未发现问题」，都直接报错；编号与级别不匹配、缺版本/证据小节给告警；`--strict` 下告警也算失败
-- `SKILL.md` 第 5 步与 `references/validation.md` 补上模板与判据（P0＝不可计为有效交付、P1＝规范强制要求不符、P2＝可改进）
-- 自测 55 → **60 项断言**（三级齐全通过、未发现问题通过、不分级被拒、整节缺失被拒、三级全空被拒）
-
-### 1.2-beta.4 — 2026-11-13
-
-校验过程本身可追溯：报告与每份证据 JSON 都写明用的是哪个版本的校验 skill。
-
-- 新增 `VERSION` 文件作为版本唯一来源；`scripts/_version.py` 统一读取（有 git 时同时取提交号，无 git 时记 `unknown`）
-- 所有生产者脚本产出的 JSON（`envelope-report.json`、`asset-ids.json`、`check-list-report.json`、`coverage.json`、`work-copy.json`、`evidence-prune.json`、`sage-*.json`、`external-refs` 报告）都带 `skill: {name, version, commit, version_source}`
-- 新增 `scripts/stamp_report.py`：把「校验工具版本」小节写到 `validation-report.md` **末尾**（幂等标记块），并给 run 内所有 dict 型证据 JSON 补齐 `skill` 字段（`cases.json`/`comparison.json`/`state.json` 等由执行方整理的台账靠它补）
-- 报告完成条件增加「含校验工具版本小节」
-- 自测 49 → **55 项断言**（VERSION 单一来源、两个生产者 JSON 打戳、报告末尾小节、幂等）
-
-### 1.2-beta.3 — 2026-11-13
-
-修 `prune_evidence.py` 在真实台账上的崩溃（校验 sample_skills 时暴露）。
-
-- `cases.json` 里 `actual_output` 是**列表**（规范允许）时，台账标记按字符串处理会抛 `AttributeError`，而且发生在文件已删除之后 → 中间产出被真删、却没有 `evidence-prune.json`、没有 `actual_pruned` 标记、报告里也没有证据保留小节
-- 修复：`actual_output`/`actual_path` 统一归一化为字符串列表再匹配；台账标记失败不再中断落盘（错误写进 `ledger_mark_error` 并告警）
-- 顺带修两处：`--dry-run` 的 `bytes_after` 改为按“删完剩多少”预估；证据文件兜底不再硬写「用例执行报告」，改为按 run 内实际文件探测
-- `asset_ids.py` 在 `--inject` 时若有资产拿不到资产ID，改为退出码 1（此前静默返回 0）
-- 修 `task_classes` 漏检：原先「skill/task/trajectory/benchmark 至少一个任务概念」这条规则写在 `isinstance(task_classes, list)` 里，字段整个缺失时被跳过（真实案例：heritability 的 `asset.json` 没有该字段却判通过）
-- **`jsonschema` 也随包分发**（`vendor/`，含 5 个依赖，均 MIT）：包络的 schema 交叉校验不再依赖环境是否装了这个包；解析顺序「环境 → vendor → 内置轻量实现」，报告里标注实际用的引擎
-- 自测 45 → **49 项断言**（列表型 `actual_output` 的台账标记、dry-run 体积预估、skill 缺/空 task_classes）
-
-### 1.2-beta.2 — 2026-11-13
-
-包络校验收紧，Sage 需求判定改为证据驱动。
-
-- `validate_envelope.py` 新增实体核对：本地 `spec.artifacts[].uri` 必须真实可达（支持百分号编码路径、容忍向上 1–3 级命中并告警）；声明了 `size_bytes` 逐字节比对；声明了 `sha256` 且体积 ≤64MB 的实测摘要（大文件只提示，`--hash-max-mb` 可调），`--no-artifact-files` 可关闭
-- schema 交叉校验不再静默跳过：环境有 `jsonschema` 就用它，没有则回退内置轻量实现（覆盖 type/required/properties/items/minItems/minLength/pattern/enum/const/allOf/anyOf），报告里如实标注用的是哪个引擎
-- `sage_probe.py detect` 改为**递归**读取子目录 `asset.json`；资产类型只作提示，是否需要在 Sage 上测只由「包内是否出现大模型 API 配置/调用证据」决定；新增 `--assume-llm` 供人工强制
-- 自测扩到 **45 项断言**（实体缺失、摘要不符、schema 引擎标签、detect 递归与强制开关）
+> 当前开发中版本为 `1.2-beta.2-dev`（**未发版**，不打 tag）。2026-11-13 的改动（外部资产引用、清单 23 列、校验器实体核对、报告 P0/P1/P2 分级、版本可追溯、不核验 SHA256SUMS 等）尚未发版，待确认发版时再统一整理成一条记录。
 
 ### 1.2-beta.1 — 2026-11-12
 
