@@ -27,7 +27,7 @@ python scripts/work_copy.py clean <资产根目录> --run-id <run_id> --verify  
 ```
 
 - 副本默认放 `<资产根目录父目录>/.asset-work/<run_id>/`（可用 `--work-root` 或 `ASSET_WORK_ROOT` 覆盖，不可写时回退 `$TMPDIR`）；复制时跳过 `asset-runs/`、`__pycache__`、`*.pyc`。
-- `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致，源内有 `SHA256SUMS` 时还要在副本里逐个复核；任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
+- `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致，源内有 `SHA256SUMS` 时还要在副本里逐个复核（清单里混入的 `asset-runs/` 历史产物条目会被剔除并记 `excluded_asset_runs`，同时提示要求提供方重出清单）；任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
 - **历史批次只增不改**：每批核验一律新建 `asset-runs/<run_id>/`，**不得删除、覆盖或清理已有的 run 目录**；需要重跑就换新 `run_id`，旧批次原样保留作为审计链。确认要删除某个旧批次时必须先问用户。
 - **原始包只写一处**：`<资产根目录>/asset-runs/<run_id>/`（最终产物：inventory/usage/state/cases/comparison/validation-report/登记表/部署记录，以及 `work-copy.json` 副本记录）。
 - 副本内执行时继续设 `PYTHONDONTWRITEBYTECODE=1`（避免 `.pyc` 污染），shell 校验命令统一加 `LC_ALL=C`（中文 locale 下 `sha256sum -c` 会把 `OK` 打印成「成功」，按 `: OK` 匹配会误判全表失败）。

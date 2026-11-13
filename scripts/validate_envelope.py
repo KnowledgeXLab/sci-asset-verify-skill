@@ -306,10 +306,18 @@ def check_artifacts(arts, atype, r):
             r.warn(f'spec.artifacts[{i}].uri',
                    f'实体实际在上 {level} 级目录命中（{path}）；uri 应相对 asset.json 所在目录书写')
         size = a.get('size_bytes')
+        size_key = 'size_bytes'
+        if size is None:
+            for alt in ('bytes', 'size'):
+                if isinstance(a.get(alt), int):
+                    size, size_key = a.get(alt), alt
+                    r.warn(f'spec.artifacts[{i}].{alt}',
+                           '规范字段名是 size_bytes；已按等价处理，建议改名为 size_bytes')
+                    break
         if isinstance(size, int) and path.is_file():
             actual = path.stat().st_size
             if actual != size:
-                r.err(f'spec.artifacts[{i}].size_bytes', f'声明 {size} 字节，实际 {actual} 字节')
+                r.err(f'spec.artifacts[{i}].{size_key}', f'声明 {size} 字节，实际 {actual} 字节')
         want = a.get('sha256')
         if want and path.is_file():
             mb = path.stat().st_size / 1048576

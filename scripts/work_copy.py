@@ -124,14 +124,43 @@ def verify_copy(source: Path, copy: Path) -> dict:
         if not (cp_dir / sums.name).exists():
             out['sums'].append({'sums_file': str(sums.relative_to(source)), 'skipped': '副本中没有对应 SHA256SUMS'})
             continue
-        proc = subprocess.run(['sha256sum', '-c', sums.name], cwd=cp_dir,
+        # 包根 SHA256SUMS 常把历史 run 产物也登记进去；副本按惯例排除 asset-runs/，
+        # 直接 -c 会报一堆 FAILED 并让 init 误判「副本缺文件」。这里把这类条目滤掉再核验。
+        filtered = None
+        excluded = 0
+        try:
+            raw = (cp_dir / sums.name).read_text(encoding='utf-8', errors='replace').splitlines()
+            keep, drop = [], 0
+            for line in raw:
+                if not line.strip():
+                    continue
+                path_part = line.split('  ', 1)[-1].strip()
+                if path_part.startswith('asset-runs/') or '/asset-runs/' in path_part:
+                    drop += 1
+                    continue
+                keep.append(line)
+            if drop:
+                excluded = drop
+                filtered = cp_dir / ('_sums_filtered_' + sums.name)
+                filtered.write_text('\n'.join(keep) + '\n', encoding='utf-8')
+        except Exception:  # noqa: BLE001
+            filtered = None
+        target = filtered.name if filtered else sums.name
+        proc = subprocess.run(['sha256sum', '-c', target], cwd=cp_dir,
                               capture_output=True, text=True, env=env)
+        if filtered:
+            filtered.unlink(missing_ok=True)
         lines = (proc.stdout or '').splitlines()
         ok_n = sum(1 for l in lines if l.endswith(': OK'))
         bad = [l for l in lines if l and not l.endswith(': OK')] + \
               [l for l in (proc.stderr or '').splitlines() if l]
-        out['sums'].append({'sums_file': str(sums.relative_to(source)), 'exit_code': proc.returncode,
-                            'ok': ok_n, 'bad': len(bad), 'bad_examples': bad[:5]})
+        entry = {'sums_file': str(sums.relative_to(source)), 'exit_code': proc.returncode,
+                 'ok': ok_n, 'bad': len(bad), 'bad_examples': bad[:5]}
+        if excluded:
+            entry['excluded_asset_runs'] = excluded
+            entry['note'] = ('SHA256SUMS 含 %d 条 asset-runs/ 条目（历史运行产物，非交付实体），'
+                             '副本核验时已排除；建议要求提供方排除该目录后重出清单' % excluded)
+        out['sums'].append(entry)
         if proc.returncode != 0:
             ok = False
     out['ok'] = ok

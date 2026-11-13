@@ -156,6 +156,14 @@ def t1_envelope(tmp: Path) -> None:
     bad["spec"]["artifacts"][0]["sha256"] = "0" * 64
     check(bad, "实体摘要与声明不符", False, "sha256")
 
+    ok_bytes = minimal_envelope()
+    ok_bytes["spec"]["artifacts"][0]["bytes"] = 1        # 文件内容是 "x"，实际 1 字节
+    check(ok_bytes, "实体体积用 bytes 别名（等价 size_bytes）", True)
+
+    bad = minimal_envelope()
+    bad["spec"]["artifacts"][0]["bytes"] = 999
+    check(bad, "bytes 声明的体积与实际不符", False, "bytes")
+
     bad = minimal_envelope(); bad["asset_id"] = "sciasset://2026ZD123456/earth/tool/sample"
     check(bad, "asset_id 类型段与 asset_type 不一致", False, "asset_id")
 
@@ -340,6 +348,24 @@ def t4_work_copy(tmp: Path) -> None:
     record("负例：副本缺文件时 init 自检失败、删副本、退出码 1",
            proc.returncode == 1 and not copy.exists(),
            f"rc={proc.returncode} 副本仍在={copy.exists()}")
+
+    # 包根 SHA256SUMS 混入历史 run 产物（3.1.2 两个包的真实情况）→ init 必须仍能建立副本并记下排除项
+    pkg2 = case / "pkg2"
+    (pkg2 / "asset-runs" / "run-old").mkdir(parents=True)
+    (pkg2 / "a.txt").write_text("a\n", encoding="utf-8")
+    (pkg2 / "asset-runs" / "run-old" / "ev.json").write_text("z", encoding="utf-8")
+    sums2 = subprocess.run(["sha256sum", "a.txt", "asset-runs/run-old/ev.json"],
+                           cwd=pkg2, capture_output=True, text=True)
+    (pkg2 / "SHA256SUMS").write_text(sums2.stdout, encoding="utf-8")
+    work2 = case / "work2"
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg2), "--run-id", "run-sums",
+                "--work-root", str(work2)], case)
+    st2 = json.loads((pkg2 / "asset-runs" / "run-sums" / "work-copy.json").read_text(encoding="utf-8"))
+    sums_entry = (st2.get("init_verify") or {}).get("sums") or [{}]
+    record("正例：SHA256SUMS 混入 asset-runs 条目时 init 仍通过并记录排除",
+           proc.returncode == 0 and (st2.get("init_verify") or {}).get("ok") is True
+           and sums_entry[0].get("excluded_asset_runs") == 1,
+           f"rc={proc.returncode} entry={sums_entry[0]}")
 
     proc = run([str(SCRIPTS / "work_copy.py"), "clean", str(pkg), "--run-id", "run-t4", "--verify"], case)
     state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
