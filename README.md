@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十一个脚本，共 63 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十二个脚本，共 69 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -128,7 +128,7 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十一个自检脚本
+scripts/           十二个自检脚本
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
@@ -136,7 +136,32 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.2-dev`（**未发版**，不打 tag）。2026-11-13 的改动（外部资产引用、清单 23 列、校验器实体核对、**资产自包含校验**、报告 P0/P1/P2 分级与表格竖线转义、asset_id 整改要求含规范原文、版本可追溯、不核验 SHA256SUMS 等）尚未发版，待确认发版时再统一整理成一条记录。
+### 1.2-beta.2 — 2026-11-13
+
+校验口径收紧、报告可追溯、依赖自包含。核心变化是**把"资产能不能独立入库"变成可校验项**。
+
+**新增校验能力**
+- **资产自包含校验**：新增 `scripts/check_selfcontained.py`——任何资产只能引用**自己目录内**的文件；唯一允许的外部引用方式是包根 `external_assets.json` 按资产编号声明。越界区分「指向包内另一个资产」「指向包内共享位置」「指向包外本机路径」并给整改方向；文档里的路径只算提示。包络校验同步收紧：`spec.artifacts[].uri` 与 `spec.asset_protocol` 的本地路径越出资产目录即 error
+- **实体核对**：`validate_envelope.py` 逐条核对 `spec.artifacts` 的实体是否存在、`size_bytes`（兼容 `bytes`/`size` 别名）与 `sha256`（≤64MB 实测，大文件只提示）是否一致
+- 修复 `task_classes` 漏检：字段整体缺失时不再被跳过（skill/task/trajectory/benchmark 至少一个任务概念）
+- schema 交叉校验不再可能静默跳过：环境无 `jsonschema` 时回退内置轻量实现，并如实标注所用引擎
+- `sage_probe.py detect` 改为递归读取子目录 `asset.json`，资产类型只作提示、是否需 Sage 测试只由大模型 API 证据决定；新增 `--assume-llm` 人工强制
+
+**报告**
+- 问题清单固定三级：**P0 阻断 / P1 重要 / P2 建议**，每条带编号与证据；某级为空写「无」，三级全空写「未发现问题」；新增 `scripts/check_report.py` 自查
+- **校验 skill 版本可追溯**：`VERSION` 文件为版本唯一来源，所有证据 JSON 带 `skill: {name, version, commit}`，报告末尾由 `scripts/stamp_report.py` 写入「校验工具版本」小节
+- `asset_id` 类问题的整改要求必须照抄完整格式规范（`sciasset://{project-id}/{namespace}/{asset-type}/{slug}`，及 project-id/namespace/asset-type/slug 各自的含义）
+- 写 md 时表格单元格内的竖线须转义成 `\|`（反引号内同样）
+
+**依赖与产物约定**
+- `jsonschema` 4.26.0 连同依赖一并 vendor，包络交叉校验不再依赖环境
+- 按专项约定：**不核验、也不生成包根 `SHA256SUMS`**；完整性以文件数/字节数 + `asset.json` 声明的实体摘要为准
+- 修复 `prune_evidence.py` 在 `actual_output` 为列表时的崩溃（此前会删了中间产物却没有清理记录）
+- `SKILL.md` 增加「历史批次只增不改」：每批新建 `asset-runs/<run_id>/`，任何已有批次不得删除或覆盖
+
+**验证**
+- 自测 40 → **69 项断言**，覆盖四个真实包的核验（地球科学数据/工具/工作流、生物育种 sample_skills）
+
 
 ### 1.2-beta.1 — 2026-11-12
 
@@ -190,4 +215,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，63 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，69 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
