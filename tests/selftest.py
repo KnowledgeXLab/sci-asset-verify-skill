@@ -88,7 +88,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/10] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/11] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -164,6 +164,14 @@ def t1_envelope(tmp: Path) -> None:
     bad["spec"]["artifacts"][0]["bytes"] = 999
     check(bad, "bytes 声明的体积与实际不符", False, "bytes")
 
+    bad = minimal_envelope()
+    bad["spec"]["artifacts"][0]["uri"] = "../shared/part.csv"
+    check(bad, "实体引用越出资产目录（自包含）", False, "spec.artifacts[0].uri")
+
+    bad = minimal_envelope()
+    bad["spec"]["asset_protocol"] = {"repository_uri": "../../asset_protocol_repo", "path": "x"}
+    check(bad, "asset_protocol 指向资产目录外", False, "spec.asset_protocol.repository_uri")
+
     bad = minimal_envelope(); bad["asset_id"] = "sciasset://2026ZD123456/earth/tool/sample"
     check(bad, "asset_id 类型段与 asset_type 不一致", False, "asset_id")
 
@@ -194,7 +202,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/10] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/11] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -281,7 +289,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/10] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/11] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -325,7 +333,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/10] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/11] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -379,7 +387,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/10] prune_evidence.py — 只留报告类证据")
+    print("\n[5/11] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -419,7 +427,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/10] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/11] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -490,7 +498,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/10] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/11] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -530,7 +538,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/10] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/11] external_refs.py — 外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
     (pkg / "data" / "scotia").mkdir(parents=True)
@@ -586,7 +594,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/10] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/11] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -645,7 +653,7 @@ def t9_version_stamp(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T10 报告分级
 def t10_report_levels(tmp: Path) -> None:
-    print("\n[10/10] check_report.py — 问题清单 P0/P1/P2 分级")
+    print("\n[10/11] check_report.py — 问题清单 P0/P1/P2 分级")
     d = tmp / "t10"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -681,6 +689,54 @@ def t10_report_levels(tmp: Path) -> None:
            proc.returncode == 1 and "未发现问题" in proc.stderr, f"rc={proc.returncode}")
 
 
+# --------------------------------------------------------------------------- T11 资产自包含
+def t11_selfcontained(tmp: Path) -> None:
+    print("\n[11/11] check_selfcontained.py — 资产只能引用自己目录内的文件")
+    d = tmp / "t11"
+    pkg = d / "pkg"
+    good = pkg / "asset-a"
+    (good / "data").mkdir(parents=True)
+    (good / "data" / "x.csv").write_text("x", encoding="utf-8")
+    (good / "run.py").write_text("open('data/x.csv')\n", encoding="utf-8")
+    (good / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/a", "asset_type": "data",
+        "spec": {"artifacts": [{"uri": "data/x.csv", "media_type": "text/csv"}],
+                 "asset_protocol": {"repository_uri": "./"}}}, ensure_ascii=False), encoding="utf-8")
+
+    bad = pkg / "asset-b"
+    (bad / "sub").mkdir(parents=True)
+    (bad / "sub" / "s.py").write_text("p = '../asset-a/data/x.csv'\n", encoding="utf-8")
+    (bad / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/b", "asset_type": "data",
+        "spec": {"artifacts": [{"uri": "../asset-a/data/x.csv", "media_type": "text/csv"}],
+                 "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+
+    out = d / "sc.json"
+    proc = run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(pkg),
+                "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    by_asset = {r["asset_dir"]: r for r in rep["results"]}
+    record("正例：目录内自足的资产判为自包含",
+           by_asset.get("asset-a", {}).get("self_contained") is True,
+           f"asset-a={by_asset.get('asset-a', {}).get('self_contained')}")
+    record("负例：引用兄弟资产的文件被判越界，且提示改用 external_assets.json",
+           proc.returncode == 1
+           and by_asset.get("asset-b", {}).get("self_contained") is False
+           and any("external_assets.json" in (v.get("hint") or "")
+                   for v in by_asset.get("asset-b", {}).get("violations") or []),
+           f"rc={proc.returncode}")
+
+    # 文档里的绝对路径只算提示，不判违规
+    (good / "README.md").write_text("示例：结果写到 /home/someone/out.csv\n", encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(pkg),
+                "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    a = next(r for r in rep["results"] if r["asset_dir"] == "asset-a")
+    record("正例：文档里的本机绝对路径只提示不判违规",
+           a["self_contained"] is True and a["note_count"] >= 1,
+           f"contained={a['self_contained']} notes={a['note_count']}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -688,7 +744,7 @@ def main() -> int:
     print(f"临时目录：{tmp}")
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
-               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels):
+               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

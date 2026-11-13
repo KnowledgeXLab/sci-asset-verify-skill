@@ -38,6 +38,22 @@ python scripts/work_copy.py clean <资产根目录> --run-id <run_id> --verify  
 
 完成条件：每项范围内资产均有类型、入口或不可执行理由、依赖、输入输出、来源证据；缺失信息显式列出。
 
+**资产自包含校验（必做，盘完立刻做）**
+
+资产入库后是**独立存在的单元**——别人只拿走一个资产目录。因此资产目录内的任何文件都不得引用目录外的文件/目录，
+唯一允许的外部引用方式是包根 `external_assets.json` 按资产编号声明（见第 2 步与 `references/registration.md`）。
+
+```
+python scripts/check_selfcontained.py --package <资产根目录> --json-out <run>/selfcontained-report.json
+```
+
+它逐个资产检查两类东西：① `asset.json` 里的本地路径（`spec.artifacts[].uri`、`spec.asset_protocol` 的 `repository_uri`/`path`）；
+② 资产目录内脚本/配置/文档里的 `../`、`/home/…`、`C:\…`、`~/` 等引用。解析后越出资产目录即违规，报告会指出是
+「指向包内另一个资产」（应改用 `external_assets.json`）、「指向包内共享位置」（应随资产目录交付）还是「指向包外本机路径」。
+文档（`.md`/`.txt`）里的路径只算提示，不算违规。`validate_envelope.py` 对 `asset.json` 里的实体与协议路径已按同一规则判 error。
+
+**越界即 P0 阻断**：不得因为"打包时还在同一个压缩包里"就放行。
+
 ## 2. 资产登记填表（对外发版资产清单）
 
 读取 [references/registration.md](references/registration.md)，逐列填法、长度基准和真实样例见 [references/registration-examples.md](references/registration-examples.md)。填的是**对外发版资产清单**（规范 §7，23 列，首列为资产ID），不是内部管理清单；内部管理用的资产编号、校验、资产校验报告、记录人、集成负责人、集成状态不进对外清单。

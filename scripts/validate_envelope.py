@@ -266,27 +266,18 @@ SCHEME = re.compile(r'^[A-Za-z][A-Za-z0-9+.-]*://')
 
 
 def _resolve_local(base: Path, uri: str):
-    """相对 asset.json 所在目录解析本地实体路径；宽容地向上找到第 3 级。
+    """解析本地实体路径。返回 (path, inside)。
 
-    返回 (path, levels)：levels=0 表示按规范解析命中；>0 表示实际在上级目录命中（需提醒）。
+    **资产自包含**：目录外的引用一律不接受（资产入库后是独立单元，`../shared/...` 会当场失效）。
+    跨资产/跨目录引用只允许通过包根 `external_assets.json` 声明。
     """
     from urllib.parse import unquote
-    rels = [uri]
-    dec = unquote(uri)                     # uri 允许百分号编码，解码后再找文件
-    if dec != uri:
-        rels.append(dec)
-    rel = uri.lstrip('./') if uri.startswith('./') else uri
-    cands = [base]
-    for _ in range(3):
-        cands.append(cands[-1].parent)
-    for r_ in rels:
-        if r_.startswith('./'):
-            r_ = r_[2:]
-        for i, d in enumerate(cands):
-            p = (d / r_).resolve()
-            if p.exists():
-                return p, i
-    return (base / rels[-1].lstrip('./')).resolve(), None
+    rel = unquote(uri)
+    if rel.startswith('./'):
+        rel = rel[2:]
+    p = (base / rel).resolve()
+    b = base.resolve()
+    return p, (p == b or b in p.parents)
 
 
 def check_artifacts(arts, atype, r):
@@ -297,14 +288,16 @@ def check_artifacts(arts, atype, r):
         uri = str(a.get('uri') or '')
         if not uri or SCHEME.match(uri):
             continue                      # 远程实体不在本地校验范围
-        path, level = _resolve_local(base, uri)
+        path, in_dir = _resolve_local(base, uri)
+        if not in_dir:
+            r.err(f'spec.artifacts[{i}].uri',
+                  f'不在资产目录内（§资产自包含）：{uri!r} 解析到 {path}；'
+                  '资产入库后是独立单元，跨目录/跨资产引用必须改用包根 external_assets.json 声明')
+            continue
         if not path.exists():
             r.err(f'spec.artifacts[{i}].uri',
-                  f'包内找不到该实体：{uri!r}（按 asset.json 所在目录解析为 {path}）')
+                  f'资产目录内找不到该实体：{uri!r}（解析为 {path}）')
             continue
-        if level:
-            r.warn(f'spec.artifacts[{i}].uri',
-                   f'实体实际在上 {level} 级目录命中（{path}）；uri 应相对 asset.json 所在目录书写')
         size = a.get('size_bytes')
         size_key = 'size_bytes'
         if size is None:
@@ -494,6 +487,18 @@ def check(asset, file):
                     r.warn(f'spec.artifacts[{i}].role', f'role 建议用「小写+连字符」的稳定取值：{role!r}')
             if CHECK_ARTIFACT_FILES:
                 check_artifacts(arts, atype, r)
+
+        # asset_protocol 里的本地路径同样要求落在资产目录内
+        proto_base = Path(r.file).resolve().parent
+        for key in ('repository_uri', 'path', 'entry', 'readme'):
+            v = proto.get(key) if isinstance(proto, dict) else None
+            if not isinstance(v, str) or not v or SCHEME.match(v):
+                continue
+            pth, in_dir = _resolve_local(proto_base, v)
+            if not in_dir:
+                r.err(f'spec.asset_protocol.{key}',
+                      f'不在资产目录内（§资产自包含）：{v!r} 解析到 {pth}；'
+                      '协议/共享文件应随资产目录交付，跨资产引用改用 external_assets.json')
 
         check_format_consistency(md, arts, r, atype)
 
