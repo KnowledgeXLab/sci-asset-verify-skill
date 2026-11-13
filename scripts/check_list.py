@@ -37,6 +37,7 @@ def main(argv=None) -> int:
     ap.add_argument('xlsx')
     ap.add_argument('--schema', default=str(DEFAULT_SCHEMA))
     ap.add_argument('--sheet', default=None, help='资产明细所在工作表名（默认取 schema.sheet_name）')
+    ap.add_argument('--external-refs', help='包根 external_assets.json，用于核对「资产关联」列只填其中声明的编号')
     ap.add_argument('--json-out')
     args = ap.parse_args(argv)
 
@@ -55,6 +56,19 @@ def main(argv=None) -> int:
     headers = [f['header'] for f in fields]
     by_header = {f['header']: f for f in fields}
     row_key = schema.get('row_key', ['资产名称', '版本'])
+    rel_rules = schema.get('relation_rules') or {}
+    rel_col = rel_rules.get('column') or '资产关联'
+    declared_refs = None
+    if args.external_refs:
+        try:
+            ext = json.loads(Path(args.external_refs).read_text(encoding='utf-8'))
+            declared_refs = set()
+            for a in (ext.get('assets') or []):
+                aid = str(a.get('asset_id') or '')
+                declared_refs.add(aid[len('sciasset://'):] if aid.startswith('sciasset://') else aid)
+        except Exception as exc:  # noqa: BLE001
+            print(f'无法读取 --external-refs：{exc}', file=sys.stderr)
+            return 2
     id_rules = schema.get('id_rules') or {}
     id_col = id_rules.get('list_column') or '资产ID'
     id_re = re.compile(id_rules['pattern']) if id_rules.get('pattern') else None
@@ -134,13 +148,31 @@ def main(argv=None) -> int:
                         if tcol and seg_type != tcol:
                             errors.append({'where': f'{sheet_name}!{h}{r}',
                                            'message': f'资产ID 类型段 {seg_type!r} 与「资产类型」列 {tcol!r} 不一致'})
-                if h == '资产关联':
-                    for tok in re.findall(r'sciasset://[^\s；;，,（）()]+', str(val)):
-                        if not re.match(r'^sciasset://[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9-]*/'
-                                        r'(data|tool|model|environment|skill|task|trajectory|benchmark)/'
-                                        r'[a-z0-9][a-z0-9._-]*$', tok):
-                            errors.append({'where': f'{sheet_name}!{h}{r}',
-                                           'message': f'资产关联里的资产编号格式不合法（应为四段、不含版本号）：{tok!r}'})
+                if h == rel_col:
+                    raw = str(val).strip()
+                    if '，' in raw:
+                        errors.append({'where': f'{sheet_name}!{h}{r}',
+                                       'message': '资产关联 多个编号请用英文逗号 , 分隔，不要用中文逗号'})
+                    if 'sciasset://' in raw:
+                        errors.append({'where': f'{sheet_name}!{h}{r}',
+                                       'message': f'资产关联 不写 sciasset:// 前缀，只填 asset_id 的路径部分：{raw!r}'})
+                    elif raw and not re.match(r'^[^\s,]+(,[^\s,]+)*$', raw):
+                        errors.append({'where': f'{sheet_name}!{h}{r}',
+                                       'message': '资产关联 只填 asset_id（去前缀、英文逗号分隔），不写依赖描述或资产名称：'
+                                                  f'{raw!r}'})
+                    else:
+                        toks = [t for t in raw.split(',') if t]
+                        if len(toks) != len(set(toks)):
+                            errors.append({'where': f'{sheet_name}!{h}{r}', 'message': f'资产关联 有重复编号：{raw!r}'})
+                        for t in toks:
+                            if not re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9-]*/'
+                                            r'(data|tool|model|environment|skill|task|trajectory|benchmark)/'
+                                            r'[a-z0-9][a-z0-9._-]*$', t):
+                                errors.append({'where': f'{sheet_name}!{h}{r}',
+                                               'message': f'资产关联 里的编号不成四段格式：{t!r}'})
+                            elif declared_refs is not None and t not in declared_refs:
+                                errors.append({'where': f'{sheet_name}!{h}{r}',
+                                               'message': f'资产关联 填了 external_assets.json 里没有声明的资产：{t!r}'})
                 if h == '任务|操作标签':
                     for p in [x.strip() for x in re.split(r'[;；]', str(val)) if x.strip()]:
                         if not re.match(r'^(problem|operation|stage|task):[a-z0-9-]+$', p):

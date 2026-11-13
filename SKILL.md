@@ -60,7 +60,7 @@ python scripts/check_selfcontained.py --package <资产根目录> --json-out <ru
 
 **表头以 skill 内置 schema 为准**：填表标准是 `assets/external-list-schema.json`（对外发版清单 23 个字段的名称、顺序、类型、枚举与填写口径，取自规范 §7.3）。**不检查、不套用用户自定义模板**，也不为了适配某个模板改写字段集；飞书 CLI 在外发环境不可用，故表头已固化在该文件里。用户显式指定另一份 schema 时，才把该 schema 落成 `registration/schema-snapshot.json` 并记录与内置 schema 的差异，否则一律以内置为准。**资产ID 由包络生成，不手写**：先跑 `python scripts/asset_ids.py --package <资产根目录> --rows rows.json --inject`，它把包络里的 `asset_id` 去掉 `sciasset://` 前缀写进「资产ID」列，即 `{project-id}/{namespace}/{asset-type}/{slug}`——**不含版本号**（规范 §4.1 要求 asset_id 稳定），版本由清单的「版本」列表达。
 
-**外部资产引用是可选文件，存在即校验**：包根目录若有 `external_assets.json`（声明包内未随附、需平台按资产编号解析的资产），先跑 `python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject`；它校验 asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用，通过后把引用明细写进清单最后一列「资产关联」（`required` 可不填，缺省视为 true）。文件不存在则跳过，该列保持原值。校验不通过时必须停下修包，不能带着不合规的引用继续登记。
+**外部资产引用是可选文件，存在即校验**：包根目录若有 `external_assets.json`（声明包内未随附、需平台按资产编号解析的资产），先跑 `python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject`；它校验 asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用，通过后把引用编号写进清单最后一列「资产关联」——只放 `external_assets.json` 里声明的 `asset_id`（去 `sciasset://` 前缀、英文逗号分隔、不重复），没有该文件时该列留空（不写「不适用」不写描述）；`required` 可不填，缺省视为 true。文件不存在则跳过，该列保持原值。校验不通过时必须停下修包，不能带着不合规的引用继续登记。
 
 **用脚本生成表格，生成即自检**：把每行内容整理成 `rows.json`（`{"rows":[{...}],"cases":[{...}]}`，键名与 schema 的 `header` 一致），然后
 

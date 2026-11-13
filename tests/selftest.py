@@ -573,11 +573,23 @@ def t8_external_refs(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--rows", str(rows),
                 "--inject", "--json-out", str(out)], base)
     cell = json.loads(rows.read_text(encoding="utf-8"))["rows"][0].get("资产关联", "")
-    record("正例：合法引用写入「资产关联」列（required 缺省按 true）",
-           proc.returncode == 0 and "外部资产引用：" in cell
-           and "sciasset://2026ZD123456/earth/data/raw" in cell
-           and "（required" in cell,
-           f"rc={proc.returncode} cell={cell[:90]}")
+    record("正例：「资产关联」列只写去前缀的 asset_id（逗号分隔）",
+           proc.returncode == 0 and cell == "2026ZD123456/earth/data/raw",
+           f"rc={proc.returncode} cell={cell!r}")
+
+    rows2 = base / "rows2.json"
+    rows2.write_text(json.dumps({"rows": [{"资产ID": "2026ZD123456/earth/data/sample",
+                                           "资产名称": "示例数据资产", "版本": "1.0.0",
+                                           "资产关联": "不适用（无跨资产依赖）"}]}, ensure_ascii=False),
+                     encoding="utf-8")
+    (pkg / "external_assets.json").unlink()
+    run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--rows", str(rows2), "--inject"], base)
+    cleared = json.loads(rows2.read_text(encoding="utf-8"))["rows"][0].get("资产关联")
+    record("正例：包里没有 external_assets.json 时该列清空留白", cleared == "", f"cell={cleared!r}")
+    (pkg / "external_assets.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
+                    "target_path": "data/scotia"}]}, ensure_ascii=False), encoding="utf-8")
 
     def bad_write(name, mutate, expect):
         p2 = base / name
