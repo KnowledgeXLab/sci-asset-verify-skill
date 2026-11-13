@@ -42,6 +42,10 @@ TOP_LEVEL = ['schema_version', 'asset_id', 'asset_type', 'name', 'description', 
              'extensions', 'spec']
 SPEC_KEYS = ['metadata', 'artifacts', 'domain_attributes', 'asset_protocol']
 SEMVER = re.compile(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$')
+ASSET_ID_SPEC = ('asset_id 格式为 sciasset://{project-id}/{namespace}/{asset-type}/{slug}，'
+                 '其中 project-id 为项目编号（见项目任务书首页）、namespace 为自拟命名空间、'
+                 'asset-type 为资产类型、slug 为资产名称')
+
 # 规范 v1.1 §4.1：sciasset://{project-id}/{namespace}/{asset-type}/{slug}，不含版本号
 ASSET_ID = re.compile(r'^sciasset://([A-Za-z0-9][A-Za-z0-9._-]*)/([a-z0-9][a-z0-9-]*)'
                       r'/(data|tool|model|environment|skill|task|trajectory|benchmark)/([a-z0-9][a-z0-9._-]*)$')
@@ -350,12 +354,9 @@ def check(asset, file):
         m = ASSET_ID.match(aid)
         if not m:
             if ASSET_ID_LEGACY.match(aid):
-                r.err('asset_id', '缺少 project-id 段：规范 v1.1 §4.1 要求 '
-                                  'sciasset://{project-id}/{namespace}/{asset-type}/{slug}，实际 '
-                                  f'{aid!r}')
+                r.err('asset_id', ASSET_ID_SPEC + f'；当前值 {aid!r} 缺少 project-id 段（规范 v1.1 §4.1）')
             else:
-                r.err('asset_id', '不符合 sciasset://{project-id}/{namespace}/{asset-type}/{slug}'
-                                  f'（§4.1），实际 {aid!r}')
+                r.err('asset_id', ASSET_ID_SPEC + f'；当前值 {aid!r} 不符合（§4.1）')
         else:
             project, name_space, seg_type, slug = m.groups()
             if atype and seg_type != atype:

@@ -85,6 +85,13 @@ python scripts/check_coverage.py --cases <run>/cases.json --inventory <run>/inve
    | P2-1 | `artifacts[0].uri` 自指 | 建议改成本目录相对路径 |
    ```
 
+   **写作硬规则两条**：
+
+   - **`asset_id` 类问题的「影响 / 整改要求」列必须写全格式规范**，不能只写"改成四段"。原文照抄：
+     > asset_id 格式为 `sciasset://{project-id}/{namespace}/{asset-type}/{slug}`，其中 project-id 为项目编号（见项目任务书首页）、namespace 为自拟命名空间、asset-type 为资产类型、slug 为资产名称
+   - **表格单元格内不得出现裸竖线**：字段名本身带竖线的（`任务|操作标签`、`运行环境|资源要求`、`评价指标|验收条件`）以及任何正文里的 `|`，
+     在表格中一律写成 `\|`（反引号里也要转义），否则会被切成额外列、整张表错位。`scripts/check_report.py` 会逐行核对竖线数。
+
    某一级为空显式写「无」；三级全空时，本节写 **未发现问题**（一句话即可，不要留空、不要省略本节）。
    收尾跑 `python scripts/check_report.py --report <run>/validation-report.md` 自查，缺分级直接报错。
 4.5 用例覆盖度：由 `scripts/check_coverage.py` 注入的按类型覆盖表；有类型未达下限时必须在结论里点明「覆盖不足」。

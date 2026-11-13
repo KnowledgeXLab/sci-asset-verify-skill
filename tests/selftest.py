@@ -191,6 +191,16 @@ def t1_envelope(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "validate_envelope.py"), str(d / "a.json"), str(d / "b.json"),
                 "--json-out", str(out)], case)
     rep = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    leg = case / "旧三段"
+    leg.mkdir(exist_ok=True)
+    doc = minimal_envelope(); doc["asset_id"] = "sciasset://mineralmind/data/sample"
+    make_artifacts(leg, doc)
+    (leg / "asset.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    proc = run([str(SCRIPTS / "validate_envelope.py"), str(leg)], case)
+    record("正例：asset_id 报错文案写明格式规范与各段含义",
+           "项目任务书首页" in proc.stdout and "自拟命名空间" in proc.stdout,
+           "缺少规范说明")
+
     record("正例：schema 交叉校验有引擎标签，不再静默跳过",
            "builtin" in str(rep.get("summary", {}).get("jsonschema_cross_check"))
            or "jsonschema" in str(rep.get("summary", {}).get("jsonschema_cross_check")),
@@ -682,6 +692,19 @@ def t10_report_levels(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "check_report.py"), "--report", str(none)], d)
     record("负例：整节缺失被拒", proc.returncode == 1 and "缺少「问题清单」" in proc.stderr,
            f"rc={proc.returncode}")
+
+    broken = write("broken.md", "# R\n\n## 4. 问题清单\n\n### P0 阻断\n\n"
+                                "| 编号 | 问题 | 整改 |\n|---|---|---|\n"
+                                "| P0-1 | 字段 任务|操作标签 冲突 | 改 |\n\n### P1 重要\n无\n\n### P2 建议\n无\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(broken)], d)
+    record("负例：表格里未转义的竖线被查出",
+           proc.returncode == 1 and "竖线数" in proc.stderr, f"rc={proc.returncode}")
+
+    fixed = write("fixed.md", "# R\n\n## 4. 问题清单\n\n### P0 阻断\n\n"
+                              "| 编号 | 问题 | 整改 |\n|---|---|---|\n"
+                              "| P0-1 | 字段 任务\\|操作标签 冲突 | 改 |\n\n### P1 重要\n无\n\n### P2 建议\n无\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(fixed)], d)
+    record("正例：转义后的竖线不误报", proc.returncode == 0, f"rc={proc.returncode}")
 
     empty = write("empty.md", "# R\n\n## 4. 问题清单\n\n### P0 阻断\n\n### P1 重要\n\n### P2 建议\n")
     proc = run([str(SCRIPTS / "check_report.py"), "--report", str(empty)], d)
