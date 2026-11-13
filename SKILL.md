@@ -27,11 +27,11 @@ python scripts/work_copy.py clean <资产根目录> --run-id <run_id> --verify  
 ```
 
 - 副本默认放 `<资产根目录父目录>/.asset-work/<run_id>/`（可用 `--work-root` 或 `ASSET_WORK_ROOT` 覆盖，不可写时回退 `$TMPDIR`）；复制时跳过 `asset-runs/`、`__pycache__`、`*.pyc`。
-- `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致，源内有 `SHA256SUMS` 时还要在副本里逐个复核（清单里混入的 `asset-runs/` 历史产物条目会被剔除并记 `excluded_asset_runs`，同时提示要求提供方重出清单）；任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
+- `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致。**不核验、也不生成包根 `SHA256SUMS`**——它常把历史 run 产物一并登记，且不是交付判据；实体级摘要由 `validate_envelope.py` 按 `asset.json` 里声明的 `sha256` 核对。任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
 - **历史批次只增不改**：每批核验一律新建 `asset-runs/<run_id>/`，**不得删除、覆盖或清理已有的 run 目录**；需要重跑就换新 `run_id`，旧批次原样保留作为审计链。确认要删除某个旧批次时必须先问用户。
 - **原始包只写一处**：`<资产根目录>/asset-runs/<run_id>/`（最终产物：inventory/usage/state/cases/comparison/validation-report/登记表/部署记录，以及 `work-copy.json` 副本记录）。
-- 副本内执行时继续设 `PYTHONDONTWRITEBYTECODE=1`（避免 `.pyc` 污染），shell 校验命令统一加 `LC_ALL=C`（中文 locale 下 `sha256sum -c` 会把 `OK` 打印成「成功」，按 `: OK` 匹配会误判全表失败）。
-- `clean --verify` 会删副本并对原包每个 `SHA256SUMS` 复核，结果写进 `work-copy.json`；清理失败或复核不通过要记为阻塞，不能静默留副本。副本路径必须位于资产根目录之外，脚本会拒绝删除根目录内的路径。
+- 副本内执行时继续设 `PYTHONDONTWRITEBYTECODE=1`（避免 `.pyc` 污染），shell 里比对文本时统一加 `LC_ALL=C`（中文 locale 下部分命令会输出「成功」而非 `OK`，直接比对会误判）。
+- `clean --verify` 会删副本并复核原包文件数/字节数，结果写进 `work-copy.json`；清理失败或复核不通过要记为阻塞，不能静默留副本。副本路径必须位于资产根目录之外，脚本会拒绝删除根目录内的路径。
 - **中间产出不随包交付**：case 跑完、报告与覆盖门禁写完后，用 `scripts/prune_evidence.py --run <run>` 清理逐 case 工作目录（`*/work/`，含 `out/` 与日志）、可由包内脚本重建的数据/参考目录（`_prepared/`、`refwork/`、`data-all/`、`data-offline/` 等）、探针 `out/`，以及 `registration/` 之外的大体积实体文件，**只保留报告类证据**（`*.md`/`*.json`/`*.txt`/`*.log`/`*.xlsx`、`registration/`、`scripts/`、`deployment/probes/*/probe.json`）。清理清单与前后体积写 `evidence-prune.json`，台账里被清理的 `actual_output` 标 `actual_pruned: true`，脚本同时把「证据保留口径」小节注入 `validation-report.md`。不进包的只是**可用原命令重跑复现**的原始输出；逐 case 的检查数值与判定已在 `cases.json`/`comparison.json`/执行报告里。要打包交付或长期归档时先跑这一步，避免一个几 MB 的工具包被 GB 级中间产物撑大。
 
 逐项建立“case → 输入 → 执行入口 → 输出 → 真值 → 比较规则”的映射。范围或目标平台缺失时先完成本地分析；仅询问影响执行的缺失信息。用户只要编写 skill/方案时交付文档，不启动业务计算或外部注册。

@@ -362,17 +362,19 @@ def t4_work_copy(tmp: Path) -> None:
                 "--work-root", str(work2)], case)
     st2 = json.loads((pkg2 / "asset-runs" / "run-sums" / "work-copy.json").read_text(encoding="utf-8"))
     sums_entry = (st2.get("init_verify") or {}).get("sums") or [{}]
-    record("正例：SHA256SUMS 混入 asset-runs 条目时 init 仍通过并记录排除",
-           proc.returncode == 0 and (st2.get("init_verify") or {}).get("ok") is True
-           and sums_entry[0].get("excluded_asset_runs") == 1,
-           f"rc={proc.returncode} entry={sums_entry[0]}")
+    iv = st2.get("init_verify") or {}
+    record("正例：包内有 SHA256SUMS 也不核验（按约定跳过），init 只看文件数/字节数",
+           proc.returncode == 0 and iv.get("ok") is True
+           and iv.get("sums_checked") is False and not iv.get("sums"),
+           f"rc={proc.returncode} sums_checked={iv.get('sums_checked')} sums={iv.get('sums')}")
 
     proc = run([str(SCRIPTS / "work_copy.py"), "clean", str(pkg), "--run-id", "run-t4", "--verify"], case)
     state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
     vac = state.get("verify_after_clean") or {}
-    record("正例：clean 删副本并复核原包摘要",
-           proc.returncode == 0 and vac.get("bad_total") == 0,
-           f"rc={proc.returncode} bad={vac.get('bad_total')}")
+    record("正例：clean 删副本并复核原包（文件数/字节数，不核 SHA256SUMS）",
+           proc.returncode == 0 and vac.get("checked") is False
+           and vac.get("files") == 3,
+           f"rc={proc.returncode} verify={vac}")
 
 
 # --------------------------------------------------------------------------- T5 证据保留

@@ -8,7 +8,7 @@
 * 所有会执行包内代码、写中间文件、需要清空输出目录的操作，都在**副本**里做：
   `WORK_ROOT/<run_id>/`，默认 `WORK_ROOT = <资产根目录父目录>/.asset-work`，
   可用 `--work-root` 或环境变量 `ASSET_WORK_ROOT` 覆盖；不可写时回退 `$TMPDIR/asset-work-<run_id>`。
-* 校验结束后 `clean`：删副本 + 复核原始包摘要（存在 `SHA256SUMS` 时用 `LC_ALL=C sha256sum -c`），
+* 校验结束后 `clean`：删副本 + 复核原始包的文件数/字节数（按约定不核验、也不生成 `SHA256SUMS`），
   把清理与复核结果写进 `work-copy.json`。
 
 用法
@@ -108,7 +108,7 @@ def count_tree(root: Path, skip_runs: bool = False) -> tuple[int, int]:
 
 
 def verify_copy(source: Path, copy: Path) -> dict:
-    """副本建立后的完整性自检：文件数/字节数与源一致，并在源有 SHA256SUMS 时逐个复核副本。"""
+    """副本建立后的完整性自检：文件数与字节数必须与源一致（不核验 SHA256SUMS）。"""
     src_files, src_bytes = count_tree(source, skip_runs=True)
     cp_files, cp_bytes = count_tree(copy, skip_runs=True)
     out = {'source_files': src_files, 'source_bytes': src_bytes,
@@ -116,53 +116,11 @@ def verify_copy(source: Path, copy: Path) -> dict:
            'files_match': src_files == cp_files, 'bytes_match': src_bytes == cp_bytes,
            'sums': []}
     ok = out['files_match'] and out['bytes_match']
-    env = dict(os.environ, LC_ALL='C')
-    sums_files = sorted(source.glob('SHA256SUMS')) + sorted(source.glob('*/SHA256SUMS'))
-    for sums in sums_files:
-        rel_dir = sums.parent.relative_to(source)
-        cp_dir = copy / rel_dir
-        if not (cp_dir / sums.name).exists():
-            out['sums'].append({'sums_file': str(sums.relative_to(source)), 'skipped': '副本中没有对应 SHA256SUMS'})
-            continue
-        # 包根 SHA256SUMS 常把历史 run 产物也登记进去；副本按惯例排除 asset-runs/，
-        # 直接 -c 会报一堆 FAILED 并让 init 误判「副本缺文件」。这里把这类条目滤掉再核验。
-        filtered = None
-        excluded = 0
-        try:
-            raw = (cp_dir / sums.name).read_text(encoding='utf-8', errors='replace').splitlines()
-            keep, drop = [], 0
-            for line in raw:
-                if not line.strip():
-                    continue
-                path_part = line.split('  ', 1)[-1].strip()
-                if path_part.startswith('asset-runs/') or '/asset-runs/' in path_part:
-                    drop += 1
-                    continue
-                keep.append(line)
-            if drop:
-                excluded = drop
-                filtered = cp_dir / ('_sums_filtered_' + sums.name)
-                filtered.write_text('\n'.join(keep) + '\n', encoding='utf-8')
-        except Exception:  # noqa: BLE001
-            filtered = None
-        target = filtered.name if filtered else sums.name
-        proc = subprocess.run(['sha256sum', '-c', target], cwd=cp_dir,
-                              capture_output=True, text=True, env=env)
-        if filtered:
-            filtered.unlink(missing_ok=True)
-        lines = (proc.stdout or '').splitlines()
-        ok_n = sum(1 for l in lines if l.endswith(': OK'))
-        bad = [l for l in lines if l and not l.endswith(': OK')] + \
-              [l for l in (proc.stderr or '').splitlines() if l]
-        entry = {'sums_file': str(sums.relative_to(source)), 'exit_code': proc.returncode,
-                 'ok': ok_n, 'bad': len(bad), 'bad_examples': bad[:5]}
-        if excluded:
-            entry['excluded_asset_runs'] = excluded
-            entry['note'] = ('SHA256SUMS 含 %d 条 asset-runs/ 条目（历史运行产物，非交付实体），'
-                             '副本核验时已排除；建议要求提供方排除该目录后重出清单' % excluded)
-        out['sums'].append(entry)
-        if proc.returncode != 0:
-            ok = False
+    # 按约定：不核验包根 SHA256SUMS（它常把历史 run 产物也登记进去，且不是交付判据）；
+    # 完整性只看文件数/字节数，实体级摘要由 validate_envelope.py 按 asset.json 声明的 sha256 核对。
+    out['sums'] = []
+    out['sums_checked'] = False
+    out['sums_note'] = '按约定不核验 SHA256SUMS'
     out['ok'] = ok
     return out
 
@@ -178,28 +136,10 @@ def write_manifest(root: Path, out: Path) -> int:
 
 
 def verify_sums(root: Path) -> dict:
-    """在原始包上复核全部 SHA256SUMS（若存在）。中文 locale 会打印「成功」，必须强制 C locale。"""
-    sums_files = sorted(root.glob('SHA256SUMS')) + sorted(root.glob('*/SHA256SUMS'))
-    if not sums_files:
-        return {'checked': False, 'reason': '包内无 SHA256SUMS'}
-    env = dict(os.environ, LC_ALL='C')
-    details, total_ok, total_bad, worst = [], 0, 0, 0
-    for sums in sums_files:
-        proc = subprocess.run(['sha256sum', '-c', sums.name], cwd=sums.parent,
-                              capture_output=True, text=True, env=env)
-        lines = (proc.stdout or '').splitlines()
-        ok_lines = [l for l in lines if l.endswith(': OK')]
-        bad_lines = [l for l in lines if l and not l.endswith(': OK')]
-        stderr_lines = [l for l in (proc.stderr or '').splitlines() if l]
-        total_ok += len(ok_lines)
-        total_bad += len(bad_lines) + len(stderr_lines)
-        worst = max(worst, proc.returncode)
-        details.append({'sums_file': str(sums.relative_to(root)), 'exit_code': proc.returncode,
-                        'ok': len(ok_lines), 'bad': len(bad_lines) + len(stderr_lines),
-                        'bad_examples': (bad_lines + stderr_lines)[:5]})
-    return {'checked': True, 'locale': 'LC_ALL=C', 'files_checked': len(sums_files),
-            'ok_total': total_ok, 'bad_total': total_bad, 'worst_exit_code': worst,
-            'details': details}
+    """按约定不核验包根 SHA256SUMS：这里只统计文件数/字节数，供 clean 后对照原包。"""
+    files, bytes_ = count_tree(root, skip_runs=True)
+    return {'checked': False, 'reason': '按约定不核验 SHA256SUMS（完整性以文件数/字节数为准）',
+            'files': files, 'bytes': bytes_}
 
 
 def cmd_init(args) -> int:
@@ -306,7 +246,7 @@ def main(argv=None) -> int:
             p.add_argument('--work-root', help='副本父目录（默认 <资产根目录父目录>/.asset-work）')
             p.add_argument('--manifest', action='store_true', help='记录原始包文件清单到 run 目录')
         if name == 'clean':
-            p.add_argument('--verify', action='store_true', help='删除后复核原始包 SHA256SUMS')
+            p.add_argument('--verify', action='store_true', help='删除后复核原始包文件数/字节数（不核 SHA256SUMS）')
     args = ap.parse_args(argv)
     return {'init': cmd_init, 'status': cmd_status, 'clean': cmd_clean}[args.cmd](args)
 

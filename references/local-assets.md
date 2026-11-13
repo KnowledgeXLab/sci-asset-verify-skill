@@ -13,7 +13,7 @@
 
 执行一律在副本中进行：`python scripts/work_copy.py init <资产根目录> --run-id <run_id> --manifest` 生成副本（默认 `<资产根目录父目录>/.asset-work/<run_id>/`），跑完 `clean --verify` 删副本并复核原包摘要。原始包只写 `asset-runs/<run_id>/`。
 
-摘要校验统一用 `LC_ALL=C sha256sum -c SHA256SUMS`：中文 locale 下通过行打印为「成功」，按 `: OK` 匹配会得到 0 行、被误判为全表失败。`__pycache__`/`*.pyc`、缓存等不在 `SHA256SUMS` 内，摘要全绿不能证明包未被运行写入——这正是要在副本里跑的原因。
+**不核验、也不生成包根 `SHA256SUMS`**：完整性用文件数/字节数判断，实体级摘要按 `asset.json` 里声明的 `sha256` 逐个核对（`validate_envelope.py`）。若需要引用包内自带的清单文件，只作旁证，不据此判失败。
 
 ## 入口与版本
 

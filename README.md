@@ -136,6 +136,15 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
+### 1.2-beta.7 — 2026-11-13
+
+按专项约定：**校验 skill 既不核验、也不生成包根 `SHA256SUMS`**。
+
+- `work_copy.py` 的副本自检与 `clean --verify` 只比文件数/字节数，`init_verify.sums_checked=false` 并在 `sums_note` 写明"按约定不核验 SHA256SUMS"；此前那条剔除 `asset-runs/` 条目的逻辑一并移除
+- 实体级完整性仍由 `validate_envelope.py` 按 `asset.json` 声明的 `size_bytes`/`sha256` 逐个核对——包根汇总清单不再是判据，也不再作为失败来源
+- `SKILL.md`、`references/local-assets.md` 改口径：不生成、不核验该文件；需要时只作旁证
+- 自测 63 项断言（改写 2 项：有 SHA256SUMS 也不核验、clean 只核文件数/字节数）
+
 ### 1.2-beta.6 — 2026-11-13
 
 三个包并行核验时暴露的两处适配问题。
