@@ -88,7 +88,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/9] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/10] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -186,7 +186,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/9] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/10] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -273,7 +273,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/9] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/10] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -317,7 +317,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/9] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/10] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -351,7 +351,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/9] prune_evidence.py — 只留报告类证据")
+    print("\n[5/10] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -391,7 +391,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/9] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/10] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -462,7 +462,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/9] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/10] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -502,7 +502,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/9] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/10] external_refs.py — 外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
     (pkg / "data" / "scotia").mkdir(parents=True)
@@ -558,7 +558,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/9] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/10] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -615,6 +615,44 @@ def t9_version_stamp(tmp: Path) -> None:
            "末尾不是版本小节")
 
 
+# --------------------------------------------------------------------------- T10 报告分级
+def t10_report_levels(tmp: Path) -> None:
+    print("\n[10/10] check_report.py — 问题清单 P0/P1/P2 分级")
+    d = tmp / "t10"
+    d.mkdir(parents=True, exist_ok=True)
+
+    def write(name: str, body: str) -> Path:
+        f = d / name
+        f.write_text(body, encoding="utf-8")
+        return f
+
+    ok = write("ok.md", "# R\n\n## 1. 结论\n通过。\n\n## 4. 问题清单\n\n### P0 阻断\n"
+                        "| P0-1 | 包络不合规 | 须修 |\n\n### P1 重要\n无\n\n### P2 建议\n"
+                        "| P2-1 | 命名建议 | 可选 |\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(ok)], d)
+    record("正例：三级齐全的报告通过", proc.returncode == 0, f"rc={proc.returncode}")
+
+    clean = write("clean.md", "# R\n\n## 4. 问题清单\n\n### P0 阻断\n无\n\n### P1 重要\n无\n\n"
+                              "### P2 建议\n无\n\n**未发现问题。**\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(clean)], d)
+    record("正例：无问题时写「未发现问题」也通过", proc.returncode == 0, f"rc={proc.returncode}")
+
+    flat = write("flat.md", "# R\n\n## 4. 问题\n- 缺 verify.py\n- 路径写死\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(flat)], d)
+    record("负例：不分级的流水清单被拒", proc.returncode == 1 and "分级" in proc.stderr,
+           f"rc={proc.returncode}")
+
+    none = write("none.md", "# R\n\n## 1. 结论\n通过。\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(none)], d)
+    record("负例：整节缺失被拒", proc.returncode == 1 and "缺少「问题清单」" in proc.stderr,
+           f"rc={proc.returncode}")
+
+    empty = write("empty.md", "# R\n\n## 4. 问题清单\n\n### P0 阻断\n\n### P1 重要\n\n### P2 建议\n")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(empty)], d)
+    record("负例：三级全空且没写「未发现问题」被拒",
+           proc.returncode == 1 and "未发现问题" in proc.stderr, f"rc={proc.returncode}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -622,7 +660,7 @@ def main() -> int:
     print(f"临时目录：{tmp}")
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
-               t7_asset_ids, t8_external_refs, t9_version_stamp):
+               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

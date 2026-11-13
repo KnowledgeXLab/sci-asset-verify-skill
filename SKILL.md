@@ -105,7 +105,7 @@ python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 
 ## 5. 真值比较、报告和回填
 
-按固定协议输出逐字段 `comparison.json` 以及中文 `validation-report.md`，格式见验证参考。写报告前先跑覆盖度门禁：`python scripts/check_coverage.py --cases cases.json --inventory inventory.json --run-dir . --report validation-report.md`，它按 `assets/case-minimums.json` 的每类型下限核对用例数，把覆盖度小节注入报告并写 `coverage.json`；任何类型低于下限（或包内有该类型资产却没有用例）时报告必须写「覆盖不足」，不得宣称闭环完成。报告只写本次运行结果与 expected output 的对比和判定，保持简短；模型只做推理并与 expected output 比较，不与训练日志比较，不写资产登记、部署、哈希等内容。没有 expected output 或阈值时给出差值与“未判定”，不宣称通过。
+按固定协议输出逐字段 `comparison.json` 以及中文 `validation-report.md`，格式见验证参考。写报告前先跑覆盖度门禁：`python scripts/check_coverage.py --cases cases.json --inventory inventory.json --run-dir . --report validation-report.md`，它按 `assets/case-minimums.json` 的每类型下限核对用例数，把覆盖度小节注入报告并写 `coverage.json`；任何类型低于下限（或包内有该类型资产却没有用例）时报告必须写「覆盖不足」，不得宣称闭环完成。报告只写本次运行结果与 expected output 的对比和判定，保持简短；**问题清单固定分三级：P0 阻断（不可计为有效交付）、P1 重要（规范强制要求不符）、P2 建议（可改进）**，每条带编号（P0-1…）与证据，某一级为空写「无」，三级全空时写「未发现问题」；写完后跑 `python scripts/check_report.py --report validation-report.md` 自查，缺分级会直接报错；模型只做推理并与 expected output 比较，不与训练日志比较，不写资产登记、部署、哈希等内容。没有 expected output 或阈值时给出差值与“未判定”，不宣称通过。
 
 根据验证报告中的结果回填 Excel 的“评价指标∣验收条件”和“质量说明”；验收条件先概括本次跑的是哪几类用例、各自检查什么，再写通过数量和阈值（通过率必须注明分母与范围，未执行项不计入分母且显式标注），不能只写“N/N 通过”。对外清单没有“校验”“资产校验报告”列：结论并入“质量说明”，报告路径写入 field-evidence.json；若用户另用内部清单，按该表模板的规定处理。回填后重新打开工作簿检查。只有所有必需分支完成且证据存在时宣称闭环完成。有阻塞仍生成报告，写明哪些 case 未完成对比及原因。最终提供使用说明、登记表、部署信息、原始记录、比较数据和验证报告路径。
 
