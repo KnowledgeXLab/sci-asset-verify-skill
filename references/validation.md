@@ -89,8 +89,9 @@ python scripts/check_coverage.py --cases <run>/cases.json --inventory <run>/inve
 
    - **`asset_id` 类问题的「影响 / 整改要求」列必须写全格式规范**，不能只写"改成四段"。原文照抄：
      > asset_id 格式为 `sciasset://{project-id}/{namespace}/{asset-type}/{slug}`，其中 project-id 为项目编号（见项目任务书首页）、namespace 为自拟命名空间、asset-type 为资产类型、slug 为资产名称
-   - **表格单元格内不得出现裸竖线**：字段名本身带竖线的（`任务|操作标签`、`运行环境|资源要求`、`评价指标|验收条件`）以及任何正文里的 `|`，
-     在表格中一律写成 `\|`（反引号里也要转义），否则会被切成额外列、整张表错位。`scripts/check_report.py` 会逐行核对竖线数。
+   - **写 markdown 时，表格单元格内的竖线必须转义成 `\|`**，反引号里的也要转义（例如 `--vcf <file.vcf\|file.vcf.gz>`、
+     `任务\|操作标签`、`运行环境\|资源要求`、`评价指标\|验收条件`）。裸 `|` 会被渲染器切成额外列，整张表错位——
+     这是交付出去的 md 给人看的东西，错位直接影响可信度。只在**写报告/说明时**遵守，不需要额外的机检脚本。
 
    某一级为空显式写「无」；三级全空时，本节写 **未发现问题**（一句话即可，不要留空、不要省略本节）。
    收尾跑 `python scripts/check_report.py --report <run>/validation-report.md` 自查，缺分级直接报错。

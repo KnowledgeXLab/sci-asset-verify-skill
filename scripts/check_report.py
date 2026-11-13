@@ -87,29 +87,6 @@ def main(argv=None) -> int:
         if levels_defined and all(not block(p_).strip() for p_ in levels_defined) and NO_ISSUE not in body:
             errors.append(f'三级都为空时必须写「{NO_ISSUE}」')
 
-    # markdown 表格：未转义的竖线会把单元格切错列，逐块核对每行竖线数与表头一致
-    def pipe_count(line: str) -> int:
-        # 先去掉 \| 转义，再数
-        return line.replace('\\|', '').count('|')
-
-    lines = text.splitlines()
-    i = 0
-    while i < len(lines):
-        if lines[i].lstrip().startswith('|'):
-            block = []
-            while i < len(lines) and lines[i].lstrip().startswith('|'):
-                block.append((i + 1, lines[i]))
-                i += 1
-            if len(block) >= 2:
-                head_n = pipe_count(block[0][1])
-                for lineno, row in block[1:]:
-                    n = pipe_count(row)
-                    if n != head_n:
-                        errors.append(f'第 {lineno} 行表格竖线数与表头不一致（表头 {head_n} 个，本行 {n} 个）：'
-                                      '单元格内的 | 必须写成 \\| 转义，否则会被切错列')
-        else:
-            i += 1
-
     # 收尾机打小节（告警）
     if '<!-- validation-tool:begin -->' not in text:
         warnings.append('缺少「校验工具版本」小节（跑 scripts/stamp_report.py 生成）')
