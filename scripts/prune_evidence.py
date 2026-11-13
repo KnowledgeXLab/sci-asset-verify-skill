@@ -129,10 +129,12 @@ def mark_ledgers(run: Path, pruned_paths: list[str]) -> dict:
         doc = json.loads(p.read_text(encoding='utf-8'))
         hits = 0
         for c in doc.get('cases') or []:
-            ap = c.get('actual_output') or c.get('actual_path')
-            if not ap:
+            raw = c.get('actual_output') or c.get('actual_path') or []
+            aps = raw if isinstance(raw, list) else [raw]      # 规范允许列表
+            aps = [str(x) for x in aps if x]
+            if not aps:
                 continue
-            if any(ap.startswith(pref) or pref in ap for pref in pruned_paths):
+            if any(any(a.startswith(pref) or pref in a for pref in pruned_paths) for a in aps):
                 c['actual_pruned'] = True
                 hits += 1
             # 证据列表只保留仍存在的路径（清理后不再指向已删的原始输出）
@@ -189,9 +191,15 @@ def main(argv=None) -> int:
         return 2
     before = size_of(run)
     pruned, pruned_bytes = collect(run, args.keep_work, args.dry_run)
-    after = size_of(run)
+    after = size_of(run) if not args.dry_run else max(before - pruned_bytes, 0)
     paths = [p['path'] for p in pruned]
-    touched = {} if args.dry_run else mark_ledgers(run, paths)
+    touched, mark_error = {}, None
+    if not args.dry_run:
+        try:
+            touched = mark_ledgers(run, paths)
+        except Exception as exc:  # noqa: BLE001
+            mark_error = f'{type(exc).__name__}: {exc}'   # 已经删了文件，记录必须照写
+            print(f'[warn] 台账标记失败（清理记录仍会落盘）：{mark_error}', file=sys.stderr)
     out_path = run / 'evidence-prune.json'
     prev = {}
     if out_path.exists():
@@ -219,12 +227,12 @@ def main(argv=None) -> int:
         total_items, total_bytes = scan_items, scan_bytes
     note = False
     if not args.dry_run:
-        if (run / 'tool' / 'correctness_report.json').exists():
-            actual_report = 'tool/correctness_report.json'
-        elif (run / 'data' / 'data_cases_report.json').exists():
-            actual_report = 'data/data_cases_report.json'
-        else:
-            actual_report = '用例执行报告'
+        candidates = ['validation-report.md', 'comparison.json', 'tool/correctness_report.json',
+                      'data/data_cases_report.json']
+        actual_report = next((c for c in candidates if (run / c).exists()), None)
+        if actual_report is None:
+            mds = sorted(p.name for p in run.glob('*.md'))
+            actual_report = mds[0] if mds else '本 run 的报告文件'
         note = inject_note(Path(args.report) if args.report else run / 'validation-report.md',
                            total_bytes, after, total_items, actual_report)
     payload = {
@@ -232,6 +240,7 @@ def main(argv=None) -> int:
         'run': run.name,
         'pruned_at': now(),
         'dry_run': args.dry_run,
+        'ledger_mark_error': mark_error,
         'keep_work': args.keep_work,
         'bytes_before': before,
         'bytes_after': after,

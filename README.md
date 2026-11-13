@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部九个脚本，共 45 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部九个脚本，共 49 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -135,6 +135,18 @@ vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+### 1.2-beta.3 — 2026-11-13
+
+修 `prune_evidence.py` 在真实台账上的崩溃（校验 sample_skills 时暴露）。
+
+- `cases.json` 里 `actual_output` 是**列表**（规范允许）时，台账标记按字符串处理会抛 `AttributeError`，而且发生在文件已删除之后 → 中间产出被真删、却没有 `evidence-prune.json`、没有 `actual_pruned` 标记、报告里也没有证据保留小节
+- 修复：`actual_output`/`actual_path` 统一归一化为字符串列表再匹配；台账标记失败不再中断落盘（错误写进 `ledger_mark_error` 并告警）
+- 顺带修两处：`--dry-run` 的 `bytes_after` 改为按“删完剩多少”预估；证据文件兜底不再硬写「用例执行报告」，改为按 run 内实际文件探测
+- `asset_ids.py` 在 `--inject` 时若有资产拿不到资产ID，改为退出码 1（此前静默返回 0）
+- 修 `task_classes` 漏检：原先「skill/task/trajectory/benchmark 至少一个任务概念」这条规则写在 `isinstance(task_classes, list)` 里，字段整个缺失时被跳过（真实案例：heritability 的 `asset.json` 没有该字段却判通过）
+- **`jsonschema` 也随包分发**（`vendor/`，含 5 个依赖，均 MIT）：包络的 schema 交叉校验不再依赖环境是否装了这个包；解析顺序「环境 → vendor → 内置轻量实现」，报告里标注实际用的引擎
+- 自测 45 → **49 项断言**（列表型 `actual_output` 的台账标记、dry-run 体积预估、skill 缺/空 task_classes）
 
 ### 1.2-beta.2 — 2026-11-13
 
@@ -197,4 +209,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，45 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，49 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。

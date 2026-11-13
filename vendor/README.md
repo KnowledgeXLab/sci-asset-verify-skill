@@ -1,3 +1,27 @@
+# vendor/
+
+随 skill 分发的第三方依赖，装它就是为了「干净环境 / 离线机器也能直接跑」，不要求使用者自己 pip install。
+
+| 包 | 版本 | 许可 | 用途 |
+|---|---|---|---|
+| openpyxl | 3.1.5 | MIT | 生成对外资产清单 xlsx |
+| et_xmlfile | 2.0.0 | MIT | openpyxl 依赖 |
+| jsonschema | 4.26.0 | MIT | 包络 schema 交叉校验（`validate_envelope.py`） |
+| jsonschema-specifications | 2025.9.1 | MIT | jsonschema 依赖 |
+| referencing | 0.37.0 | MIT | jsonschema 依赖 |
+| rpds-py | 2026.9.1 | MIT | jsonschema 依赖（预编译扩展） |
+| attrs | 26.1.0 | MIT | jsonschema 依赖 |
+
+各包的许可证原文在同目录的 `*-LICENSE.rst`。
+
+## 解析顺序
+
+- `openpyxl`：`scripts/_deps.py` 负责，顺序是「环境已装 → 本目录 → 自动安装 → 报错」。
+- `jsonschema`：`validate_envelope.py` 先试环境，再回退到本目录；两者都没有时用脚本内置的轻量校验器，
+  并在报告里如实标注用的是哪个引擎（不会静默跳过）。
+
+`rpds-py` 是预编译扩展，与平台（linux x86_64 / CPython 3.14）绑定；换平台时重新执行
+`python -m pip install --target vendor --no-compile jsonschema` 即可。
 # vendor/ — 随 skill 分发的第三方依赖
 
 这里的包**随 skill 一起分发**，目的是让清单表生成（`build_list.py` / `check_list.py`）在干净环境里也能跑，

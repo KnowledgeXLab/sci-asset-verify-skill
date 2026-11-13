@@ -398,8 +398,10 @@ def check(asset, file):
                 r.err(f'task_classes[{i}]', '应为 {id: problem:*|operation:*|stage:*|task:*} 对象')
             elif not CLASS_ID.match(str(t['id'])):
                 r.err(f'task_classes[{i}].id', f'应为 problem:/operation:/stage:/task: 前缀，实际 {t["id"]!r}')
-        if atype in ('skill', 'task', 'trajectory', 'benchmark') and not tcs:
-            r.err('task_classes', f'{atype} 至少需要一个任务概念（§4.2）')
+
+
+    if atype in ('skill', 'task', 'trajectory', 'benchmark') and not (isinstance(tcs, list) and tcs):
+        r.err('task_classes', f'{atype} 至少需要一个任务概念（§4.2）；缺该字段或为空都不合规')
 
     tasks = asset.get('tasks')
     if atype == 'trajectory':
@@ -576,6 +578,24 @@ def builtin_schema_validate(inst, schema, path=''):
     return errs
 
 
+def _import_jsonschema():
+    """优先用环境里的 jsonschema；没有就用 skill 自带的 vendor/（离线可用）。"""
+    try:
+        import jsonschema  # type: ignore
+        return jsonschema
+    except Exception:  # noqa: BLE001
+        pass
+    vendor = Path(__file__).resolve().parents[1] / 'vendor'
+    if vendor.is_dir() and str(vendor) not in sys.path:
+        sys.path.insert(0, str(vendor))
+        try:
+            import jsonschema  # type: ignore
+            return jsonschema
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 def optional_jsonschema_check(assets, engine='auto'):
     """用内置 schema 复核一遍。有 jsonschema 用它，没有就用内置轻量实现——绝不静默跳过。"""
     if not SCHEMA_FILE.exists():
@@ -584,8 +604,10 @@ def optional_jsonschema_check(assets, engine='auto'):
     notes = []
     use = engine
     if use in ('auto', 'jsonschema'):
+        jsonschema = _import_jsonschema()
         try:
-            import jsonschema  # type: ignore
+            if jsonschema is None:
+                raise ImportError('jsonschema 不可用')
             validator = jsonschema.Draft202012Validator(schema)
             for file, asset in assets:
                 errs = sorted(validator.iter_errors(asset), key=lambda e: list(e.path))[:5]
@@ -593,7 +615,12 @@ def optional_jsonschema_check(assets, engine='auto'):
                     notes.append({'file': str(file), 'asset_id': asset.get('asset_id'),
                                   'path': '/'.join(str(x) for x in e.path) or '(root)',
                                   'message': e.message})
-            return f'jsonschema {jsonschema.__version__}', notes
+            from importlib.metadata import version as _pkg_version
+            try:
+                ver = _pkg_version('jsonschema')
+            except Exception:  # noqa: BLE001
+                ver = '4.x'
+            return f'jsonschema {ver}', notes
         except Exception:  # noqa: BLE001
             if use == 'jsonschema':
                 return 'jsonschema 不可用（已按要求不降级）', []

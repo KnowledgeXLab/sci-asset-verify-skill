@@ -161,10 +161,13 @@ def main(argv=None) -> int:
         elif args.inject and args.check:
             print('--check 模式下不写回', file=sys.stderr)
 
+    incomplete = bool(problems) or bool(args.rows and miss)
     if args.check:
-        bad = problems or (args.rows and miss)
-        print('校验通过' if not bad else f'校验未通过：{len(problems)} 条问题')
-        return 0 if not bad else 1
+        print('校验通过' if not incomplete else f'校验未通过：{len(problems)} 条问题')
+        return 0 if not incomplete else 1
+    if args.inject and incomplete:
+        print(f'警告：{len(problems)} 个资产的 asset_id 不合规，清单「资产ID」列未能全部写入', file=sys.stderr)
+        return 1
     return 0
 
 

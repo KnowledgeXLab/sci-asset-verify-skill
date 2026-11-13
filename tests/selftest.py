@@ -128,6 +128,17 @@ def t1_envelope(tmp: Path) -> None:
     bad = minimal_envelope(); bad["asset_version"] = "1.0"
     check(bad, "版本非语义化", False, "asset_version")
 
+    def as_skill(doc):
+        doc["asset_type"] = "skill"
+        doc["asset_id"] = "sciasset://2026ZD123456/earth/skill/sample"
+        return doc
+
+    bad = as_skill(minimal_envelope()); bad.pop("task_classes")
+    check(bad, "skill 类资产缺 task_classes", False, "task_classes")
+
+    bad = as_skill(minimal_envelope()); bad["task_classes"] = []
+    check(bad, "skill 类资产 task_classes 为空", False, "task_classes")
+
     bad = minimal_envelope(); bad["lifecycle"] = "archived"
     check(bad, "lifecycle 非法", False, "lifecycle")
 
@@ -352,12 +363,24 @@ def t5_prune(tmp: Path) -> None:
     (run_dir / "validation-report.md").write_text("# r\n\n## 5. 判定\n", encoding="utf-8")
 
     run([str(SCRIPTS / "prune_evidence.py"), "--run", str(run_dir), "--dry-run"], tmp / "t5")
+    dry = json.loads((run_dir.parent / "t5" / "evidence-prune.json").read_text(encoding="utf-8")) if (run_dir.parent / "t5" / "evidence-prune.json").exists() else {}
+    record("正例：--dry-run 的 bytes_after 按删完预估，不沿用 before",
+           not dry or dry.get("bytes_after", 0) < dry.get("bytes_before", 0),
+           f"before={dry.get('bytes_before')} after={dry.get('bytes_after')}")
     record("正例：--dry-run 只预览，不删文件也不落盘",
            (run_dir / "tool" / "work" / "case1" / "big.tif").exists()
            and not (run_dir / "evidence-prune.json").exists(),
            "dry-run 却发生了删除或写了记录")
 
-    run([str(SCRIPTS / "prune_evidence.py"), "--run", str(run_dir)], tmp / "t5")
+    (run_dir / "cases.json").write_text(json.dumps({"cases": [
+        {"case_id": "c1", "actual_output": ["tool/work/case1/big.tif",
+                                            "tool/correctness_report.json"]}]}, ensure_ascii=False),
+        encoding="utf-8")
+    proc = run([str(SCRIPTS / "prune_evidence.py"), "--run", str(run_dir)], tmp / "t5")
+    led = json.loads((run_dir / "cases.json").read_text(encoding="utf-8"))["cases"][0]
+    record("正例：actual_output 是列表时台账照常标记（不崩）",
+           proc.returncode == 0 and led.get("actual_pruned") is True,
+           f"rc={proc.returncode} pruned={led.get('actual_pruned')}")
     rec = json.loads((run_dir / "evidence-prune.json").read_text(encoding="utf-8"))
     kept = all((run_dir / p).exists() for p in ("tool/correctness_report.json", "refs/frozen.npy",
                                                 "registration/清单.xlsx", "validation-report.md"))
