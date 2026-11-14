@@ -857,6 +857,29 @@ def t13_mount_external(tmp: Path) -> None:
            and "版本不符" in rep["missing"][0]["reason"],
            f"rc={proc.returncode} status={rep.get('status')}")
 
+    # 回归：包本身位于 .asset-work/<run>/ 下（work_copy 的副本就是这样），候选不应被整片排除
+    aw = d / ".asset-work" / "run-x" / "pkg"
+    (aw / "mine").mkdir(parents=True)
+    (aw / "mine" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/tool/mine"}, ensure_ascii=False), encoding="utf-8")
+    (aw / "mine" / "external_assets.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0",
+                    "required": True}]}, ensure_ascii=False), encoding="utf-8")
+    (aw / "other").mkdir(parents=True)
+    (aw / "other" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0"},
+        ensure_ascii=False), encoding="utf-8")
+    into_aw = d / ".asset-work" / "run-x" / "external"
+    out_aw = d / "aw.json"
+    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(aw), "--into", str(into_aw),
+                "--json-out", str(out_aw)], d)
+    rep_aw = json.loads(out_aw.read_text(encoding="utf-8"))
+    record("回归：包位于 .asset-work 下也能扫到同包其他资产并挂载",
+           proc.returncode == 0 and rep_aw["status"] == "complete"
+           and (into_aw / "mine" / "ext" / "asset.json").is_file(),
+           f"rc={proc.returncode} status={rep_aw.get('status')} scanned={rep_aw.get('candidate_dirs_scanned')}")
+
     (pkg / "mine" / "external_assets.json").unlink()
     proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w3")], d)
     record("正例：各资产目录都无 external_assets.json 时无需挂载、退出码 0",
