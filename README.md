@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十三个脚本，共 75 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十三个脚本，共 77 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -136,7 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`）尚未发版。
+> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter）尚未发版。
 
 ### 1.2-beta.2 — 2026-11-13
 
@@ -217,4 +217,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，75 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，77 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。

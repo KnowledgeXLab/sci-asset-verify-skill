@@ -88,8 +88,9 @@ def main(argv=None) -> int:
             errors.append(f'三级都为空时必须写「{NO_ISSUE}」')
 
     # 收尾机打小节（告警）
-    if '<!-- validation-tool:begin -->' not in text:
-        warnings.append('缺少「校验工具版本」小节（跑 scripts/stamp_report.py 生成）')
+    head = text.split('\n---\n', 1)[0] if text.startswith('---\n') else ''
+    if 'skill_version' not in head:
+        warnings.append('报告开头缺 front matter 的 skill_version / generated_at（跑 scripts/stamp_report.py 生成）')
     if '<!-- evidence-prune:begin -->' not in text:
         warnings.append('缺少「证据保留口径」小节（跑 scripts/prune_evidence.py 生成）')
 

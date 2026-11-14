@@ -654,24 +654,41 @@ def t9_version_stamp(tmp: Path) -> None:
     got = json.loads(ids.read_text(encoding="utf-8")).get("skill") or {}
     record("正例：资产ID 映射带 skill 版本", got.get("version") == ver, f"version={got.get('version')}")
 
-    # 报告末尾小节 + 幂等 + 台账补戳
+    # 报告开头 front matter + 幂等 + 台账补戳
     r = tmp / "t9" / "run"
     r.mkdir()
     (r / "validation-report.md").write_text("# 报告\n\n## 1. 结论\n通过。\n", encoding="utf-8")
     (r / "cases.json").write_text(json.dumps({"cases": [{"case_id": "c1"}]}), encoding="utf-8")
     run([str(SCRIPTS / "stamp_report.py"), "--run", str(r)], tmp / "t9")
     txt = (r / "validation-report.md").read_text(encoding="utf-8")
-    record("正例：报告末尾写入「校验工具版本」，且台账补上 skill 字段",
-           "## 校验工具版本" in txt and ver in txt
-           and json.loads((r / "cases.json").read_text(encoding="utf-8")).get("skill", {}).get("version") == ver,
-           "小节或台账缺版本")
+    head = txt.split("\n---\n", 1)[0]
+    record("正例：版本与生成时间写在文件开头的 front matter",
+           txt.startswith("---\n") and "skill_version" in head and ver in head
+           and "generated_at" in head,
+           f"head={head[:80]!r}")
+    record("正例：正文里不再出现版本小节",
+           "校验工具版本" not in txt, "正文仍有版本小节")
+    record("正例：台账补上 skill 字段",
+           json.loads((r / "cases.json").read_text(encoding="utf-8")).get("skill", {}).get("version") == ver,
+           "台账缺版本")
 
     run([str(SCRIPTS / "stamp_report.py"), "--run", str(r)], tmp / "t9")
     txt2 = (r / "validation-report.md").read_text(encoding="utf-8")
-    record("正例：重复执行不重复追加小节（幂等）", txt2.count("<!-- validation-tool:begin -->") == 1,
-           f"出现 {txt2.count('<!-- validation-tool:begin -->')} 次")
-    record("正例：版本落在报告的最后", txt2.rstrip().endswith("<!-- validation-tool:end -->"),
-           "末尾不是版本小节")
+    record("正例：重复执行不重复写 front matter（幂等）",
+           txt2.count("\n---\n") == 1 and txt2.count("skill_version:") == 1,
+           f"---\n 出现 {txt2.count(chr(10) + '---' + chr(10))} 次")
+
+    # 旧版文末小节应被迁移删除
+    legacy = tmp / "t9" / "legacy"
+    legacy.mkdir()
+    (legacy / "validation-report.md").write_text(
+        "# 报告\n\n## 1. 结论\n通过。\n\n<!-- validation-tool:begin -->\n## 校验工具版本\n\n| 项 | 值 |\n|---|---|\n| 版本 | `old` |\n<!-- validation-tool:end -->\n",
+        encoding="utf-8")
+    run([str(SCRIPTS / "stamp_report.py"), "--run", str(legacy)], tmp / "t9")
+    old_txt = (legacy / "validation-report.md").read_text(encoding="utf-8")
+    record("正例：旧的文末版本小节被迁移成 front matter",
+           old_txt.startswith("---\n") and "validation-tool:begin" not in old_txt
+           and "校验工具版本" not in old_txt, f"head={old_txt[:40]!r}")
 
 
 # --------------------------------------------------------------------------- T10 报告分级

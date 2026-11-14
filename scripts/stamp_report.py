@@ -32,31 +32,49 @@ SKIP_PARTS = {'work', 'node_modules', '.git', '__pycache__'}
 MAX_JSON = 2 * 1024 * 1024      # 超过 2MB 的 JSON 不碰（多为数据实体）
 
 
-def render(info: dict) -> str:
-    commit = info.get('commit') or '（无 git 信息，按 VERSION 文件）'
-    return (f"{BEGIN}\n## 校验工具版本\n\n"
-            f"| 项 | 值 |\n|---|---|\n"
-            f"| 校验 skill | `{info['name']}` |\n"
-            f"| 版本 | `{info['version']}` |\n"
-            f"| 提交 | `{commit}` |\n"
-            f"| 版本来源 | {info.get('version_source')} |\n"
-            f"| 写入时间 | {now()} |\n\n"
-            f"本次核验的全部结论与证据均出自上述版本；证据 JSON 内另有 `skill` 字段可逐份核对。\n"
-            f"{END}")
+META_KEYS = ('skill', 'skill_version', 'skill_commit', 'skill_version_source', 'generated_at')
 
 
-def write_report(report: Path, info: dict) -> str:
-    block = render(info)
-    text = report.read_text(encoding='utf-8') if report.exists() else ''
-    if BEGIN in text:
-        head, _, rest = text.partition(BEGIN)
+def _parse_front(text: str):
+    """拆出 YAML front matter（仅支持 flat key: value），返回 (meta_dict, body)。"""
+    if text.startswith('---\n'):
+        end = text.find('\n---\n', 4)
+        if end != -1:
+            meta = {}
+            for line in text[4:end].splitlines():
+                if ':' in line:
+                    k, _, v = line.partition(':')
+                    meta[k.strip()] = v.strip()
+            return meta, text[end + 5:]
+    return {}, text
+
+
+def write_meta(report: Path, info: dict) -> str:
+    """把版本与生成时间写进文件开头的 front matter，正文不再出现。"""
+    raw = report.read_text(encoding='utf-8') if report.exists() else ''
+    action = 'created'
+    if BEGIN in raw:                       # 旧的文末小节：迁移时删除
+        head, _, rest = raw.partition(BEGIN)
         _, _, tail = rest.partition(END)
-        text = (head + block + tail).rstrip() + '\n'
-        action = 'updated'
-    else:
-        text = (text.rstrip() + '\n\n' + block + '\n') if text.strip() else block + '\n'
-        action = 'appended'
-    report.write_text(text, encoding='utf-8')
+        raw = (head.rstrip() + '\n' + tail.lstrip('\n')).rstrip() + '\n'
+        action = 'migrated'
+    meta, body = _parse_front(raw)
+    if meta:
+        action = 'updated' if action == 'created' else action
+    meta.update({
+        'skill': info['name'],
+        'skill_version': info['version'],
+        'skill_commit': info.get('commit') or 'unknown',
+        'skill_version_source': info.get('version_source') or 'unknown',
+        'generated_at': now(),
+    })
+    lines = ['---'] + [f'{k}: {meta[k]}' for k in META_KEYS if k in meta]
+    for k in meta:
+        if k not in META_KEYS:
+            lines.append(f'{k}: {meta[k]}')
+    lines.append('---')
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text('\n'.join(lines) + '\n\n' + body.lstrip('\n'), encoding='utf-8')
     return action
 
 
@@ -109,11 +127,11 @@ def main(argv=None) -> int:
         if args.commit:
             info['commit'] = args.commit
     report = Path(args.report).expanduser().resolve() if args.report else run / 'validation-report.md'
-    action = write_report(report, info)
+    action = write_meta(report, info)
     res = {'tool': 'stamp_report.py', 'run': run.name, 'report': str(report),
            'report_action': action, 'skill': info,
            'json': {'stamped': [], 'skipped': []} if args.no_json else stamp_jsons(run, info)}
-    print(f"报告：{action} {report.name}")
+    print(f"报告 front matter：{action} {report.name}")
     print(f"skill：{info['name']} {info['version']}"
           f"（commit {info.get('commit') or '—'}，来源 {info.get('version_source')}）")
     if not args.no_json:

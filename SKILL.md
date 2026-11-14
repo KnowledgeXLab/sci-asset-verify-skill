@@ -120,9 +120,9 @@ python scripts/prune_evidence.py --run <资产根目录>/asset-runs/<run_id> [--
 python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 ```
 
-它把「校验工具版本」小节写到 `validation-report.md` **末尾**（`<!-- validation-tool:begin/end -->` 标记块，幂等），并给 run 内所有 dict 型证据 JSON 补 `skill` 字段（`{name, version, commit, version_source}`）。各脚本产出的 JSON 由脚本自己打戳；`cases.json`/`comparison.json`/`state.json` 这类由执行方整理的台账靠这一步补齐。版本号唯一来源是仓库根 `VERSION` 文件，有 git 时同时记提交号。补录历史批次用 `--version/--commit` 显式指定，正常流程不要用。
+它把校验 skill 版本与生成时间写成报告开头的 **YAML front matter**（`skill` / `skill_version` / `skill_commit` / `generated_at`，幂等，旧版文末小节会被迁移删除），正文不再出现版本信息；并给 run 内所有 dict 型证据 JSON 补 `skill` 字段（`{name, version, commit, version_source}`）。各脚本产出的 JSON 由脚本自己打戳；`cases.json`/`comparison.json`/`state.json` 这类由执行方整理的台账靠这一步补齐。版本号唯一来源是仓库根 `VERSION` 文件，有 git 时同时记提交号。补录历史批次用 `--version/--commit` 显式指定，正常流程不要用。
 
-完成条件：清单中所有 case 都有执行状态和证据；预期失败用例收到约定错误算通过，运行环境故障不能代替预期错误；`evidence-prune.json` 存在且 `validation-report.md` 含「证据保留口径」与「校验工具版本」两个小节。
+完成条件：清单中所有 case 都有执行状态和证据；预期失败用例收到约定错误算通过，运行环境故障不能代替预期错误；`evidence-prune.json` 存在、`validation-report.md` 含「证据保留口径」小节，且文件开头 front matter 带 `skill_version` 与 `generated_at`。
 
 ## 5. 真值比较、报告和回填
 

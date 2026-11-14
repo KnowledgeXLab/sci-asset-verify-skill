@@ -56,7 +56,19 @@ python scripts/check_coverage.py --cases <run>/cases.json --inventory <run>/inve
 
 `comparison.json` 按 case 保存：输入与真值来源、匹配键、字段 actual/expected/unit/absolute_error/tolerance/status、忽略项、运行状态、科学判定、完整性判定及证据相对路径。
 
-`validation-report.md` 是简洁的结果对比报告，只回答“这个工具/skill/模型等跑出来的结果和 expected output 是否一致”。内容：
+`validation-report.md` 是简洁的结果对比报告。**文件开头必须是 front matter**，记录校验 skill 版本与生成时间，正文里不再重复：
+
+```
+---
+skill: sci-asset-verify-skill
+skill_version: 1.2-beta.3
+skill_commit: 20d728a
+skill_version_source: VERSION
+generated_at: 2026-11-14T11:00:23+08:00
+---
+```
+
+由 `scripts/stamp_report.py --run <run>` 生成与刷新（幂等）。它只回答“这个工具/skill/模型等跑出来的结果和 expected output 是否一致”。内容：
 1. 结论：一两段话给出通过/不通过/未判定，以及最关键的差异数字。
 2. 对比对象：被测对象与版本、本次 run 目录、expected output 路径、对比日期，各一行。
 3. 结果对比表：按 case 或关键字段列出 expected / actual / 差值 / 判定；case 多时给汇总表（计划/执行/通过/失败/未判定及通过率分母）加关键指标或差异最大的若干条，不逐条罗列全部 case。
