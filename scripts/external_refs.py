@@ -17,7 +17,7 @@
 
 用法
 ----
-  python scripts/external_refs.py --package <资产根目录>                 # 只校验并打印
+  python scripts/external_refs.py --package <资产根目录>                 # 逐个资产目录校验并打印
   python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject
   python scripts/external_refs.py --package <资产根目录> --check         # 有错则退出码 1
 
@@ -110,7 +110,7 @@ def validate(doc, root: Path):
 def render(assets) -> str:
     """清单「资产关联」列的内容：只放 asset_id 去掉 sciasset:// 前缀，英文逗号分隔。
 
-    清单该列只认包根 external_assets.json 声明的编号，不写依赖描述、不写资产名、没有就留空。
+    清单该列只认资产目录下的 external_assets.json 声明的编号，不写依赖描述、不写资产名、没有就留空。
     """
     ids = []
     for a in assets:
@@ -147,57 +147,56 @@ def main(argv=None) -> int:
     if not root.is_dir():
         print(f'资产根目录不存在：{root}', file=sys.stderr)
         return 2
-    cands = [Path(args.file).expanduser().resolve()] if args.file else [
-        p for p in [root / FILE] + sorted(root.glob(f'*/{FILE}'))
-        if not (SKIP_PARTS & set(p.relative_to(root).parts))]
-    target = next((p for p in cands if p.exists()), None)
-    payload = {'tool': 'external_refs.py', 'package': str(root), 'file': None,
-               'present': False, 'problems': [], 'warnings': [], 'assets': [], 'cell': None}
-    if target is None:
-        print(f'未发现 {FILE}（可选文件，合规）')
-        if args.rows and not args.check:
-            rp = Path(args.rows).expanduser().resolve()
-            doc_rows = json.loads(rp.read_text(encoding='utf-8'))
-            rws = doc_rows.get('rows') if isinstance(doc_rows, dict) else doc_rows
-            if isinstance(rws, list):
-                for w in rws:
-                    w['资产关联'] = ''          # 没有声明就留空，不写「不适用」也不写描述
-                if args.inject:
-                    out = Path(args.out_rows).expanduser().resolve() if args.out_rows else rp
-                    out.write_text(json.dumps(doc_rows, ensure_ascii=False, indent=1), encoding='utf-8')
-                    print(f'无 external_assets.json：{len(rws)} 行的「资产关联」列已清空并写回 {out.name}')
-        if args.json_out:
-            p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
-        return 0
+    found = []                                    # [(资产目录, 引用文件)]
+    if args.file:
+        f = Path(args.file).expanduser().resolve()
+        if f.exists():
+            found.append((f.parent, f))
+    else:
+        for f in sorted(root.rglob(FILE)):
+            rel = f.relative_to(root)
+            if SKIP_PARTS & set(rel.parts):
+                continue
+            found.append((f.parent, f))           # external_assets.json 放在**每个资产目录**里
 
-    payload['file'] = str(target)
-    payload['present'] = True
-    try:
-        doc = json.loads(target.read_text(encoding='utf-8'))
-    except Exception as exc:  # noqa: BLE001
-        print(f'{target} 不是合法 JSON：{exc}', file=sys.stderr)
-        payload['problems'] = [{'where': '$', 'message': f'JSON 解析失败：{exc}'}]
-        if args.json_out:
-            Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
-            Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-        return 1 if args.check else 0
+    payload = {'tool': 'external_refs.py', 'package': str(root), 'files': [],
+               'present': bool(found), 'problems': [], 'warnings': [],
+               'assets': [], 'cell': None, 'detail': None, 'by_asset': {}}
+    if not found:
+        print(f'未发现任何 {FILE}（每个资产目录下可选；都没有则合规）')
 
-    problems, warnings = validate(doc, root)
-    payload.update({'problems': problems, 'warnings': warnings,
-                    'assets': doc.get('assets') or [],
-                    'cell': render(doc.get('assets') or []) if not problems else None,
-                    'detail': detail_text(doc.get('assets') or []) if not problems else None})
-    print(f'{target.relative_to(root)}：{len(doc.get("assets") or [])} 条引用，'
-          f'问题 {len(problems)} 条，告警 {len(warnings)} 条')
-    for p_ in problems:
-        print(f'  ! {p_["where"]}: {p_["message"]}', file=sys.stderr)
-    for w_ in warnings:
-        print(f'  · {w_["where"]}: {w_["message"]}', file=sys.stderr)
-    if payload['cell'] is not None:
-        print(f'  资产关联列：{payload["cell"] or "（空）"}')
-    if payload.get('detail'):
-        print(f'  明细：{payload["detail"][:160]}{"…" if len(payload["detail"]) > 160 else ""}')
+    all_cells = {}
+    for asset_dir, f in found:
+        entry = {'file': str(f), 'asset_dir': str(asset_dir.relative_to(root)) or '.',
+                 'problems': [], 'warnings': [], 'cell': None}
+        try:
+            doc = json.loads(f.read_text(encoding='utf-8'))
+        except Exception as exc:  # noqa: BLE001
+            entry['problems'] = [{'where': '$', 'message': f'JSON 解析失败：{exc}'}]
+            payload['files'].append(entry)
+            payload['problems'] += entry['problems']
+            continue
+        problems, warnings = validate(doc, asset_dir)
+        entry.update({'problems': problems, 'warnings': warnings,
+                      'assets': doc.get('assets') or [],
+                      'cell': render(doc.get('assets') or []) if not problems else None,
+                      'detail': detail_text(doc.get('assets') or []) if not problems else None})
+        payload['files'].append(entry)
+        payload['problems'] += problems
+        payload['warnings'] += warnings
+        payload['assets'] += doc.get('assets') or []
+        all_cells[str(asset_dir.resolve())] = entry['cell']
+        label = entry['asset_dir']
+        print(f"{label}/{FILE}：{len(doc.get('assets') or [])} 条引用，问题 {len(problems)} 条，告警 {len(warnings)} 条")
+        for p_ in problems:
+            print(f'  ! {label} {p_["where"]}: {p_["message"]}', file=sys.stderr)
+        for w_ in warnings:
+            print(f'  · {label} {w_["where"]}: {w_["message"]}', file=sys.stderr)
+        if entry['cell'] is not None:
+            print(f'  资产关联列：{entry["cell"] or "（空）"}')
+
+    payload['by_asset'] = {k: v for k, v in all_cells.items()}
+    payload['cell'] = ','.join(dict.fromkeys(c for c in all_cells.values() if c)) or ''
 
     if args.rows:
         rp = Path(args.rows).expanduser().resolve()
@@ -206,27 +205,55 @@ def main(argv=None) -> int:
         if not isinstance(rws, list):
             print(f'rows.json 结构不认识：{rp}', file=sys.stderr)
             return 2
-        if problems:
+        # 资产目录 → (asset_id 去前缀, name, version)
+        owner = {}
+        for asset_dir, _ in found:
+            aj = asset_dir / 'asset.json'
+            if not aj.is_file():
+                continue
+            try:
+                a = json.loads(aj.read_text(encoding='utf-8'))
+            except Exception:  # noqa: BLE001
+                continue
+            aid = str(a.get('asset_id') or '')
+            owner[str(asset_dir.resolve())] = {
+                'asset_id': aid[len('sciasset://'):] if aid.startswith('sciasset://') else aid,
+                'name': str(a.get('name') or ''),
+                'version': str(a.get('asset_version') or ''),
+            }
+        by_key = {}
+        for path_, cell in all_cells.items():
+            info = owner.get(path_)
+            if not info:
+                continue
+            if info['asset_id']:
+                by_key[('id', info['asset_id'])] = cell
+            if info['name']:
+                by_key[('name', info['name'])] = cell
+        if problems_all := payload['problems']:
             print('存在校验问题，未写入「资产关联」列', file=sys.stderr)
         else:
-            cell = payload['cell'] or ''
+            untouched = 0
             for w in rws:
-                w['资产关联'] = cell            # 覆盖写：有声明写编号，无声明留空
-            if cell:
-                print(f'已写入 {len(rws)} 行的「资产关联」列：{cell}')
-            else:
-                print(f'包内无 external_assets.json，{len(rws)} 行的「资产关联」列已清空（按规则留空）')
-        if args.inject and not args.check and not problems:
+                rid = str(w.get('资产ID') or '').strip()
+                nm = str(w.get('资产名称') or '').strip()
+                cell = by_key.get(('id', rid)) or by_key.get(('name', nm))
+                if cell is None:
+                    untouched += 1
+                    cell = ''            # 该资产没有 external_assets.json → 留空
+                w['资产关联'] = cell
+            print(f'已写入 {len(rws)} 行的「资产关联」列（{untouched} 行所属资产无外部引用声明，留空）')
+        if args.inject and not args.check and not payload['problems']:
             out = Path(args.out_rows).expanduser().resolve() if args.out_rows else rp
             out.write_text(json.dumps(doc_rows, ensure_ascii=False, indent=1), encoding='utf-8')
             print(f'已写入：{out}')
 
     if args.json_out:
-        p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(_stamp(payload), ensure_ascii=False, indent=2), encoding='utf-8')
-
-    if args.check and problems:
-        print(f'校验未通过：{len(problems)} 条问题')
+        p = Path(args.json_out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    if args.check and payload['problems']:
+        print(f"校验未通过：{len(payload['problems'])} 条问题")
         return 1
     return 0
 

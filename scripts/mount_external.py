@@ -2,7 +2,7 @@
 """按 external_assets.json 自动挂载外部资产（副本形式），供依赖外部资产的用例执行。
 
 为什么需要：某些资产（例如地球科学工具包的部分用例）会引用**别的资产**里的数据文件，
-不把那份资产放到位就没法跑用例。声明在包根 `external_assets.json` 里，本脚本负责把真实目录找出来、
+不把那份资产放到位就没法跑用例。声明在本资产目录下的 `external_assets.json` 里，本脚本负责把真实目录找出来、
 以**副本**形式放到挂载目录，避免用例写产物时污染原资产。
 
 外部资产的搜索顺序（命中即止，按优先级）
@@ -147,9 +147,20 @@ def copy_tree(src: Path, dst: Path, mode: str) -> int:
     return sum(1 for p in dst.rglob('*') if p.is_file())
 
 
+def discover(package: Path):
+    """找出包内每个资产目录下的 external_assets.json，返回 [(消费方资产目录, 文件)]。"""
+    out = []
+    for f in sorted(package.rglob(FILE)):
+        rel = f.relative_to(package)
+        if SKIP_PARTS & set(rel.parts):
+            continue
+        out.append((f.parent.resolve(), f))
+    return out
+
+
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description='按 external_assets.json 副本挂载外部资产')
-    ap.add_argument('--package', required=True, help='资产包根目录（含 external_assets.json）')
+    ap = argparse.ArgumentParser(description='按每个资产目录下的 external_assets.json 副本挂载外部资产')
+    ap.add_argument('--package', required=True, help='资产包根目录（含一个到多个资产目录）')
     ap.add_argument('--into', required=True, help='挂载目标目录（建议放在工作副本里）')
     ap.add_argument('--search-root', action='append', default=[],
                     help='用户指定的挂载目录（可重复）；会搜索该目录及其一级子目录')
@@ -165,76 +176,75 @@ def main(argv=None) -> int:
     into = Path(args.into).expanduser().resolve()
     roots = [Path(r).expanduser().resolve() for r in args.search_root]
 
-    spec = package / FILE
-    if not spec.is_file():
+    consumers = discover(package)
+    if not consumers:
         payload = _stamp({'tool': 'mount_external.py', 'package': str(package), 'declared': 0,
-                          'mounted': [], 'missing': [], 'skipped': '包内无 external_assets.json'})
-        print('包内无 external_assets.json：无需挂载')
+                          'mounted': [], 'missing': [],
+                          'skipped': '各资产目录下均无 external_assets.json'})
+        print('各资产目录下均无 external_assets.json：无需挂载')
         if args.json_out:
             Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
         return 0
-    try:
-        doc = load(spec)
-    except Exception as exc:  # noqa: BLE001
-        print(f'{spec} 不是合法 JSON：{exc}', file=sys.stderr)
-        return 2
 
-    declared = doc.get('assets') or []
-    asset_dir = None
-    for cand in package.rglob('asset.json'):
-        if not (SKIP_PARTS & set(cand.relative_to(package).parts)):
-            asset_dir = cand.parent.resolve()
-            break
-
-    dirs = list(candidate_dirs(package, roots, asset_dir, exclude=[into]))
-    mounted, missing = [], []
-    for a in declared:
-        aid = str(a.get('asset_id') or '')
-        ver = str(a.get('asset_version') or '') or None
-        required = a.get('required', True) is not False
-        found, found_ver, near = find_asset(aid, ver, dirs)
-        slug = aid.split('/')[-1] or 'asset'
-        if found is None:
-            why = '搜索范围内没有该资产'
-            if near:
-                why = f'找到同名 asset_id 但版本不符：' + '、'.join(f'{d.name}@{v}' for d, v in near[:3])
-            missing.append({'asset_id': aid, 'asset_version': ver, 'required': required,
-                            'reason': why, 'target_path': a.get('target_path')})
-            continue
-        dst = into / slug
-        size_mb = sum(p.stat().st_size for p in found.rglob('*') if p.is_file()) / 1048576
-        if size_mb > MAX_COPY_MB_WARN and args.copy_mode == 'copy':
-            print(f'[warn] {aid} 约 {size_mb:.0f} MB，复制会占空间；确认无写入可改用 --copy-mode hardlink',
-                  file=sys.stderr)
-        n = copy_tree(found, dst, args.copy_mode)
-        (dst / MARKER).write_text(json.dumps({'asset_id': aid, 'asset_version': found_ver,
-                                              'source': str(found), 'mode': args.copy_mode},
-                                             ensure_ascii=False), encoding='utf-8')
-        n += 1
-        mounted.append({'asset_id': aid, 'asset_version': found_ver, 'required': required,
-                        'source': str(found), 'mounted_at': str(dst), 'files': n,
-                        'size_mb': round(size_mb, 1), 'mode': args.copy_mode,
-                        'declared_target_path': a.get('target_path')})
+    mounted, missing, scanned = [], [], 0
+    for consumer_dir, spec in consumers:
+        consumer = consumer_dir.name
+        try:
+            doc = json.loads(spec.read_text(encoding='utf-8'))
+        except Exception as exc:  # noqa: BLE001
+            print(f'{spec} 不是合法 JSON：{exc}', file=sys.stderr)
+            return 2
+        dirs = list(candidate_dirs(package, roots, consumer_dir, exclude=[into, consumer_dir]))
+        scanned = max(scanned, len(dirs))
+        for a in doc.get('assets') or []:
+            aid = str(a.get('asset_id') or '')
+            ver = str(a.get('asset_version') or '') or None
+            required = a.get('required', True) is not False
+            found, found_ver, near = find_asset(aid, ver, dirs)
+            slug = aid.split('/')[-1] or 'asset'
+            if found is None:
+                why = '搜索范围内没有该资产'
+                if near:
+                    why = '找到同名 asset_id 但版本不符：' + '、'.join(f'{d.name}@{v}' for d, v in near[:3])
+                missing.append({'consumer': consumer, 'asset_id': aid, 'asset_version': ver,
+                                'required': required, 'reason': why,
+                                'target_path': a.get('target_path')})
+                continue
+            dst = into / consumer / slug
+            size_mb = sum(p.stat().st_size for p in found.rglob('*') if p.is_file()) / 1048576
+            if size_mb > MAX_COPY_MB_WARN and args.copy_mode == 'copy':
+                print(f'[warn] {consumer} 需要的 {aid} 约 {size_mb:.0f} MB，复制占空间；确认只读可改用 --copy-mode hardlink',
+                      file=sys.stderr)
+            n = copy_tree(found, dst, args.copy_mode)
+            (dst / MARKER).write_text(json.dumps({'asset_id': aid, 'asset_version': found_ver,
+                                                  'source': str(found), 'mode': args.copy_mode,
+                                                  'consumer': consumer}, ensure_ascii=False),
+                                      encoding='utf-8')
+            mounted.append({'consumer': consumer, 'asset_id': aid, 'asset_version': found_ver,
+                            'required': required, 'source': str(found), 'mounted_at': str(dst),
+                            'files': n + 1, 'size_mb': round(size_mb, 1), 'mode': args.copy_mode,
+                            'declared_target_path': a.get('target_path')})
 
     blocked = [m for m in missing if m['required']]
     payload = _stamp({'tool': 'mount_external.py', 'package': str(package), 'into': str(into),
-                      'search_roots': [str(r) for r in roots], 'declared': len(declared),
-                      'candidate_dirs_scanned': len(dirs),
+                      'search_roots': [str(r) for r in roots],
+                      'consumers': [c.name for c, _ in consumers],
+                      'declared': len(mounted) + len(missing),
+                      'candidate_dirs_scanned': scanned,
                       'mounted': mounted, 'missing': missing,
-                      'blocked_by_required': [m['asset_id'] for m in blocked],
+                      'blocked_by_required': [f"{m['consumer']}→{m['asset_id']}" for m in blocked],
                       'status': 'blocked' if blocked else ('partial' if missing else 'complete')})
 
-    print(f'声明 {len(declared)} 个外部资产，扫描 {len(dirs)} 个候选目录 → 挂载 {len(mounted)}，缺失 {len(missing)}')
+    print(f'{len(consumers)} 个资产声明了外部引用，扫描 {scanned} 个候选目录 → 挂载 {len(mounted)}，缺失 {len(missing)}')
     for m in mounted:
-        print(f"  ✓ {m['asset_id']}（v{m['asset_version']}）← {m['source']} → {m['mounted_at']}"
-              f"（{m['files']} 文件 / {m['size_mb']} MB，{m['mode']}）")
+        print(f"  ✓ [{m['consumer']}] {m['asset_id']}（v{m['asset_version']}）← {m['source']}")
+        print(f"      → {m['mounted_at']}（{m['files']} 文件 / {m['size_mb']} MB，{m['mode']}）")
     for m in missing:
         flag = 'required' if m['required'] else 'optional'
-        print(f"  ✗ {m['asset_id']}（{flag}）：{m['reason']}", file=sys.stderr)
+        print(f"  ✗ [{m['consumer']}] {m['asset_id']}（{flag}）：{m['reason']}", file=sys.stderr)
     if blocked:
-        print(f'有 {len(blocked)} 个 required 外部资产未找到，依赖它们的用例须跳过并在报告中声明',
-              file=sys.stderr)
+        print(f'有 {len(blocked)} 项 required 外部资产未找到，依赖它们的用例须跳过并在报告中声明', file=sys.stderr)
     if args.json_out:
         Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')

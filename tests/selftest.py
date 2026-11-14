@@ -549,70 +549,65 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/13] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/13] external_refs.py — 每个资产目录下的外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
-    (pkg / "data" / "scotia").mkdir(parents=True)
-    (pkg / "catalog.json").write_text(json.dumps([{
-        "asset_id": "sciasset://2026ZD123456/earth/data/sample", "asset_type": "data",
-        "name": "示例数据资产", "asset_version": "1.0.0"}], ensure_ascii=False), encoding="utf-8")
+
+    def make_asset(name: str, aid: str) -> Path:
+        d = pkg / name
+        (d / "data").mkdir(parents=True, exist_ok=True)
+        (d / "asset.json").write_text(json.dumps(
+            {"asset_id": aid, "asset_type": "data", "name": name, "asset_version": "1.0.0"},
+            ensure_ascii=False), encoding="utf-8")
+        (d / "data" / "x.csv").write_text("x", encoding="utf-8")
+        return d
+
+    alpha = make_asset("alpha", "sciasset://2026ZD123456/earth/data/alpha")
+    beta = make_asset("beta", "sciasset://2026ZD123456/earth/data/beta")
+
     rows = base / "rows.json"
-    rows.write_text(json.dumps({"rows": [{"资产ID": "2026ZD123456/earth/data/sample",
-                                          "资产名称": "示例数据资产", "版本": "1.0.0"}]},
-                               ensure_ascii=False), encoding="utf-8")
+    rows.write_text(json.dumps({"rows": [
+        {"资产ID": "2026ZD123456/earth/data/alpha", "资产名称": "alpha", "版本": "1.0.0", "资产关联": "旧内容"},
+        {"资产ID": "2026ZD123456/earth/data/beta", "资产名称": "beta", "版本": "1.0.0", "资产关联": "旧内容"}]},
+        ensure_ascii=False), encoding="utf-8")
 
     proc = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg)], base)
-    record("正例：无 external_assets.json 时合规跳过",
-           proc.returncode == 0 and "未发现" in proc.stdout, f"rc={proc.returncode}")
+    record("正例：各资产目录都没有 external_assets.json 时合规跳过",
+           proc.returncode == 0 and "未发现任何" in proc.stdout, f"rc={proc.returncode}")
 
-    (pkg / "external_assets.json").write_text(json.dumps({
+    (alpha / "external_assets.json").write_text(json.dumps({
         "schema_version": "1.0.0",
-        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
-                    "target_path": "data/scotia", "media_type": "inode/directory"}]},
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext-a", "asset_version": "1.0.0",
+                    "target_path": "data/ext-a", "media_type": "inode/directory"}]},
         ensure_ascii=False), encoding="utf-8")
     out = base / "refs.json"
     proc = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--rows", str(rows),
                 "--inject", "--json-out", str(out)], base)
-    cell = json.loads(rows.read_text(encoding="utf-8"))["rows"][0].get("资产关联", "")
-    record("正例：「资产关联」列只写去前缀的 asset_id（逗号分隔）",
-           proc.returncode == 0 and cell == "2026ZD123456/earth/data/raw",
-           f"rc={proc.returncode} cell={cell!r}")
+    back = {r["资产名称"]: r.get("资产关联") for r in json.loads(rows.read_text(encoding="utf-8"))["rows"]}
+    record("正例：只把该资产自己声明的编号写进它那一行（去前缀）",
+           proc.returncode == 0 and back["alpha"] == "2026ZD123456/earth/data/ext-a" and back["beta"] == "",
+           f"rows={back}")
 
-    rows2 = base / "rows2.json"
-    rows2.write_text(json.dumps({"rows": [{"资产ID": "2026ZD123456/earth/data/sample",
-                                           "资产名称": "示例数据资产", "版本": "1.0.0",
-                                           "资产关联": "不适用（无跨资产依赖）"}]}, ensure_ascii=False),
-                     encoding="utf-8")
-    (pkg / "external_assets.json").unlink()
-    run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--rows", str(rows2), "--inject"], base)
-    cleared = json.loads(rows2.read_text(encoding="utf-8"))["rows"][0].get("资产关联")
-    record("正例：包里没有 external_assets.json 时该列清空留白", cleared == "", f"cell={cleared!r}")
-    (pkg / "external_assets.json").write_text(json.dumps({
-        "schema_version": "1.0.0",
-        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
-                    "target_path": "data/scotia"}]}, ensure_ascii=False), encoding="utf-8")
-
-    def bad_write(name, mutate, expect):
-        p2 = base / name
-        (p2 / "data" / "scotia").mkdir(parents=True)
-        doc = {"schema_version": "1.0.0", "assets": [
-            {"asset_id": "sciasset://2026ZD123456/earth/data/raw", "asset_version": "1.0.0",
-             "target_path": "data/scotia"}]}
-        mutate(doc)
-        (p2 / "external_assets.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
-        pr = run([str(SCRIPTS / "external_refs.py"), "--package", str(p2), "--check",
-                  "--json-out", str(p2 / "r.json")], base)
-        rep = json.loads((p2 / "r.json").read_text(encoding="utf-8"))
+    def bad(dirname: str, doc: dict, expect: str) -> None:
+        d = make_asset(dirname, f"sciasset://2026ZD123456/earth/data/{dirname}")
+        (d / "external_assets.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        pr = run([str(SCRIPTS / "external_refs.py"), "--package", str(pkg), "--check",
+                  "--json-out", str(d / "r.json")], base)
+        rep = json.loads((d / "r.json").read_text(encoding="utf-8"))
         msgs = " ".join(x["message"] for x in rep.get("problems") or [])
-        record(f"负例：{name}", pr.returncode == 1 and expect in msgs, f"rc={pr.returncode} msg={msgs[:80]}")
+        record(f"负例：{dirname}", pr.returncode == 1 and expect in msgs, f"rc={pr.returncode} msg={msgs[:80]}")
 
-    bad_write("三段资产编号", lambda d: d["assets"][0].__setitem__(
-        "asset_id", "sciasset://mineralmind/data/raw"), "不含版本号")
-    bad_write("绝对路径", lambda d: d["assets"][0].__setitem__(
-        "target_path", "/abs/path.nc"), "相对任务包根")
-    bad_write("缺版本", lambda d: d["assets"][0].pop("asset_version"), "缺少 asset_version")
-    bad_write("越出包根", lambda d: d["assets"][0].__setitem__(
-        "target_path", "../outside.nc"), "不得包含")
+    good_ext = {"asset_id": "sciasset://2026ZD123456/earth/data/ext-a", "asset_version": "1.0.0",
+                "target_path": "data/ext-a"}
+    bad("bad1", {"schema_version": "1.0.0", "assets": [
+        {"asset_id": "sciasset://mineralmind/data/raw", "asset_version": "1.0.0", "target_path": "a"}]},
+        "不含版本号")
+    bad("bad2", {"schema_version": "1.0.0", "assets": [
+        dict(good_ext, target_path="/abs/path.nc")]}, "相对任务包根")
+    bad("bad3", {"schema_version": "1.0.0", "assets": [
+        {"asset_id": good_ext["asset_id"], "target_path": "a"}]}, "缺少 asset_version")
+    bad("bad4", {"schema_version": "1.0.0", "assets": [
+        dict(good_ext, target_path="../outside.nc")]}, "不得包含")
 
 
 # --------------------------------------------------------------------------- T9 版本可追溯
@@ -824,7 +819,7 @@ def t13_mount_external(tmp: Path) -> None:
     (pkg / "mine").mkdir(parents=True)
     (pkg / "mine" / "asset.json").write_text(json.dumps(
         {"asset_id": "sciasset://2026ZD123456/earth/tool/mine"}, ensure_ascii=False), encoding="utf-8")
-    (pkg / "external_assets.json").write_text(json.dumps({
+    (pkg / "mine" / "external_assets.json").write_text(json.dumps({
         "schema_version": "1.0.0",
         "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0",
                     "target_path": "data/ext", "required": True}]}, ensure_ascii=False), encoding="utf-8")
@@ -843,10 +838,10 @@ def t13_mount_external(tmp: Path) -> None:
     rep = json.loads(out.read_text(encoding="utf-8"))
     record("正例：在用户挂载目录的一级子目录命中并副本挂载",
            proc.returncode == 0 and rep["status"] == "complete"
-           and (into / "ext" / "data" / "x.csv").is_file(),
+           and (into / "mine" / "ext" / "data" / "x.csv").is_file(),
            f"rc={proc.returncode} status={rep.get('status')}")
 
-    (into / "ext" / "data" / "x.csv").write_text("polluted", encoding="utf-8")
+    (into / "mine" / "ext" / "data" / "x.csv").write_text("polluted", encoding="utf-8")
     record("正例：挂载副本可写，源资产不受影响（副本形式）",
            (src / "data" / "x.csv").read_text(encoding="utf-8") == "x", "源被污染")
 
@@ -861,9 +856,9 @@ def t13_mount_external(tmp: Path) -> None:
            and "版本不符" in (rep["missing"][0]["reason"] if rep["missing"] else ""),
            f"rc={proc.returncode} status={rep.get('status')}")
 
-    (pkg / "external_assets.json").unlink()
+    (pkg / "mine" / "external_assets.json").unlink()
     proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w3")], d)
-    record("正例：无 external_assets.json 时无需挂载、退出码 0",
+    record("正例：各资产目录都无 external_assets.json 时无需挂载、退出码 0",
            proc.returncode == 0 and "无需挂载" in proc.stdout, f"rc={proc.returncode}")
 
 

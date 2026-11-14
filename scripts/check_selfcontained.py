@@ -3,7 +3,7 @@
 
 为什么必须有这一步：资产入库后是**独立存在的单元**，别人只拿走一个资产目录，
 任何 `../shared/...`、`/home/xxx/...`、`../另一个资产/...` 的引用都会当场失效。
-唯一允许的外部引用方式是包根 `external_assets.json` 里按资产编号声明（见 references/registration.md）。
+唯一允许的外部引用方式是本资产目录下的 `external_assets.json` 里按资产编号声明（见 references/registration.md）。
 
 检查内容
 --------
@@ -162,7 +162,7 @@ def main(argv=None) -> int:
                       'assets_checked': len(results), 'assets_violating': len(bad),
                       'violations': sum(r['violation_count'] for r in results),
                       'results': results,
-                      'rule': '资产只能引用自己目录内的文件；跨资产/跨目录引用必须走包根 external_assets.json'})
+                      'rule': '资产只能引用自己目录内的文件；跨资产/跨目录引用必须走资产目录下的 external_assets.json'})
     if not args.quiet:
         for r in results:
             flag = 'OK  ' if r['self_contained'] else 'FAIL'
@@ -206,7 +206,7 @@ def _hint(target: Path, root: Path, asset_names: dict, current: Path) -> str:
     if inside_pkg:
         for name, d in asset_names.items():
             if d != current and (target == d or d in target.parents):
-                return f'指向包内另一个资产「{name}」；请改用包根 external_assets.json 按资产编号声明引用'
+                return f'指向包内另一个资产「{name}」；请改用资产目录下的 external_assets.json 按资产编号声明引用'
         try:
             rel = target.relative_to(root)
             return f'指向包内共享位置 {rel}；应随资产目录交付，或改用 external_assets.json 声明'

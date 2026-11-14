@@ -136,14 +136,14 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter；外部资产按 `external_assets.json` 自动副本挂载）尚未发版。
+> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter；外部资产按 `external_assets.json` 自动副本挂载；`external_assets.json` 位置由包根改为**每个资产目录**各一份）尚未发版。
 
 ### 1.2-beta.2 — 2026-11-13
 
 校验口径收紧、报告可追溯、依赖自包含。核心变化是**把"资产能不能独立入库"变成可校验项**。
 
 **新增校验能力**
-- **资产自包含校验**：新增 `scripts/check_selfcontained.py`——任何资产只能引用**自己目录内**的文件；唯一允许的外部引用方式是包根 `external_assets.json` 按资产编号声明。越界区分「指向包内另一个资产」「指向包内共享位置」「指向包外本机路径」并给整改方向；文档里的路径只算提示。包络校验同步收紧：`spec.artifacts[].uri` 与 `spec.asset_protocol` 的本地路径越出资产目录即 error
+- **资产自包含校验**：新增 `scripts/check_selfcontained.py`——任何资产只能引用**自己目录内**的文件；唯一允许的外部引用方式是本资产目录下的 `external_assets.json` 按资产编号声明。越界区分「指向包内另一个资产」「指向包内共享位置」「指向包外本机路径」并给整改方向；文档里的路径只算提示。包络校验同步收紧：`spec.artifacts[].uri` 与 `spec.asset_protocol` 的本地路径越出资产目录即 error
 - **实体核对**：`validate_envelope.py` 逐条核对 `spec.artifacts` 的实体是否存在、`size_bytes`（兼容 `bytes`/`size` 别名）与 `sha256`（≤64MB 实测，大文件只提示）是否一致
 - 修复 `task_classes` 漏检：字段整体缺失时不再被跳过（skill/task/trajectory/benchmark 至少一个任务概念）
 - schema 交叉校验不再可能静默跳过：环境无 `jsonschema` 时回退内置轻量实现，并如实标注所用引擎
@@ -170,7 +170,7 @@ vendor/            随包分发的 openpyxl
 清单精简与外部资产引用支持。
 
 - 对外清单由 25 列精简为 **23 列**，移除「联系人」「项目负责人」两列，对接人与责任归属改由项目台账维护；「资产关联」仍为末列
-- 新增可选文件 `external_assets.json`（任务包根目录），用于声明包内未随附、需平台按资产编号解析的外部资产
+- 新增可选文件 `external_assets.json`（当时定义在**包根目录**；`1.2-beta.3` 起改为**每个资产目录**各一份），用于声明包内未随附、需平台按资产编号解析的外部资产
 - 新增 `scripts/external_refs.py`：校验该文件的 schema_version、asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用；通过后自动把引用明细写入清单「资产关联」列；文件不存在时合规跳过
 - 新增内置标准 `assets/external-assets.schema.json`（schema_version + assets[]，不含 task_id）
 - `check_list` 增加「资产关联」列内资产编号的格式校验

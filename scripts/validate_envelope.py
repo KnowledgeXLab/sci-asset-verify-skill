@@ -273,7 +273,7 @@ def _resolve_local(base: Path, uri: str):
     """解析本地实体路径。返回 (path, inside)。
 
     **资产自包含**：目录外的引用一律不接受（资产入库后是独立单元，`../shared/...` 会当场失效）。
-    跨资产/跨目录引用只允许通过包根 `external_assets.json` 声明。
+    跨资产/跨目录引用只允许通过本资产目录下的 `external_assets.json` 声明。
     """
     from urllib.parse import unquote
     rel = unquote(uri)
@@ -296,7 +296,7 @@ def check_artifacts(arts, atype, r):
         if not in_dir:
             r.err(f'spec.artifacts[{i}].uri',
                   f'不在资产目录内（§资产自包含）：{uri!r} 解析到 {path}；'
-                  '资产入库后是独立单元，跨目录/跨资产引用必须改用包根 external_assets.json 声明')
+                  '资产入库后是独立单元，跨目录/跨资产引用必须改用资产目录下的 external_assets.json 声明')
             continue
         if not path.exists():
             r.err(f'spec.artifacts[{i}].uri',

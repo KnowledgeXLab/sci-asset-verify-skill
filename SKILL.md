@@ -46,7 +46,7 @@ python scripts/work_copy.py clean <资产根目录> --run-id run-YYYYMMDD-hhmmss
 **资产自包含校验（必做，盘完立刻做）**
 
 资产入库后是**独立存在的单元**——别人只拿走一个资产目录。因此资产目录内的任何文件都不得引用目录外的文件/目录，
-唯一允许的外部引用方式是包根 `external_assets.json` 按资产编号声明（见第 2 步与 `references/registration.md`）。
+唯一允许的外部引用方式是本资产目录下的 `external_assets.json` 按资产编号声明（见第 2 步与 `references/registration.md`）。
 
 ```
 python scripts/check_selfcontained.py --package <资产根目录> --json-out <run>/selfcontained-report.json
@@ -65,7 +65,7 @@ python scripts/check_selfcontained.py --package <资产根目录> --json-out <ru
 
 **表头以 skill 内置 schema 为准**：填表标准是 `assets/external-list-schema.json`（对外发版清单 23 个字段的名称、顺序、类型、枚举与填写口径，取自规范 §7.3）。**不检查、不套用用户自定义模板**，也不为了适配某个模板改写字段集；飞书 CLI 在外发环境不可用，故表头已固化在该文件里。用户显式指定另一份 schema 时，才把该 schema 落成 `registration/schema-snapshot.json` 并记录与内置 schema 的差异，否则一律以内置为准。**资产ID 由包络生成，不手写**：先跑 `python scripts/asset_ids.py --package <资产根目录> --rows rows.json --inject`，它把包络里的 `asset_id` 去掉 `sciasset://` 前缀写进「资产ID」列，即 `{project-id}/{namespace}/{asset-type}/{slug}`——**不含版本号**（规范 §4.1 要求 asset_id 稳定），版本由清单的「版本」列表达。
 
-**外部资产引用是可选文件，存在即校验**：包根目录若有 `external_assets.json`（声明包内未随附、需平台按资产编号解析的资产），先跑 `python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject`；它校验 asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用，通过后把引用编号写进清单最后一列「资产关联」——只放 `external_assets.json` 里声明的 `asset_id`（去 `sciasset://` 前缀、英文逗号分隔、不重复），没有该文件时该列留空（不写「不适用」不写描述）；`required` 可不填，缺省视为 true。文件不存在则跳过，该列保持原值。校验不通过时必须停下修包，不能带着不合规的引用继续登记。
+**外部资产引用是可选文件，存在即校验**：资产目录下有 `external_assets.json`（声明包内未随附、需平台按资产编号解析的资产），先跑 `python scripts/external_refs.py --package <资产根目录> --rows rows.json --inject`；它校验 asset_id 四段格式、asset_version、target_path（相对 POSIX 路径、不得越出包根）、重复引用，通过后把引用编号写进清单最后一列「资产关联」——只放 `external_assets.json` 里声明的 `asset_id`（去 `sciasset://` 前缀、英文逗号分隔、不重复），没有该文件时该列留空（不写「不适用」不写描述）；`required` 可不填，缺省视为 true。文件不存在则跳过，该列保持原值。校验不通过时必须停下修包，不能带着不合规的引用继续登记。
 
 **用脚本生成表格，生成即自检**：把每行内容整理成 `rows.json`（`{"rows":[{...}],"cases":[{...}]}`，键名与 schema 的 `header` 一致），然后
 
@@ -92,12 +92,14 @@ python scripts/mount_external.py --package <资产根目录> --into <工作副�
     --search-root <用户在 prompt 里给的挂载目录> [--search-root ...] --json-out <run>/external-mounts.json
 ```
 
+**声明在哪**：每个资产目录下一份 `<资产目录>/external_assets.json`，只声明**该资产**用到的外部资产；一个包有多个资产就各自一份。
+
 **搜索顺序（命中即止）**：① 用户指定目录本身及其**一级子目录**；② 同一资产包内的**其他资产目录**；③ 资产包**父级目录下的二级子目录**（`<父>/<A>/<B>`）。
 判定看候选目录里的 `asset.json`：`asset_id` 完全一致且 `asset_version` 相符才算命中。已挂载的副本（含 `.mounted-external.json` 留痕）与 `.asset-work` 不会再被当作源。
 
-- 挂到 `<副本>/external/<slug>/`，`external-mounts.json` 记录每个资产的源路径、挂载位置、文件数、`required`。
+- 挂到 `<副本>/external/<消费方资产名>/<外部资产 slug>/`（按消费方分目录，避免不同资产要同一外部资产的不同版本时打架），`external-mounts.json` 记录消费方、源路径、挂载位置、文件数、`required`。
 - **找不到就跳过并在报告里声明**：`required: true` 的缺失会让依赖它的用例只能记 `blocked`（脚本退出码 3），`required: false` 的缺失不阻断但要写明。
-- 用例入口若需要指向外部资产，把路径指到 `<副本>/external/<slug>/…`，不要指原资产。
+- 用例入口若需要指向外部资产，把路径指到 `<副本>/external/<消费方资产名>/<外部资产 slug>/…`，不要指原资产。
 
 ## 3. 注册 MCP、部署模型
 

@@ -288,7 +288,7 @@
       "type": "text",
       "required": false,
       "required_note": "可空（无外部引用时留空）",
-      "definition": "**只填本资产在包根 `external_assets.json` 中声明的外部资产编号**：去掉 `sciasset://` 前缀，多个用英文逗号分隔，如 `2026ZD0126200/mineralmind/data/scotia,2026ZD0126200/mineralmind/tool/interpolate-idw`。没有外部引用就**留空**——不写依赖描述、不写资产名称、不写「不适用」。",
+      "definition": "**只填本资产在自己的 `external_assets.json` 中声明的外部资产编号**：去掉 `sciasset://` 前缀，多个用英文逗号分隔，如 `2026ZD0126200/mineralmind/data/scotia,2026ZD0126200/mineralmind/tool/interpolate-idw`。没有外部引用就**留空**——不写依赖描述、不写资产名称、不写「不适用」。",
       "source_field": "external_assets.json 的 assets[].asset_id（去前缀）",
       "example": "2026ZD0126200/mineralmind/data/scotia"
     }
@@ -315,15 +315,16 @@
   },
   "external_refs": {
     "file": "external_assets.json",
-    "location": "资产包根目录（可选文件）",
+    "location": "每个资产目录下（`<资产目录>/external_assets.json`，可选文件）",
     "target_column": "资产关联",
     "schema": "assets/external-assets.schema.json",
     "spec_source": "《课题5 地学科学问题收集包核验报告》附：外部资产引用格式",
-    "fill_rule": "存在该文件时先跑 scripts/external_refs.py 校验并生成「资产关联」列内容；不存在时该列保持原值（可由人工按依赖关系填写）。"
+    "fill_rule": "每个资产目录下的 external_assets.json 只声明**该资产**引用的外部资产；跑 scripts/external_refs.py --package <包根> --rows <rows.json> --inject 按资产写入对应行的「资产关联」列；没有该文件的资产留空。",
+    "source": "各资产目录下 external_assets.json 的 assets[].asset_id"
   },
   "relation_rules": {
     "column": "资产关联",
-    "source": "包根 external_assets.json 的 assets[].asset_id",
+    "source": "本资产目录下 external_assets.json 的 assets[].asset_id",
     "format": "去掉 sciasset:// 前缀，英文逗号分隔，不得重复",
     "empty_when_no_file": true,
     "forbidden": [

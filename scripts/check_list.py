@@ -37,7 +37,9 @@ def main(argv=None) -> int:
     ap.add_argument('xlsx')
     ap.add_argument('--schema', default=str(DEFAULT_SCHEMA))
     ap.add_argument('--sheet', default=None, help='资产明细所在工作表名（默认取 schema.sheet_name）')
-    ap.add_argument('--external-refs', help='包根 external_assets.json，用于核对「资产关联」列只填其中声明的编号')
+    ap.add_argument('--external-refs', action='append', default=[],
+                    help='external_assets.json 路径（可重复；每个资产目录一份）')
+    ap.add_argument('--package', help='资产包根目录：自动收集各资产目录下的 external_assets.json 用于核对')
     ap.add_argument('--json-out')
     args = ap.parse_args(argv)
 
@@ -59,16 +61,22 @@ def main(argv=None) -> int:
     rel_rules = schema.get('relation_rules') or {}
     rel_col = rel_rules.get('column') or '资产关联'
     declared_refs = None
-    if args.external_refs:
-        try:
-            ext = json.loads(Path(args.external_refs).read_text(encoding='utf-8'))
-            declared_refs = set()
+    ref_files = list(args.external_refs or [])
+    if args.package:
+        root = Path(args.package).expanduser().resolve()
+        ref_files += [str(p) for p in root.rglob('external_assets.json')
+                      if 'asset-runs' not in p.parts and '.git' not in p.parts]
+    if ref_files:
+        declared_refs = set()
+        for rf in ref_files:
+            try:
+                ext = json.loads(Path(rf).read_text(encoding='utf-8'))
+            except Exception as exc:  # noqa: BLE001
+                print(f'无法读取 external_assets.json（{rf}）：{exc}', file=sys.stderr)
+                return 2
             for a in (ext.get('assets') or []):
                 aid = str(a.get('asset_id') or '')
                 declared_refs.add(aid[len('sciasset://'):] if aid.startswith('sciasset://') else aid)
-        except Exception as exc:  # noqa: BLE001
-            print(f'无法读取 --external-refs：{exc}', file=sys.stderr)
-            return 2
     id_rules = schema.get('id_rules') or {}
     id_col = id_rules.get('list_column') or '资产ID'
     id_re = re.compile(id_rules['pattern']) if id_rules.get('pattern') else None
