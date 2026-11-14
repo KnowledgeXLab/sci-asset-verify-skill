@@ -1,9 +1,9 @@
 # 用例协议与验证报告
 
-## skill 资产的测试说明文档（validate/test-spec.md）
+## skill 资产的验证说明（validate/readme.md）
 
 skill 是给 agent 用的，验收必须在 agent 上做：让 agent 使用该 skill 完成一个任务，再检查产物。
-提供方必须在 `validate/` 下给一份 Markdown 说明（模板 `assets/skill-test-spec.template.md`），**三节必填**：
+提供方必须在 `validate/` 下给一份 `readme.md`（模板 `assets/skill-validate-readme.template.md`），**三节必填**：
 
 ```markdown
 ## Agent
@@ -29,7 +29,7 @@ skill 是给 agent 用的，验收必须在 agent 上做：让 agent 使用该 s
 - **通过门槛**给指标或验证脚本，验证脚本判的是 agent 的产物，不是重跑一遍脚本。
 - **建议的 harness 找不到时**可用系统里已有的 agent harness 替代，报告须注明「建议 X、实际 Y、原因」。
 - Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）；这是流程规则，不需要在文档里单列一节。
-- 只接受 Markdown；`validate/test-spec.json` 已废弃。机检：`scripts/check_skill_spec.py --package <包根> --check`。
+- 文件名固定 `validate/readme.md`；`test-spec.md` / `test-spec.json` 已废弃。机检：`scripts/check_skill_spec.py --package <包根> --check`。
 
 ## 收集用例
 

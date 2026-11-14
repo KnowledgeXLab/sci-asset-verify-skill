@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查 skill 资产的 `validate/test-spec.md`：写明 agent（harness + model）、怎么测、通过门槛。
+"""检查 skill 资产的 `validate/readme.md`：写明 agent（harness + model）、怎么测、通过门槛。
 
 为什么要求 Markdown + 上 agent：skill 是**给 agent 用的**，验收必须在 agent 环境里让 agent 使用该 skill
 完成一个任务、再看产物是否达标；只跑 validate/ 里的脚本不能算 skill 的验收。文档要写清：
@@ -38,8 +38,8 @@ except Exception:  # noqa: BLE001
             out.append(f.parent)
         return out
 
-SPEC_MD = 'validate/test-spec.md'
-SPEC_JSON = 'validate/test-spec.json'      # 已废弃：不再接受 JSON 版说明文档
+SPEC_MD = 'validate/readme.md'
+OLD_NAMES = ('validate/test-spec.md', 'validate/test-spec.json')  # 旧文件名，提示改到 readme.md
 SECTIONS = [
     ('agent', ('agent', 'harness', '模型'), ('Agent',)),
     ('task', ('任务', '怎么测', '测试任务'), ('任务（怎么测）',)),
@@ -127,18 +127,17 @@ def main(argv=None) -> int:
         if str(asset.get('asset_type')) != 'skill':
             continue
         rel = str(adir.relative_to(root)) or '.'
-        spec_md, spec_json = adir / SPEC_MD, adir / SPEC_JSON
+        spec_md = adir / SPEC_MD
         errs, warns = [], []
         if spec_md.is_file():
             errs, warns = check_md(spec_md.read_text(encoding='utf-8'))
-        elif spec_json.is_file():
-            errs = [f'说明文档请改用 Markdown：{rel}/validate/test-spec.md（JSON 版已不再接受；'
-                    '内容按 assets/skill-test-spec.template.md 的五节写）']
+        elif any((adir / n).is_file() for n in OLD_NAMES):
+            errs = [f'验证说明的固定文件名是 {rel}/validate/readme.md（test-spec.* 已不再接受），请改名']
         else:
-            errs = [f'缺少测试说明文档：{rel}/validate/test-spec.md，需写清 Agent（harness+model）、'
+            errs = [f'缺少验证说明：{rel}/validate/readme.md，需写清 Agent（harness+model）、'
                     '怎么测（任务/输入/输出）与通过门槛（模板见 assets/skill-test-spec.template.md）']
         results.append({'asset_dir': rel, 'asset_id': asset.get('asset_id'),
-                        'spec': SPEC_MD if spec_md.is_file() else (SPEC_JSON if spec_json.is_file() else None),
+                        'spec': SPEC_MD if spec_md.is_file() else None,
                         'errors': errs, 'warnings': warns, 'ok': not errs})
         flag = 'OK  ' if not errs else 'FAIL'
         print(f'[{flag}] {rel}（{asset.get("name") or asset.get("asset_id")}）')
@@ -151,7 +150,7 @@ def main(argv=None) -> int:
     payload = _stamp({'tool': 'check_skill_spec.py', 'package': str(root),
                       'spec_format': 'markdown', 'skills': len(results), 'failed': len(bad),
                       'results': results,
-                      'rule': 'skill 给 agent 用，验收必须上 agent：validate/test-spec.md 三节——'
+                      'rule': 'skill 给 agent 用，验收必须上 agent：validate/readme.md 三节——'
                               'Agent（agent harness + agent model）、测试任务（任务/输入/输出）、'
                               '通过门槛（指标或对 agent 产物的验证脚本）；'
                               '缺建议 harness 可替代但须在报告注明'})

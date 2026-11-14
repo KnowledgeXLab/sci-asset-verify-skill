@@ -1,4 +1,4 @@
-# 测试说明文档模板（放在 skill 资产的 `validate/test-spec.md`）
+# 验证说明模板（放在 skill 资产的 `validate/readme.md`）
 
 > skill 是给 agent 用的，所以测试必须**上 agent**跑：让 agent 使用这个 skill 完成一个任务，再看产物与门槛。
 > 只跑 `validate/` 里的脚本不能算 skill 的验收。下面三节缺一不可。

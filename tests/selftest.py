@@ -470,8 +470,9 @@ def t6_sage(tmp: Path) -> None:
     out = case / "need_deep.json"
     run([str(SCRIPTS / "sage_probe.py"), "detect", str(deep), "--json-out", str(out)], case)
     need = json.loads(out.read_text(encoding="utf-8"))
-    record("正例：子目录里的 asset.json 也被读到，但类型不单独构成需要测",
-           need.get("asset_types") == ["skill"] and need.get("needed") is False,
+    record("正例：子目录里的 asset.json 也被读到；有 skill 资产即判 Sage 适用",
+           need.get("asset_types") == ["skill"] and need.get("needed") is True
+           and any("skill" in r for r in need.get("reasons") or []),
            f"types={need.get('asset_types')} needed={need.get('needed')}")
 
     out = case / "need_forced.json"
@@ -1014,12 +1015,19 @@ def t15_skill_spec(tmp: Path) -> None:
 - 指标：value_est_exact = 0
 - 验证脚本：validate/validate.py --case C01-hits --out-dir <out>
 """
-    spec = a / "validate" / "test-spec.md"
+    spec = a / "validate" / "readme.md"
     spec.write_text(good, encoding="utf-8")
     out = d / "spec.json"
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check",
                 "--json-out", str(out)], d)
     rep = json.loads(out.read_text(encoding="utf-8"))
+    out5 = d / "sage.json"
+    run([str(SCRIPTS / "sage_probe.py"), "detect", str(pkg), "--json-out", str(out5)], d)
+    sage = json.loads(out5.read_text(encoding="utf-8"))
+    record("正例：包内有 skill 资产时 Sage A1.5 判为适用（不是 not_applicable）",
+           sage["needed"] is True and any("skill" in r for r in sage["reasons"]),
+           f"needed={sage.get('needed')}")
+
     record("正例：md 三节齐全（Agent 含 harness+model）时通过（tool 资产不查）",
            proc.returncode == 0 and rep["skills"] == 1 and rep["failed"] == 0
            and rep["spec_format"] == "markdown",
@@ -1027,14 +1035,14 @@ def t15_skill_spec(tmp: Path) -> None:
 
     spec.unlink()
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：缺 test-spec.md 被拒", proc.returncode == 1 and "缺少测试说明文档" in proc.stderr,
+    record("负例：缺 validate/readme.md 被拒", proc.returncode == 1 and "缺少验证说明" in proc.stderr,
            f"rc={proc.returncode}")
 
-    (a / "validate" / "test-spec.json").write_text('{"harness": {}}', encoding="utf-8")
+    (a / "validate" / "test-spec.md").write_text(good, encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：只给 JSON 说明文档被拒（要求改用 Markdown）",
-           proc.returncode == 1 and "改用 Markdown" in proc.stderr, f"rc={proc.returncode}")
-    (a / "validate" / "test-spec.json").unlink()
+    record("负例：用旧的 test-spec.md 文件名被拒（要求改名 readme.md）",
+           proc.returncode == 1 and "readme.md" in proc.stderr, f"rc={proc.returncode}")
+    (a / "validate" / "test-spec.md").unlink()
 
     spec.write_text(good.replace("## Agent\n- 建议 agent harness：DSH（DeepSeek Harness）Web 会话\n- 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径\n- 建议 agent model：DS-4.1；是否必须特定模型：否\n",
                                  "## Agent\n- 直接跑 validate/validate.py 即可\n"), encoding="utf-8")

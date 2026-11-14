@@ -87,7 +87,7 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 **skill 是给 agent 用的，所以验收必须上 agent**：让 agent 使用这个 skill 完成一个任务，看它交出的产物是否达标。
 只跑 `validate/` 里的脚本**不算** skill 的验收。提供方必须在 `validate/` 下给一份 Markdown 说明文档
-`validate/test-spec.md`（模板见 `assets/skill-test-spec.template.md`），写清四件事：
+`validate/readme.md`（模板见 `assets/skill-validate-readme.template.md`），写清三件事：
 
 | 要素 | 要写什么 |
 |---|---|
@@ -96,10 +96,10 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 | **通过门槛** | 指标阈值（如 `value_est_exact = 0`）或**对 agent 产物**的验证脚本（如 `validate/validate.py`） |
 
 ```
-python scripts/check_skill_spec.py --package <资产根目录> --check --json-out <run>/skill-test-spec.json
+python scripts/check_skill_spec.py --package <资产根目录> --check --json-out <run>/skill-validate-readme.json
 ```
 
-- 只接受 Markdown（`validate/test-spec.md`）；JSON 版已废弃，出现会提示改写。
+- 文件名固定为 `validate/readme.md`（Markdown）；`test-spec.md` / `test-spec.json` 已废弃，出现会提示改名。
 - **按文档执行**：用声明的 agent harness 与模型跑任务，再用声明的门槛判通过。
 - **找不到建议的 harness** 时，可改用系统里已有的 agent harness 替代，但必须在报告里写明「建议 X、实际 Y、原因」。
 - Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）——这是流程规则，不需要在说明文档里单列一节。
@@ -181,7 +181,7 @@ python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 
 ## 6. Sage A1.5 附加测试（不计入判定）
 
-涉及大模型 API 调用的资产（skill、workflow/agent、task、trajectory、benchmark 等）必须在 **Sage A1.5** 上再跑一遍。是否需要测由 `sage_probe.py detect` 判定：递归读取包内 `asset.json`，但**类型只作提示**，真正的判据是包内是否出现 `LLM_*`/`OPENAI_*`/`chat/completions`/model-backed 等证据（人工可 `--assume-llm` 强制）。它回答的是"换到核验方的大模型后端还兼不兼容"，**不是资产合格与否的判据**：结果写进报告独立小节与 `sage-a1.5-report.json`，不进入通过率分母、不进覆盖度门禁，也不改变第 5 步的结论。
+涉及大模型的资产必须在 **Sage A1.5** 上再跑一遍。`sage_probe.py detect` 判定是否需要：**包内有 skill 资产即判为适用**（skill 是给 agent 用的，验收本身就要在 agent 上用模型完成真实任务，Sage 作为兼容性后端一并跑）；其他类型则看包内是否出现 `LLM_*`/`OPENAI_*`/`chat/completions`/model-backed 等证据（人工可 `--assume-llm` 强制）。它回答的是"换到核验方的大模型后端还兼不兼容"，**不是资产合格与否的判据**：结果写进报告独立小节与 `sage-a1.5-report.json`，不进入通过率分母、不进覆盖度门禁，也不改变第 5 步的结论。
 
 先判定要不要测：
 
@@ -189,7 +189,7 @@ python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 python scripts/sage_probe.py detect <资产根目录> --json-out <run>/sage-need.json
 ```
 
-它按资产类型 + 包内证据（`LLM_*`/`OPENAI_*` 环境模板、`chat/completions` 调用、model-backed 适配器、Sage 后端开关、asset.json 的模型依赖）判定；`needed=false` 时记 `not_applicable_no_llm_asset` 并跳过。
+它按「有无 skill 资产」+ 包内证据（`LLM_*`/`OPENAI_*` 环境模板、`chat/completions` 调用、model-backed 适配器、Sage 后端开关、asset.json 的模型依赖）判定；只有既无 skill 资产又无这些证据时才记 `not_applicable_no_llm_asset`。
 
 需要测时先解析配置，优先级 **CLI > 环境变量 `SAGE_BASE_URL` / `SAGE_MODEL` / `SAGE_API_KEY` > 宿主机的 DSH 配置**（`~/.dsh/profiles/*/cordis.patch.yml` 里 models 含 Sage 的 provider，密钥从环境变量或 `~/.dsh/.credentials.yaml` 只读解析）：
 

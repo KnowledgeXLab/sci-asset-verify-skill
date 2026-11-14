@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sage A1.5 附加测试：判定资产是否涉及大模型 API，并解析/探测 Sage 配置。
 
-为什么单列：涉及大模型 API 的资产（skill / workflow / agent / task / trajectory 等）在通用后端上的通过率
+为什么单列：涉及大模型的资产（skill 资产必然要在 agent 上验收，其余类型视 API 证据）在通用后端上的通过率
 不能代表在 Sage A1.5 上的表现，Sage 结果属于**兼容性附加信息，不作为资产合格与否的判定项**。因此本脚本只
 负责「要不要测」和「配置够不够」，真正的测试用资产包自带的正确性 harness 把后端换成 Sage 来跑。
 
@@ -121,8 +121,8 @@ def detect(root: Path) -> dict:
                 assets.append(doc)
     types = sorted({a.get('asset_type') for a in assets if a.get('asset_type')})
     llm_types = [t for t in types if t in LLM_ASSET_TYPES]
-    # 类型只作线索，不单独构成「需要测」：skill/task 等类型本身不代表一定调用大模型，
-    # 真正的判据是包内是否出现大模型 API 的配置/调用证据（下面第 2 步）。
+    # 类型线索：skill 资产本身就是「给 agent 用」的，验收要上 agent（见下方第 3 步），故直接判为适用；
+    # 其余类型只作提示，仍需大模型 API 配置/调用证据（第 2 步）。
     if llm_types:
         type_hint = '包内含 ' + '、'.join(llm_types) + ' 类型资产（仅作提示，需看是否有大模型 API 证据）'
     else:
@@ -156,14 +156,18 @@ def detect(root: Path) -> dict:
     evidence = list(hits.values())
     if evidence:
         reasons.append('包内检出大模型 API 相关配置/调用（%d 处证据）' % len(evidence))
-    needed = bool(evidence) or bool(getattr(args_force, 'assume_llm', False))
+    # 3) skill 资产：验收必须上 agent（用模型完成真实任务），所以 Sage A1.5 兼容性测试**适用**——
+    #    不是"无 LLM 故不适用"。是否真的能跑取决于 Sage 配置，但判定结论不能写成 not_applicable。
+    if 'skill' in types:
+        reasons.insert(0, '包内含 skill 资产：验收须在 agent 上完成，Sage A1.5 应按同一 harness 执行（仅替换后端模型）')
+    needed = bool(evidence) or ('skill' in types) or bool(getattr(args_force, 'assume_llm', False))
     if needed and type_hint:
         reasons.insert(0, type_hint)
     return {
         'checked_at': now(), 'asset_root': str(root), 'asset_types': types,
         'type_hint': type_hint, 'assumed': bool(getattr(args_force, 'assume_llm', False)),
         'needed': needed, 'reasons': reasons, 'evidence': evidence,
-        'nothing_to_do': None if needed else '包内没有大模型 API 调用迹象，Sage A1.5 测试不适用（not_applicable_no_llm_asset）',
+        'nothing_to_do': None if needed else '包内既无 skill 资产也无大模型 API 调用迹象，Sage A1.5 测试不适用（not_applicable_no_llm_asset）',
     }
 
 
