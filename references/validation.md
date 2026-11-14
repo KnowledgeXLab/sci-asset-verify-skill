@@ -1,5 +1,34 @@
 # 用例协议与验证报告
 
+## skill 资产的测试说明文档（validate/test-spec.json）
+
+skill 型资产的 `validate/` 下必须有测试说明文档，否则校验方无从判断"怎么测、算不算过"。推荐 `test-spec.json`：
+
+```json
+{
+  "schema_version": "1.0.0",
+  "harness": {"name": "local-cli", "kind": "cli", "entrypoint": "validate/validate.py",
+              "command": "python validate/validate.py --case {case_id} --out-dir {out_dir}",
+              "notes": "Python ≥3.10，仅标准库"},
+  "model": {"required": false, "notes": "确定性计算，无需大模型"},
+  "gate": {"type": "script", "script": "validate/validate.py",
+           "metrics": [{"id": "value_est_exact", "direction": "exact", "threshold": 0}],
+           "description": "validate.py 退出码 0 且估值与解析解逐位相等"},
+  "sage": {"same_harness": true}
+}
+```
+
+| 字段 | 必填 | 约定 |
+|---|---|---|
+| `harness.name` / `kind` | 是 | kind ∈ `cli/mcp/api/agent/notebook`；kind=cli 时 `entrypoint` 必填且文件须真实存在 |
+| `harness.command` | 建议 | 可直接照抄，`{case_id}`/`{out_dir}` 为占位 |
+| `model.required` | 是 | 布尔；为 true 时 `model.id` 必填（如 `Sage-A1.5`） |
+| `gate.type` | 是 | `script`（给验证脚本，须存在）或 `metric`（给 `metrics[].id/threshold`） |
+| `sage.same_harness` | 建议 | 默认 true：Sage A1.5 测试沿用同一 harness |
+
+校验方按文档执行：**建议的 harness 找不到时可用系统里已有的替代，但报告须注明"建议 X、实际 Y、原因"**；
+缺文档或三段要素不全记 P0。`scripts/check_skill_spec.py --package <包根> --check` 做机检。
+
 ## 收集用例
 
 先收集交付包的全部给定用例，保留原始输入、预期输出和出处。每个资产建立 case_ids；无给定用例时标记 `no_provided_case`，可补建 smoke case 验证可调用性，明确来源为新增，科学真值缺失时仍为未验证。多个资产共享端到端case时记录各自检查点，不能把工作流通过直接套用到所有依赖资产。

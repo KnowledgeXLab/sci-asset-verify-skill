@@ -128,7 +128,7 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十五个自检脚本
+scripts/           十六个自检脚本
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl

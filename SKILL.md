@@ -83,6 +83,23 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 完成条件：表格可重新打开，表头与 `assets/external-list-schema.json` 逐列一致（`scripts/check_list.py` 无 error；若用户显式指定其他 schema，则以 schema-snapshot 为准且差异已在 field-map.json 说明）、每个资产恰好一行、必填项缺口明确、枚举值在词表内、关联可解析，表内结论与所引用报告/`comparison.json` 一致。
 
+## 2.4 skill 资产的测试说明（必须先读，按它执行）
+
+skill 型资产怎么测不能靠猜：它必须在 **`validate/` 下给一份测试说明文档**，写清三件事——
+**建议用哪个 harness**、**要不要特定模型**、**通过门槛是什么**（指标阈值或对产物的验证脚本）。
+
+```
+python scripts/check_skill_spec.py --package <资产根目录> --check --json-out <run>/skill-test-spec.json
+```
+
+- 机读优先 `validate/test-spec.json`（格式见 `assets/skill-test-spec.schema.json`：
+  `harness{name,kind,entrypoint,command}` / `model{required,id}` / `gate{type,script|metrics}`）；
+  退而求其次 `validate/test-spec.md`，需含「## Harness」「## 模型」「## 通过门槛」三节。
+- **校验方按文档建议执行**：用声明的 harness 与模型跑 `validate/` 的用例，按声明的门槛判通过。
+- **找不到建议的 harness** 时，可改用系统里已有的 harness 替代，但必须在报告里写明「建议 X，实际用 Y，原因」。
+- **Sage A1.5 测试沿用同一 harness**（`sage.same_harness` 默认 true）；若确需更换，报告里单独说明。
+- 缺文档或要素不全 → 记 P0（这属于"没法验证"），不得用"+跳过"糊过去。
+
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
 
 用例若用到**别的资产**（`external_assets.json` 里声明的那些），不把它们放到位就跑不起来。挂载在**工作副本内**完成，原资产包不动：
