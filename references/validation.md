@@ -3,15 +3,13 @@
 ## skill 资产的测试说明文档（validate/test-spec.md）
 
 skill 是给 agent 用的，验收必须在 agent 上做：让 agent 使用该 skill 完成一个任务，再检查产物。
-提供方必须在 `validate/` 下给一份 Markdown 说明（模板 `assets/skill-test-spec.template.md`），四节必填：
+提供方必须在 `validate/` 下给一份 Markdown 说明（模板 `assets/skill-test-spec.template.md`），**三节必填**：
 
 ```markdown
-## Agent Harness
-- 建议 harness：DSH（DeepSeek Harness）Web 会话；备选：Claude Code / 平台 Agent
+## Agent
+- 建议 agent harness：DSH（DeepSeek Harness）Web 会话；备选：Claude Code / 平台 Agent
 - 装载方式：把资产目录放进 skills 位置 / 给出 SKILL.md 路径
-
-## Agent Model
-- 建议模型：DS-4.1；是否必须特定模型：否；换模型的影响：…
+- 建议 agent model：DS-4.1；是否必须特定模型：否；换模型的影响：…
 
 ## 测试任务（怎么测）
 - 任务：让 agent 用本 skill 完成「…」
@@ -22,18 +20,15 @@ skill 是给 agent 用的，验收必须在 agent 上做：让 agent 使用该 s
 ## 通过门槛
 - 指标：`value_est_exact = 0`
 - 验证脚本：`validate/validate.py --case {case_id} --out-dir {out_dir}`（对 **agent 产物** 做校验）
-
-## Sage A1.5
-- 是否沿用同一 harness：是
 ```
 
 规则：
 
-- **harness 必须是 agent harness**，文档里要能让校验方知道"把 skill 交给谁、怎么交"。
+- **「Agent」一节同时写 harness 与 model**：harness 必须是 agent 环境（写清"把 skill 交给谁、怎么交"），model 要写建议值与是否必须特定模型。
 - **测试任务要写清输入与输出**，否则无法判断 agent 是否完成；只写"跑一下脚本"不合规。
 - **通过门槛**给指标或验证脚本，验证脚本判的是 agent 的产物，不是重跑一遍脚本。
 - **建议的 harness 找不到时**可用系统里已有的 agent harness 替代，报告须注明「建议 X、实际 Y、原因」。
-- **Sage A1.5 沿用同一 harness**（只换后端模型）。
+- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）；这是流程规则，不需要在文档里单列一节。
 - 只接受 Markdown；`validate/test-spec.json` 已废弃。机检：`scripts/check_skill_spec.py --package <包根> --check`。
 
 ## 收集用例

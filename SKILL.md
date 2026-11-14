@@ -91,8 +91,7 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 | 要素 | 要写什么 |
 |---|---|
-| **Agent Harness** | 建议用哪个 agent 环境（DSH / Claude Code / 平台 Agent…）、怎么把 skill 交给它、有无备选 |
-| **Agent Model** | 建议哪个模型、是否必须特定模型、换模型会有什么差异 |
+| **Agent** | 建议的 agent harness（DSH / Claude Code / 平台 Agent…）+ 怎么把 skill 交给它；建议的 agent model + 是否必须特定模型 + 换模型的差异；备选 harness |
 | **测试任务（怎么测）** | 让 agent 用哪个 skill 完成什么任务、**输入什么**、**输出什么**，最好给可直接粘的提示词模板 |
 | **通过门槛** | 指标阈值（如 `value_est_exact = 0`）或**对 agent 产物**的验证脚本（如 `validate/validate.py`） |
 
@@ -103,7 +102,7 @@ python scripts/check_skill_spec.py --package <资产根目录> --check --json-ou
 - 只接受 Markdown（`validate/test-spec.md`）；JSON 版已废弃，出现会提示改写。
 - **按文档执行**：用声明的 agent harness 与模型跑任务，再用声明的门槛判通过。
 - **找不到建议的 harness** 时，可改用系统里已有的 agent harness 替代，但必须在报告里写明「建议 X、实际 Y、原因」。
-- **Sage A1.5 测试沿用同一 harness**（只换后端模型）；`## Sage A1.5` 一节说明是否沿用。
+- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）——这是流程规则，不需要在说明文档里单列一节。
 - 缺文档或要素不全 → 记 **P0**（属于"没法验证"），不得跳过。
 
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）

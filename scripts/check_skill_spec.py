@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""检查 skill 资产的 `validate/test-spec.md`：写明 agent harness、agent model、怎么测、通过门槛。
+"""检查 skill 资产的 `validate/test-spec.md`：写明 agent（harness + model）、怎么测、通过门槛。
 
 为什么要求 Markdown + 上 agent：skill 是**给 agent 用的**，验收必须在 agent 环境里让 agent 使用该 skill
 完成一个任务、再看产物是否达标；只跑 validate/ 里的脚本不能算 skill 的验收。文档要写清：
-① 建议用哪个 agent harness ② 建议哪个 agent model ③ 怎么测（给 agent 什么任务、输入什么、输出什么）
-④ 通过门槛（指标阈值 或 对产物的验证脚本）。Sage A1.5 测试沿用同一 harness。
+三节：① Agent（agent harness + agent model）② 怎么测（给 agent 什么任务、输入什么、输出什么）
+③ 通过门槛（指标阈值 或 对 agent 产物的验证脚本）。
 
 用法：
   python scripts/check_skill_spec.py --package <包根> [--json-out FILE] [--check]
@@ -41,10 +41,9 @@ except Exception:  # noqa: BLE001
 SPEC_MD = 'validate/test-spec.md'
 SPEC_JSON = 'validate/test-spec.json'      # 已废弃：不再接受 JSON 版说明文档
 SECTIONS = [
-    ('harness', ('harness', 'agent harness'), ('harness',)),
-    ('model', ('model', '模型'), ('model',)),
-    ('task', ('任务', '怎么测', '测试任务'), ('任务', '测试')),
-    ('gate', ('门槛', '通过标准', '验收标准'), ('门槛', '验收')),
+    ('agent', ('agent', 'harness', '模型'), ('Agent',)),
+    ('task', ('任务', '怎么测', '测试任务'), ('任务（怎么测）',)),
+    ('gate', ('门槛', '通过标准', '验收标准'), ('通过门槛',)),
 ]
 PLACEHOLDER = re.compile(r'<[^>\n]{1,80}>')
 
@@ -86,10 +85,12 @@ def check_md(text: str) -> tuple[list[str], list[str]]:
         elif PLACEHOLDER.search(body) and len(PLACEHOLDER.sub('', body).strip()) < 10:
             errs.append(f'「{head}」小节只有模板占位符，没有实填内容')
 
-    h = bodies.get('harness', '')
-    if h and not re.search(r'agent|智能体|dsh|claude|assistant|平台', h, re.I):
-        errs.append('harness 小节要写 **agent harness**（skill 给 agent 用，必须上 agent 测试；'
+    a = bodies.get('agent', '')
+    if a and not re.search(r'agent|智能体|dsh|claude|assistant|平台', a, re.I):
+        errs.append('「Agent」小节要写 **agent harness**（skill 给 agent 用，必须上 agent 测试；'
                     '写清如 DSH / Claude Code / 平台 Agent）')
+    if a and not re.search(r'model|模型', a, re.I):
+        errs.append('「Agent」小节还要写 **agent model**（建议模型 + 是否必须特定模型）')
 
     t = bodies.get('task', '')
     if t:
@@ -102,8 +103,6 @@ def check_md(text: str) -> tuple[list[str], list[str]]:
     if g and not re.search(r'validate/|脚本|指标|阈值|threshold', g, re.I):
         errs.append('「通过门槛」要给出指标阈值或对产物的验证脚本（如 validate/validate.py）')
 
-    if 'sage' not in ' '.join(sections.keys()) and 'sage' not in text.lower():
-        warns.append('建议补一节「Sage A1.5」，说明是否沿用同一 harness')
     return errs, warns
 
 
@@ -136,7 +135,7 @@ def main(argv=None) -> int:
             errs = [f'说明文档请改用 Markdown：{rel}/validate/test-spec.md（JSON 版已不再接受；'
                     '内容按 assets/skill-test-spec.template.md 的五节写）']
         else:
-            errs = [f'缺少测试说明文档：{rel}/validate/test-spec.md，需写清 agent harness、agent model、'
+            errs = [f'缺少测试说明文档：{rel}/validate/test-spec.md，需写清 Agent（harness+model）、'
                     '怎么测（任务/输入/输出）与通过门槛（模板见 assets/skill-test-spec.template.md）']
         results.append({'asset_dir': rel, 'asset_id': asset.get('asset_id'),
                         'spec': SPEC_MD if spec_md.is_file() else (SPEC_JSON if spec_json.is_file() else None),
@@ -152,9 +151,10 @@ def main(argv=None) -> int:
     payload = _stamp({'tool': 'check_skill_spec.py', 'package': str(root),
                       'spec_format': 'markdown', 'skills': len(results), 'failed': len(bad),
                       'results': results,
-                      'rule': 'skill 给 agent 用，验收必须上 agent：validate/test-spec.md 要写清 agent harness、'
-                              'agent model、测试任务（任务/输入/输出）、通过门槛（指标或验证脚本）；'
-                              '缺建议 harness 可替代但须在报告注明；Sage A1.5 沿用同一 harness'})
+                      'rule': 'skill 给 agent 用，验收必须上 agent：validate/test-spec.md 三节——'
+                              'Agent（agent harness + agent model）、测试任务（任务/输入/输出）、'
+                              '通过门槛（指标或对 agent 产物的验证脚本）；'
+                              '缺建议 harness 可替代但须在报告注明'})
     print(f'合计 {len(results)} 个 skill 资产：通过 {len(results) - len(bad)}，缺文档或要素不全 {len(bad)}')
     if args.json_out:
         p = Path(args.json_out)

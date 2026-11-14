@@ -1000,12 +1000,10 @@ def t15_skill_spec(tmp: Path) -> None:
 
     good = """# 测试说明
 
-## Agent Harness
-- 建议 harness：DSH（DeepSeek Harness）Web 会话
+## Agent
+- 建议 agent harness：DSH（DeepSeek Harness）Web 会话
 - 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径
-
-## Agent Model
-- 建议模型：DS-4.1；是否必须特定模型：否
+- 建议 agent model：DS-4.1；是否必须特定模型：否
 
 ## 测试任务
 - 任务：让 agent 使用本 skill 完成插值
@@ -1015,9 +1013,6 @@ def t15_skill_spec(tmp: Path) -> None:
 ## 通过门槛
 - 指标：value_est_exact = 0
 - 验证脚本：validate/validate.py --case C01-hits --out-dir <out>
-
-## Sage A1.5
-- 是否沿用同一 harness：是
 """
     spec = a / "validate" / "test-spec.md"
     spec.write_text(good, encoding="utf-8")
@@ -1025,7 +1020,7 @@ def t15_skill_spec(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check",
                 "--json-out", str(out)], d)
     rep = json.loads(out.read_text(encoding="utf-8"))
-    record("正例：md 四节齐全且 harness 写明 agent 环境时通过（tool 资产不查）",
+    record("正例：md 三节齐全（Agent 含 harness+model）时通过（tool 资产不查）",
            proc.returncode == 0 and rep["skills"] == 1 and rep["failed"] == 0
            and rep["spec_format"] == "markdown",
            f"rc={proc.returncode} skills={rep.get('skills')}")
@@ -1041,11 +1036,16 @@ def t15_skill_spec(tmp: Path) -> None:
            proc.returncode == 1 and "改用 Markdown" in proc.stderr, f"rc={proc.returncode}")
     (a / "validate" / "test-spec.json").unlink()
 
-    spec.write_text(good.replace("## Agent Harness\n- 建议 harness：DSH（DeepSeek Harness）Web 会话\n- 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径\n",
-                                 "## Agent Harness\n- 直接跑 validate/validate.py 即可\n"), encoding="utf-8")
+    spec.write_text(good.replace("## Agent\n- 建议 agent harness：DSH（DeepSeek Harness）Web 会话\n- 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径\n- 建议 agent model：DS-4.1；是否必须特定模型：否\n",
+                                 "## Agent\n- 直接跑 validate/validate.py 即可\n"), encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：harness 没写 agent 环境（只说跑脚本）被拒",
+    record("负例：Agent 一节没写 agent 环境（只说跑脚本）被拒",
            proc.returncode == 1 and "agent harness" in proc.stderr, f"rc={proc.returncode}")
+
+    spec.write_text(good.replace("- 建议 agent model：DS-4.1；是否必须特定模型：否\n", ""), encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("负例：Agent 一节没写 agent model 被拒",
+           proc.returncode == 1 and "agent model" in proc.stderr, f"rc={proc.returncode}")
 
     spec.write_text(good.replace("- 输入：validate/cases/C01/points.csv 与 targets.csv\n", "")                         .replace("- 期望输出：interpolated.csv（x,y,value_est,nearest_dist）\n",
                                  "- 跑完就行\n"), encoding="utf-8")
