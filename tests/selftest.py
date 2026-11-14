@@ -978,7 +978,7 @@ def t14_mounted_not_checked(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T15 skill 测试说明
 def t15_skill_spec(tmp: Path) -> None:
-    print("\n[15/15] check_skill_spec.py — skill 资产必须有 harness/模型/门槛说明")
+    print("\n[15/15] check_skill_spec.py — skill 必须上 agent：md 里写清 harness/model/任务/门槛")
     d = tmp / "t15"
     pkg = d / "pkg"
 
@@ -998,48 +998,72 @@ def t15_skill_spec(tmp: Path) -> None:
         {"asset_id": "sciasset://2026ZD123456/earth/tool/tool-b", "asset_type": "tool"},
         ensure_ascii=False), encoding="utf-8")
 
-    spec = {"schema_version": "1.0.0",
-            "harness": {"name": "local-cli", "kind": "cli", "entrypoint": "validate/validate.py"},
-            "model": {"required": False},
-            "gate": {"type": "script", "script": "validate/validate.py"}}
-    (a / "validate" / "test-spec.json").write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+    good = """# 测试说明
+
+## Agent Harness
+- 建议 harness：DSH（DeepSeek Harness）Web 会话
+- 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径
+
+## Agent Model
+- 建议模型：DS-4.1；是否必须特定模型：否
+
+## 测试任务
+- 任务：让 agent 使用本 skill 完成插值
+- 输入：validate/cases/C01/points.csv 与 targets.csv
+- 期望输出：interpolated.csv（x,y,value_est,nearest_dist）
+
+## 通过门槛
+- 指标：value_est_exact = 0
+- 验证脚本：validate/validate.py --case C01-hits --out-dir <out>
+
+## Sage A1.5
+- 是否沿用同一 harness：是
+"""
+    spec = a / "validate" / "test-spec.md"
+    spec.write_text(good, encoding="utf-8")
     out = d / "spec.json"
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check",
                 "--json-out", str(out)], d)
     rep = json.loads(out.read_text(encoding="utf-8"))
-    record("正例：skill 有合规 test-spec.json 时通过（tool 资产不查）",
-           proc.returncode == 0 and rep["skills"] == 1 and rep["failed"] == 0,
+    record("正例：md 四节齐全且 harness 写明 agent 环境时通过（tool 资产不查）",
+           proc.returncode == 0 and rep["skills"] == 1 and rep["failed"] == 0
+           and rep["spec_format"] == "markdown",
            f"rc={proc.returncode} skills={rep.get('skills')}")
 
-    (a / "validate" / "test-spec.json").unlink()
+    spec.unlink()
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：skill 缺测试说明文档被拒", proc.returncode == 1 and "缺少测试说明文档" in proc.stderr,
+    record("负例：缺 test-spec.md 被拒", proc.returncode == 1 and "缺少测试说明文档" in proc.stderr,
            f"rc={proc.returncode}")
 
-    bad = dict(spec); bad["model"] = {"required": True}
-    (a / "validate" / "test-spec.json").write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+    (a / "validate" / "test-spec.json").write_text('{"harness": {}}', encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：model.required=true 却没写 model.id 被拒",
-           proc.returncode == 1 and "model.id 必填" in proc.stderr, f"rc={proc.returncode}")
-
-    bad2 = dict(spec); bad2["gate"] = {"type": "script", "script": "validate/nope.py"}
-    (a / "validate" / "test-spec.json").write_text(json.dumps(bad2, ensure_ascii=False), encoding="utf-8")
-    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：gate.script 指向不存在的文件被拒",
-           proc.returncode == 1 and "gate.script 不存在" in proc.stderr, f"rc={proc.returncode}")
-
-    bad3 = dict(spec); bad3["gate"] = {"type": "metric", "metrics": []}
-    (a / "validate" / "test-spec.json").write_text(json.dumps(bad3, ensure_ascii=False), encoding="utf-8")
-    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("负例：gate.type=metric 但没给 metrics 被拒",
-           proc.returncode == 1 and "gate.metrics 不能为空" in proc.stderr, f"rc={proc.returncode}")
-
+    record("负例：只给 JSON 说明文档被拒（要求改用 Markdown）",
+           proc.returncode == 1 and "改用 Markdown" in proc.stderr, f"rc={proc.returncode}")
     (a / "validate" / "test-spec.json").unlink()
-    (a / "validate" / "test-spec.md").write_text("# 测试说明\n\n## Harness\nlocal-cli\n\n## 模型\n不需要\n\n## 通过门槛\nvalidate.py 退出码 0\n",
-                                                 encoding="utf-8")
+
+    spec.write_text(good.replace("## Agent Harness\n- 建议 harness：DSH（DeepSeek Harness）Web 会话\n- 装载方式：把资产目录放进 skills 位置，或给出 SKILL.md 路径\n",
+                                 "## Agent Harness\n- 直接跑 validate/validate.py 即可\n"), encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
-    record("正例：Markdown 说明文档含三节也通过（并提示改用 JSON）",
-           proc.returncode == 0 and "建议同时给" in proc.stderr, f"rc={proc.returncode}")
+    record("负例：harness 没写 agent 环境（只说跑脚本）被拒",
+           proc.returncode == 1 and "agent harness" in proc.stderr, f"rc={proc.returncode}")
+
+    spec.write_text(good.replace("- 输入：validate/cases/C01/points.csv 与 targets.csv\n", "")                         .replace("- 期望输出：interpolated.csv（x,y,value_est,nearest_dist）\n",
+                                 "- 跑完就行\n"), encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("负例：测试任务没写清输入/输出被拒",
+           proc.returncode == 1 and ("输入" in proc.stderr and "输出" in proc.stderr),
+           f"rc={proc.returncode}")
+
+    spec.write_text(good.replace("- 指标：value_est_exact = 0\n- 验证脚本：validate/validate.py --case C01-hits --out-dir <out>\n",
+                                 "- 看着对就行\n"), encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("负例：通过门槛既没指标也没验证脚本被拒",
+           proc.returncode == 1 and "通过门槛" in proc.stderr, f"rc={proc.returncode}")
+
+    spec.write_text("# 测试说明\n\n## Agent Harness\n- 建议 harness：<如 DSH>\n", encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("负例：只有模板占位符被拒",
+           proc.returncode == 1 and "缺少" in proc.stderr, f"rc={proc.returncode}")
 
 
 # --------------------------------------------------------------------------- main

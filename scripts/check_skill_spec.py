@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""检查 skill 类型资产的 validate/ 下是否有测试说明文档，且写清 harness / 模型 / 通过门槛。
+"""检查 skill 资产的 `validate/test-spec.md`：写明 agent harness、agent model、怎么测、通过门槛。
 
-为什么必须有：skill 型资产怎么测（用什么 harness、要不要模型、算不算通过）不能靠校验方猜。
-提供方在 `validate/test-spec.json` 里写清楚，校验方照着执行；找不到建议的 harness 可换系统里已有的替代，
-但要在报告里注明；Sage A1.5 测试沿用同一 harness。
-
-机器可读优先：`validate/test-spec.json`（推荐，见 assets/skill-test-spec.schema.json）；
-退而求其次 `validate/test-spec.md`，需含「## Harness」「## 模型」「## 通过门槛」三个小节。
+为什么要求 Markdown + 上 agent：skill 是**给 agent 用的**，验收必须在 agent 环境里让 agent 使用该 skill
+完成一个任务、再看产物是否达标；只跑 validate/ 里的脚本不能算 skill 的验收。文档要写清：
+① 建议用哪个 agent harness ② 建议哪个 agent model ③ 怎么测（给 agent 什么任务、输入什么、输出什么）
+④ 通过门槛（指标阈值 或 对产物的验证脚本）。Sage A1.5 测试沿用同一 harness。
 
 用法：
   python scripts/check_skill_spec.py --package <包根> [--json-out FILE] [--check]
@@ -40,77 +38,77 @@ except Exception:  # noqa: BLE001
             out.append(f.parent)
         return out
 
-SPEC_JSON, SPEC_MD = 'validate/test-spec.json', 'validate/test-spec.md'
-HARNESS_KINDS = ('cli', 'mcp', 'api', 'agent', 'notebook')
-MD_SECTIONS = ('harness', '模型', '通过门槛')
+SPEC_MD = 'validate/test-spec.md'
+SPEC_JSON = 'validate/test-spec.json'      # 已废弃：不再接受 JSON 版说明文档
+SECTIONS = [
+    ('harness', ('harness', 'agent harness'), ('harness',)),
+    ('model', ('model', '模型'), ('model',)),
+    ('task', ('任务', '怎么测', '测试任务'), ('任务', '测试')),
+    ('gate', ('门槛', '通过标准', '验收标准'), ('门槛', '验收')),
+]
+PLACEHOLDER = re.compile(r'<[^>\n]{1,80}>')
 
 
-def check_json(adir: Path, doc: dict) -> tuple[list[str], list[str]]:
+def split_sections(text: str) -> dict:
+    """按二级/三级标题切分，返回 {小写标题: 正文}。"""
+    out, cur, buf = {}, None, []
+    for line in text.splitlines():
+        m = re.match(r'^#{2,4}\s*(.+?)\s*$', line)
+        if m:
+            if cur is not None:
+                out[cur] = '\n'.join(buf).strip()
+            cur, buf = m.group(1).lower(), []
+        elif cur is not None:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = '\n'.join(buf).strip()
+    return out
+
+
+def find(sections: dict, keywords) -> tuple[str, str]:
+    for head, body in sections.items():
+        if any(k in head for k in keywords):
+            return head, body
+    return '', ''
+
+
+def check_md(text: str) -> tuple[list[str], list[str]]:
     errs, warns = [], []
-    for key in ('harness', 'model', 'gate'):
-        if not isinstance(doc.get(key), dict):
-            errs.append(f'缺少 {key} 段（harness/model/gate 三段必填）')
-    h = doc.get('harness') if isinstance(doc.get('harness'), dict) else {}
-    if not h.get('name'):
-        errs.append('harness.name 为空：写清建议用哪个 harness')
-    if h.get('kind') not in HARNESS_KINDS:
-        errs.append(f'harness.kind 应为 {"/".join(HARNESS_KINDS)}，实际 {h.get("kind")!r}')
-    if h.get('kind') == 'cli':
-        ep = str(h.get('entrypoint') or '')
-        if not ep:
-            errs.append('harness.kind=cli 时 harness.entrypoint 必填')
-        else:
-            f = (adir / ep).resolve()
-            if adir.resolve() not in f.parents and f != adir.resolve():
-                errs.append(f'harness.entrypoint 越出资产目录：{ep}')
-            elif not f.is_file():
-                errs.append(f'harness.entrypoint 不存在：{ep}')
-    m = doc.get('model') if isinstance(doc.get('model'), dict) else {}
-    if not isinstance(m.get('required'), bool):
-        errs.append('model.required 必须是布尔值（是否需要特定大模型）')
-    elif m['required'] and not m.get('id'):
-        errs.append('model.required=true 时 model.id 必填（如 Sage-A1.5）')
-    g = doc.get('gate') if isinstance(doc.get('gate'), dict) else {}
-    if g.get('type') not in ('script', 'metric'):
-        errs.append(f'gate.type 应为 script 或 metric，实际 {g.get("type")!r}')
-    if g.get('type') == 'script':
-        sp = str(g.get('script') or '')
-        if not sp:
-            errs.append('gate.type=script 时 gate.script 必填')
-        else:
-            f = (adir / sp).resolve()
-            if adir.resolve() not in f.parents and f != adir.resolve():
-                errs.append(f'gate.script 越出资产目录：{sp}')
-            elif not f.is_file():
-                errs.append(f'gate.script 不存在：{sp}')
-    if g.get('type') == 'metric':
-        ms = g.get('metrics')
-        if not isinstance(ms, list) or not ms:
-            errs.append('gate.type=metric 时 gate.metrics 不能为空')
-        else:
-            for i, mt in enumerate(ms):
-                if not isinstance(mt, dict) or not mt.get('id'):
-                    errs.append(f'gate.metrics[{i}] 缺 id')
-                elif not isinstance(mt.get('threshold'), (int, float)):
-                    errs.append(f'gate.metrics[{i}].threshold 应为数值')
-    sage = doc.get('sage') if isinstance(doc.get('sage'), dict) else {}
-    if sage and sage.get('same_harness') is False:
-        warns.append('sage.same_harness=false：Sage A1.5 测试应沿用同一 harness，若确需更换请在报告里说明')
-    return errs, warns
+    sections = split_sections(text)
+    bodies = {}
+    for key, head_kw, _ in SECTIONS:
+        head, body = find(sections, head_kw)
+        bodies[key] = body
+        if not head:
+            errs.append(f'缺少「{head_kw[0]}」小节')
+        elif not body.strip():
+            errs.append(f'「{head}」小节是空的')
+        elif PLACEHOLDER.search(body) and len(PLACEHOLDER.sub('', body).strip()) < 10:
+            errs.append(f'「{head}」小节只有模板占位符，没有实填内容')
 
+    h = bodies.get('harness', '')
+    if h and not re.search(r'agent|智能体|dsh|claude|assistant|平台', h, re.I):
+        errs.append('harness 小节要写 **agent harness**（skill 给 agent 用，必须上 agent 测试；'
+                    '写清如 DSH / Claude Code / 平台 Agent）')
 
-def check_md(adir: Path, text: str) -> tuple[list[str], list[str]]:
-    errs, warns = [], []
-    heads = [h.strip().lower() for h in re.findall(r'^#{2,4}\s*(.+)$', text, re.M)]
-    for key in MD_SECTIONS:
-        if not any(key.lower() in h for h in heads):
-            errs.append(f'缺少「{key}」小节')
-    warns.append('用的是 Markdown 说明文档；建议同时给 validate/test-spec.json，便于机器核对')
+    t = bodies.get('task', '')
+    if t:
+        if not re.search(r'输入|input', t, re.I):
+            errs.append('「测试任务」里要写清给 agent 的**输入**（文件/参数/提示词）')
+        if not re.search(r'输出|产物|output', t, re.I):
+            errs.append('「测试任务」里要写清**期望输出**（产物形态）')
+
+    g = bodies.get('gate', '')
+    if g and not re.search(r'validate/|脚本|指标|阈值|threshold', g, re.I):
+        errs.append('「通过门槛」要给出指标阈值或对产物的验证脚本（如 validate/validate.py）')
+
+    if 'sage' not in ' '.join(sections.keys()) and 'sage' not in text.lower():
+        warns.append('建议补一节「Sage A1.5」，说明是否沿用同一 harness')
     return errs, warns
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description='检查 skill 资产的测试说明文档（harness/模型/通过门槛）')
+    ap = argparse.ArgumentParser(description='检查 skill 资产的测试说明文档（agent harness / model / 怎么测 / 门槛）')
     ap.add_argument('--package', required=True)
     ap.add_argument('--json-out')
     ap.add_argument('--check', action='store_true', help='有缺失时退出码 1')
@@ -130,24 +128,21 @@ def main(argv=None) -> int:
         if str(asset.get('asset_type')) != 'skill':
             continue
         rel = str(adir.relative_to(root)) or '.'
-        spec_json, spec_md = adir / SPEC_JSON, adir / SPEC_MD
-        errs, warns, source = [], [], None
-        if spec_json.is_file():
-            source = SPEC_JSON
-            try:
-                errs, warns = check_json(adir, json.loads(spec_json.read_text(encoding='utf-8')))
-            except Exception as exc:  # noqa: BLE001
-                errs = [f'{SPEC_JSON} 不是合法 JSON：{exc}']
-        elif spec_md.is_file():
-            source = SPEC_MD
-            errs, warns = check_md(adir, spec_md.read_text(encoding='utf-8'))
+        spec_md, spec_json = adir / SPEC_MD, adir / SPEC_JSON
+        errs, warns = [], []
+        if spec_md.is_file():
+            errs, warns = check_md(spec_md.read_text(encoding='utf-8'))
+        elif spec_json.is_file():
+            errs = [f'说明文档请改用 Markdown：{rel}/validate/test-spec.md（JSON 版已不再接受；'
+                    '内容按 assets/skill-test-spec.template.md 的五节写）']
         else:
-            errs = [f'缺少测试说明文档：应在 {rel}/validate/ 下提供 test-spec.json（推荐）或 test-spec.md，'
-                    '写明建议的 harness、模型与通过门槛']
+            errs = [f'缺少测试说明文档：{rel}/validate/test-spec.md，需写清 agent harness、agent model、'
+                    '怎么测（任务/输入/输出）与通过门槛（模板见 assets/skill-test-spec.template.md）']
         results.append({'asset_dir': rel, 'asset_id': asset.get('asset_id'),
-                        'spec': source, 'errors': errs, 'warnings': warns, 'ok': not errs})
+                        'spec': SPEC_MD if spec_md.is_file() else (SPEC_JSON if spec_json.is_file() else None),
+                        'errors': errs, 'warnings': warns, 'ok': not errs})
         flag = 'OK  ' if not errs else 'FAIL'
-        print(f'[{flag}] {rel}（{asset.get("name") or asset.get("asset_id")}）spec={source or "缺失"}')
+        print(f'[{flag}] {rel}（{asset.get("name") or asset.get("asset_id")}）')
         for e in errs:
             print(f'      error  {e}', file=sys.stderr)
         for w in warns:
@@ -155,10 +150,11 @@ def main(argv=None) -> int:
 
     bad = [r for r in results if not r['ok']]
     payload = _stamp({'tool': 'check_skill_spec.py', 'package': str(root),
-                      'skills': len(results), 'failed': len(bad),
+                      'spec_format': 'markdown', 'skills': len(results), 'failed': len(bad),
                       'results': results,
-                      'rule': 'skill 资产的 validate/ 必须有 test-spec.json（写清 harness / 模型 / 通过门槛）；'
-                              '找不到建议 harness 可替代但须在报告注明；Sage A1.5 沿用同一 harness'})
+                      'rule': 'skill 给 agent 用，验收必须上 agent：validate/test-spec.md 要写清 agent harness、'
+                              'agent model、测试任务（任务/输入/输出）、通过门槛（指标或验证脚本）；'
+                              '缺建议 harness 可替代但须在报告注明；Sage A1.5 沿用同一 harness'})
     print(f'合计 {len(results)} 个 skill 资产：通过 {len(results) - len(bad)}，缺文档或要素不全 {len(bad)}')
     if args.json_out:
         p = Path(args.json_out)

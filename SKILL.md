@@ -85,20 +85,26 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 ## 2.4 skill 资产的测试说明（必须先读，按它执行）
 
-skill 型资产怎么测不能靠猜：它必须在 **`validate/` 下给一份测试说明文档**，写清三件事——
-**建议用哪个 harness**、**要不要特定模型**、**通过门槛是什么**（指标阈值或对产物的验证脚本）。
+**skill 是给 agent 用的，所以验收必须上 agent**：让 agent 使用这个 skill 完成一个任务，看它交出的产物是否达标。
+只跑 `validate/` 里的脚本**不算** skill 的验收。提供方必须在 `validate/` 下给一份 Markdown 说明文档
+`validate/test-spec.md`（模板见 `assets/skill-test-spec.template.md`），写清四件事：
+
+| 要素 | 要写什么 |
+|---|---|
+| **Agent Harness** | 建议用哪个 agent 环境（DSH / Claude Code / 平台 Agent…）、怎么把 skill 交给它、有无备选 |
+| **Agent Model** | 建议哪个模型、是否必须特定模型、换模型会有什么差异 |
+| **测试任务（怎么测）** | 让 agent 用哪个 skill 完成什么任务、**输入什么**、**输出什么**，最好给可直接粘的提示词模板 |
+| **通过门槛** | 指标阈值（如 `value_est_exact = 0`）或**对 agent 产物**的验证脚本（如 `validate/validate.py`） |
 
 ```
 python scripts/check_skill_spec.py --package <资产根目录> --check --json-out <run>/skill-test-spec.json
 ```
 
-- 机读优先 `validate/test-spec.json`（格式见 `assets/skill-test-spec.schema.json`：
-  `harness{name,kind,entrypoint,command}` / `model{required,id}` / `gate{type,script|metrics}`）；
-  退而求其次 `validate/test-spec.md`，需含「## Harness」「## 模型」「## 通过门槛」三节。
-- **校验方按文档建议执行**：用声明的 harness 与模型跑 `validate/` 的用例，按声明的门槛判通过。
-- **找不到建议的 harness** 时，可改用系统里已有的 harness 替代，但必须在报告里写明「建议 X，实际用 Y，原因」。
-- **Sage A1.5 测试沿用同一 harness**（`sage.same_harness` 默认 true）；若确需更换，报告里单独说明。
-- 缺文档或要素不全 → 记 P0（这属于"没法验证"），不得用"+跳过"糊过去。
+- 只接受 Markdown（`validate/test-spec.md`）；JSON 版已废弃，出现会提示改写。
+- **按文档执行**：用声明的 agent harness 与模型跑任务，再用声明的门槛判通过。
+- **找不到建议的 harness** 时，可改用系统里已有的 agent harness 替代，但必须在报告里写明「建议 X、实际 Y、原因」。
+- **Sage A1.5 测试沿用同一 harness**（只换后端模型）；`## Sage A1.5` 一节说明是否沿用。
+- 缺文档或要素不全 → 记 **P0**（属于"没法验证"），不得跳过。
 
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
 

@@ -1,33 +1,40 @@
 # 用例协议与验证报告
 
-## skill 资产的测试说明文档（validate/test-spec.json）
+## skill 资产的测试说明文档（validate/test-spec.md）
 
-skill 型资产的 `validate/` 下必须有测试说明文档，否则校验方无从判断"怎么测、算不算过"。推荐 `test-spec.json`：
+skill 是给 agent 用的，验收必须在 agent 上做：让 agent 使用该 skill 完成一个任务，再检查产物。
+提供方必须在 `validate/` 下给一份 Markdown 说明（模板 `assets/skill-test-spec.template.md`），四节必填：
 
-```json
-{
-  "schema_version": "1.0.0",
-  "harness": {"name": "local-cli", "kind": "cli", "entrypoint": "validate/validate.py",
-              "command": "python validate/validate.py --case {case_id} --out-dir {out_dir}",
-              "notes": "Python ≥3.10，仅标准库"},
-  "model": {"required": false, "notes": "确定性计算，无需大模型"},
-  "gate": {"type": "script", "script": "validate/validate.py",
-           "metrics": [{"id": "value_est_exact", "direction": "exact", "threshold": 0}],
-           "description": "validate.py 退出码 0 且估值与解析解逐位相等"},
-  "sage": {"same_harness": true}
-}
+```markdown
+## Agent Harness
+- 建议 harness：DSH（DeepSeek Harness）Web 会话；备选：Claude Code / 平台 Agent
+- 装载方式：把资产目录放进 skills 位置 / 给出 SKILL.md 路径
+
+## Agent Model
+- 建议模型：DS-4.1；是否必须特定模型：否；换模型的影响：…
+
+## 测试任务（怎么测）
+- 任务：让 agent 用本 skill 完成「…」
+- 输入：…（文件/参数/提示词要点）
+- 期望输出：…（产物形态、字段、数量）
+- 提示词模板：可直接粘给 agent 的指令
+
+## 通过门槛
+- 指标：`value_est_exact = 0`
+- 验证脚本：`validate/validate.py --case {case_id} --out-dir {out_dir}`（对 **agent 产物** 做校验）
+
+## Sage A1.5
+- 是否沿用同一 harness：是
 ```
 
-| 字段 | 必填 | 约定 |
-|---|---|---|
-| `harness.name` / `kind` | 是 | kind ∈ `cli/mcp/api/agent/notebook`；kind=cli 时 `entrypoint` 必填且文件须真实存在 |
-| `harness.command` | 建议 | 可直接照抄，`{case_id}`/`{out_dir}` 为占位 |
-| `model.required` | 是 | 布尔；为 true 时 `model.id` 必填（如 `Sage-A1.5`） |
-| `gate.type` | 是 | `script`（给验证脚本，须存在）或 `metric`（给 `metrics[].id/threshold`） |
-| `sage.same_harness` | 建议 | 默认 true：Sage A1.5 测试沿用同一 harness |
+规则：
 
-校验方按文档执行：**建议的 harness 找不到时可用系统里已有的替代，但报告须注明"建议 X、实际 Y、原因"**；
-缺文档或三段要素不全记 P0。`scripts/check_skill_spec.py --package <包根> --check` 做机检。
+- **harness 必须是 agent harness**，文档里要能让校验方知道"把 skill 交给谁、怎么交"。
+- **测试任务要写清输入与输出**，否则无法判断 agent 是否完成；只写"跑一下脚本"不合规。
+- **通过门槛**给指标或验证脚本，验证脚本判的是 agent 的产物，不是重跑一遍脚本。
+- **建议的 harness 找不到时**可用系统里已有的 agent harness 替代，报告须注明「建议 X、实际 Y、原因」。
+- **Sage A1.5 沿用同一 harness**（只换后端模型）。
+- 只接受 Markdown；`validate/test-spec.json` 已废弃。机检：`scripts/check_skill_spec.py --package <包根> --check`。
 
 ## 收集用例
 
