@@ -67,10 +67,11 @@ def asset_dirs_under(base: Path, max_depth: int):
             yield child.parent.resolve()
 
 
-def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=()):
+def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=(), into=None):
     """按优先级产出候选目录（去重保序；挂载目标自身与 .asset-work 一律排除）。"""
     seen = set()
     excluded = [Path(e).resolve() for e in exclude if e]
+    into = Path(into).resolve() if into else None
 
     def emit(d: Path):
         d = d.resolve()
@@ -79,10 +80,14 @@ def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=
         for ex in excluded:
             if d == ex or ex in d.parents:
                 return                      # 不从挂载目标里再挂一遍，避免拿污染过的副本当源
-        if '.asset-work' in d.parts:
+        try:                                # 只在**包内**按目录名排除（包本身可能在 .asset-work 下）
+            rel_parts = d.relative_to(package.resolve()).parts
+        except ValueError:
+            rel_parts = ()
+        if SKIP_PARTS & set(rel_parts):
             return
-        if (d / MARKER).exists() or 'external' in d.parts:
-            return                          # 已挂载副本 / 约定的挂载目录，不作为源
+        if (d / MARKER).exists() or (into and (d == into.resolve() or into.resolve() in d.parents)):
+            return                          # 已挂载副本 / 挂载目标，不作为源
         seen.add(d)
         return d
 
@@ -198,7 +203,7 @@ def main(argv=None) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f'{spec} 不是合法 JSON：{exc}', file=sys.stderr)
             return 2
-        dirs = list(candidate_dirs(package, roots, consumer_dir, exclude=[into, consumer_dir]))
+        dirs = list(candidate_dirs(package, roots, consumer_dir, exclude=[into, consumer_dir], into=into))
         scanned = max(scanned, len(dirs))
         for a in doc.get('assets') or []:
             aid = str(a.get('asset_id') or '')
