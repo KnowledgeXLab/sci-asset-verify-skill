@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十四个脚本，共 81 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十四个脚本，共 80 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -136,7 +136,22 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter；外部资产按 `external_assets.json` 自动副本挂载；`external_assets.json` 位置由包根改为**每个资产目录**各一份；挂载缺失只报告不中断）尚未发版。
+### 1.2-beta.3 — 2026-11-14
+
+围绕「资产如何独立入库、如何引用外部资产」把口径补齐，并把批次目录与报告元信息规范化。
+
+**外部资产（重做）**
+- `external_assets.json` 的位置由**包根**改为**每个资产目录一份**——一个包有 1..N 个资产，引用关系是按资产各自的，包根一份无法表达"谁依赖谁"；清单「资产关联」列因此能按资产精确回填
+- 「资产关联」列口径固定：只填本资产 `external_assets.json` 里声明的 `asset_id`，**去掉 `sciasset://` 前缀、英文逗号分隔、不重复**；没有外部引用就留空，不写「不适用」也不写依赖描述。带前缀、中文逗号、描述文字、重复项、未声明的编号都会被 `check_list.py` 报 error
+- 新增 `scripts/mount_external.py`：按声明**自动副本挂载**外部资产，供依赖外部资产的用例执行。搜索顺序：① 用户指定目录及其一级子目录 ② 同包其他资产目录 ③ 包父级目录下二级子目录；按候选目录 `asset.json` 的 `asset_id` + `asset_version` 判定。挂到 `<副本>/external/<资产名>/<外部资产>/`，副本留 `.mounted-external.json` 标记（已挂载副本与 `.asset-work` 不再当源）
+- **挂载缺失只报告、不中断**：退出码始终 0，`external-mounts.json` 记 `status: incomplete` 与 `required_missing`；是否真影响结果交给用例执行判定
+
+**规范与约定**
+- 批次输出目录统一为 **`asset-runs/run-[YYYYMMDD]-[hhmmss]/`**：新增 `scripts/new_run.py` 生成（`--at` 可指定时间、同秒自动顺延）；`work_copy.py` 校验批次名，非规范名报错，历史批次凭 `--allow-nonstandard` 放行
+- 报告的版本与生成时间改为**文件头 YAML front matter**（`skill` / `skill_version` / `skill_commit` / `generated_at`），正文不再出现；`stamp_report.py` 幂等写入并自动迁移旧的文末小节
+
+**验证**
+- 自测 69 → **80 项断言**，十四个自检脚本全覆盖
 
 ### 1.2-beta.2 — 2026-11-13
 
@@ -217,4 +232,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，81 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，80 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
