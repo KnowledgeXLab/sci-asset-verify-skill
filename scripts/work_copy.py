@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,21 @@ except Exception:                        # noqa: BLE001
         return payload
 
 STATE_NAME = 'work-copy.json'
+RUN_ID = re.compile(r'^run-(\d{8})-(\d{6})$')
+
+
+def normalize_run_id(raw: str | None, allow_nonstandard: bool) -> str:
+    """批次目录名规范化为 run-[YYYYMMDD]-[hhmmss]；缺省自动生成，非规范值需显式放行。"""
+    if not raw:
+        return f'run-{datetime.now():%Y%m%d-%H%M%S}'
+    if RUN_ID.match(raw):
+        return raw
+    if allow_nonstandard:
+        print(f'[warn] run-id 不符合 run-[YYYYMMDD]-[hhmmss]：{raw}（已按 --allow-nonstandard 放行）',
+              file=sys.stderr)
+        return raw
+    raise SystemExit(f'run-id 必须是 run-[YYYYMMDD]-[hhmmss]（如 run-{datetime.now():%Y%m%d-%H%M%S}）；'
+                     f'实际 {raw!r}。历史批次可加 --allow-nonstandard 放行')
 RUNS_DIR = 'asset-runs'
 
 
@@ -241,13 +257,16 @@ def main(argv=None) -> int:
     for name in ('init', 'status', 'clean'):
         p = sub.add_parser(name)
         p.add_argument('asset_root', help='原始资产根目录')
-        p.add_argument('--run-id', required=True)
+        p.add_argument('--run-id', help='批次目录名，规范为 run-[YYYYMMDD]-[hhmmss]（省略则自动生成）')
+        p.add_argument('--allow-nonstandard', action='store_true',
+                       help='放行不符合规范的 run-id（历史批次/恢复场景）')
         if name == 'init':
             p.add_argument('--work-root', help='副本父目录（默认 <资产根目录父目录>/.asset-work）')
             p.add_argument('--manifest', action='store_true', help='记录原始包文件清单到 run 目录')
         if name == 'clean':
             p.add_argument('--verify', action='store_true', help='删除后复核原始包文件数/字节数（不核 SHA256SUMS）')
     args = ap.parse_args(argv)
+    args.run_id = normalize_run_id(getattr(args, 'run_id', None), getattr(args, 'allow_nonstandard', False))
     return {'init': cmd_init, 'status': cmd_status, 'clean': cmd_clean}[args.cmd](args)
 
 

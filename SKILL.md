@@ -13,7 +13,7 @@ description: 科学数字资产交付与验收：阅读资产包并提炼使用�
 
 先枚举 README、交付说明、asset_protocol、SKILL.md、接口 schema、依赖、权重及校验文件、数据、examples/cases、真值和历史报告。忽略已有 `asset-runs/`、缓存、AppleDouble `._*`；重复包和版本分别标记来源，比较 manifest/权重 hash 与入口后确定目标版本，不混用旧权重、新代码和另一版本基准。已有报告可用于登记其验证结果；执行新验证时以原始输入、代码及响应为依据。
 
-在原始资产根目录下创建 `<资产根目录>/asset-runs/<run_id>/`，中间结果和最终产物统一放入该目录。后文产物路径均相对此 run 目录。每次新运行使用唯一 run_id；恢复时复用原目录。保留原始资产文件，盘点时排除 asset-runs，避免将运行产物再次登记为资产。写入：
+在原始资产根目录下创建 `<资产根目录>/asset-runs/run-[YYYYMMDD]-[hhmmss]/`（**批次目录名唯一规范形式**：`run-` + 8 位日期 + `-` + 6 位时间，本地时区），中间结果和最终产物统一放入该目录。后文产物路径均相对此 run 目录。每次新运行使用唯一 run_id；恢复时复用原目录。保留原始资产文件，盘点时排除 asset-runs，避免将运行产物再次登记为资产。写入：
 - `inventory.json`：资产 ID/类型/版本/来源路径/关键文件 SHA256/关联资产/证据路径/待补信息。
 - `envelope-report.json`：**只校验、不构造**。用 `scripts/validate_envelope.py` 校验包内已有资产描述文件（`asset.json`/`catalog.json`）是否符合规范 §4 公共包络（schema 见 `assets/asset-envelope.schema.json`，含 §5 类型专有要求与 §6/§7 约束），逐资产给出 error/warning 与字段路径，并核对**本地实体是否真的在包内**（路径可达、`size_bytes`/`sha256` 一致，≤64MB 的文件实测摘要）；schema 交叉校验有 `jsonschema` 就用、没有就用内置轻量实现，报告中如实标注引擎；包内没有描述文件时记 `no_envelope` 并说明缺失，不由 skill 代写包络。
 - `usage.md`：各资产用途、适用边界、输入字段及单位、输出字段及单位、运行环境、实际入口与示例命令；明确本地路径、服务端路径和下载 URL。
@@ -21,14 +21,19 @@ description: 科学数字资产交付与验收：阅读资产包并提炼使用�
 
 **在副本里执行，产物写回原包**：所有会运行包内代码、写中间文件、需要清空输出目录的操作都在副本中进行，用 `scripts/work_copy.py` 管理：
 
+批次目录统一用 `scripts/new_run.py` 生成，不要自己起名字：
+
 ```
-python scripts/work_copy.py init  <资产根目录> --run-id <run_id> --manifest   # 打印副本路径
-python scripts/work_copy.py clean <资产根目录> --run-id <run_id> --verify     # 删副本 + 复核原包摘要
+python scripts/new_run.py --package <资产根目录>          # 创建并打印 asset-runs/run-[YYYYMMDD]-[hhmmss]
+python scripts/work_copy.py init  <资产根目录> --manifest  # 省略 --run-id 时自动生成规范名
+python scripts/work_copy.py clean <资产根目录> --run-id run-YYYYMMDD-hhmmss --verify
 ```
+
+`work_copy.py` 会校验批次名：不符合 `run-[YYYYMMDD]-[hhmmss]` 直接报错；续跑/补录历史批次时加 `--allow-nonstandard` 放行。
 
 - 副本默认放 `<资产根目录父目录>/.asset-work/<run_id>/`（可用 `--work-root` 或 `ASSET_WORK_ROOT` 覆盖，不可写时回退 `$TMPDIR`）；复制时跳过 `asset-runs/`、`__pycache__`、`*.pyc`。
 - `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致。**不核验、也不生成包根 `SHA256SUMS`**——它常把历史 run 产物一并登记，且不是交付判据；实体级摘要由 `validate_envelope.py` 按 `asset.json` 里声明的 `sha256` 核对。任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
-- **历史批次只增不改**：每批核验一律新建 `asset-runs/<run_id>/`，**不得删除、覆盖或清理已有的 run 目录**；需要重跑就换新 `run_id`，旧批次原样保留作为审计链。确认要删除某个旧批次时必须先问用户。
+- **历史批次只增不改**：每批核验一律新建 `asset-runs/run-[YYYYMMDD]-[hhmmss]/`，**不得删除、覆盖或清理已有的 run 目录**；需要重跑就换新 `run_id`，旧批次原样保留作为审计链。确认要删除某个旧批次时必须先问用户。
 - **原始包只写一处**：`<资产根目录>/asset-runs/<run_id>/`（最终产物：inventory/usage/state/cases/comparison/validation-report/登记表/部署记录，以及 `work-copy.json` 副本记录）。
 - 副本内执行时继续设 `PYTHONDONTWRITEBYTECODE=1`（避免 `.pyc` 污染），shell 里比对文本时统一加 `LC_ALL=C`（中文 locale 下部分命令会输出「成功」而非 `OK`，直接比对会误判）。
 - `clean --verify` 会删副本并复核原包文件数/字节数，结果写进 `work-copy.json`；清理失败或复核不通过要记为阻塞，不能静默留副本。副本路径必须位于资产根目录之外，脚本会拒绝删除根目录内的路径。

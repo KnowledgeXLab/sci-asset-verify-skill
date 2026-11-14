@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -88,7 +89,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/11] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/12] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -212,7 +213,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/11] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/12] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -299,7 +300,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/11] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/12] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -343,7 +344,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/11] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/12] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -353,8 +354,8 @@ def t4_work_copy(tmp: Path) -> None:
     (pkg / "SHA256SUMS").write_text(sums.stdout, encoding="utf-8")
     work = case / "work"
 
-    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-t4", "--work-root", str(work)], case)
-    state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-20260101-000001", "--work-root", str(work)], case)
+    state = json.loads((pkg / "asset-runs" / "run-20260101-000001" / "work-copy.json").read_text(encoding="utf-8"))
     record("正例：init 复制并自检文件数/字节/摘要",
            proc.returncode == 0 and (state.get("init_verify") or {}).get("ok") is True,
            f"rc={proc.returncode} verify={(state.get('init_verify') or {}).get('ok')}")
@@ -362,7 +363,7 @@ def t4_work_copy(tmp: Path) -> None:
     # 在副本里删掉一个文件，再 init：副本已存在被复用 → 自检应失败并删副本
     copy = Path(state["work_copy"])
     (copy / "sub" / "b.txt").unlink()
-    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-t4", "--work-root", str(work)], case)
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-20260101-000001", "--work-root", str(work)], case)
     record("负例：副本缺文件时 init 自检失败、删副本、退出码 1",
            proc.returncode == 1 and not copy.exists(),
            f"rc={proc.returncode} 副本仍在={copy.exists()}")
@@ -376,9 +377,9 @@ def t4_work_copy(tmp: Path) -> None:
                            cwd=pkg2, capture_output=True, text=True)
     (pkg2 / "SHA256SUMS").write_text(sums2.stdout, encoding="utf-8")
     work2 = case / "work2"
-    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg2), "--run-id", "run-sums",
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg2), "--run-id", "run-20260101-000002",
                 "--work-root", str(work2)], case)
-    st2 = json.loads((pkg2 / "asset-runs" / "run-sums" / "work-copy.json").read_text(encoding="utf-8"))
+    st2 = json.loads((pkg2 / "asset-runs" / "run-20260101-000002" / "work-copy.json").read_text(encoding="utf-8"))
     sums_entry = (st2.get("init_verify") or {}).get("sums") or [{}]
     iv = st2.get("init_verify") or {}
     record("正例：包内有 SHA256SUMS 也不核验（按约定跳过），init 只看文件数/字节数",
@@ -386,8 +387,8 @@ def t4_work_copy(tmp: Path) -> None:
            and iv.get("sums_checked") is False and not iv.get("sums"),
            f"rc={proc.returncode} sums_checked={iv.get('sums_checked')} sums={iv.get('sums')}")
 
-    proc = run([str(SCRIPTS / "work_copy.py"), "clean", str(pkg), "--run-id", "run-t4", "--verify"], case)
-    state = json.loads((pkg / "asset-runs" / "run-t4" / "work-copy.json").read_text(encoding="utf-8"))
+    proc = run([str(SCRIPTS / "work_copy.py"), "clean", str(pkg), "--run-id", "run-20260101-000001", "--verify"], case)
+    state = json.loads((pkg / "asset-runs" / "run-20260101-000001" / "work-copy.json").read_text(encoding="utf-8"))
     vac = state.get("verify_after_clean") or {}
     record("正例：clean 删副本并复核原包（文件数/字节数，不核 SHA256SUMS）",
            proc.returncode == 0 and vac.get("checked") is False
@@ -397,7 +398,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/11] prune_evidence.py — 只留报告类证据")
+    print("\n[5/12] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -437,7 +438,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/11] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/12] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -508,7 +509,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/11] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/12] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -548,7 +549,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/11] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/12] external_refs.py — 外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
     (pkg / "data" / "scotia").mkdir(parents=True)
@@ -616,7 +617,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/11] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/12] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -675,7 +676,7 @@ def t9_version_stamp(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T10 报告分级
 def t10_report_levels(tmp: Path) -> None:
-    print("\n[10/11] check_report.py — 问题清单 P0/P1/P2 分级")
+    print("\n[10/12] check_report.py — 问题清单 P0/P1/P2 分级")
     d = tmp / "t10"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -713,7 +714,7 @@ def t10_report_levels(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T11 资产自包含
 def t11_selfcontained(tmp: Path) -> None:
-    print("\n[11/11] check_selfcontained.py — 资产只能引用自己目录内的文件")
+    print("\n[11/12] check_selfcontained.py — 资产只能引用自己目录内的文件")
     d = tmp / "t11"
     pkg = d / "pkg"
     good = pkg / "asset-a"
@@ -759,6 +760,45 @@ def t11_selfcontained(tmp: Path) -> None:
            f"contained={a['self_contained']} notes={a['note_count']}")
 
 
+# --------------------------------------------------------------------------- T12 批次目录规范
+def t12_run_id(tmp: Path) -> None:
+    print("\n[12/12] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
+    d = tmp / "t12"
+    pkg = d / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "a.txt").write_text("a\n", encoding="utf-8")
+
+    out = d / "run.json"
+    proc = run([str(SCRIPTS / "new_run.py"), "--package", str(pkg), "--json-out", str(out)], d)
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    rid = payload["run_id"]
+    record("正例：new_run 生成的批次目录名符合 run-[YYYYMMDD]-[hhmmss]",
+           proc.returncode == 0 and re.fullmatch(r"run-\d{8}-\d{6}", rid) is not None
+           and (pkg / "asset-runs" / rid).is_dir(),
+           f"run_id={rid}")
+
+    proc = run([str(SCRIPTS / "new_run.py"), "--package", str(pkg),
+                "--at", "2026-11-14T10:55:45", "--print"], d)
+    record("正例：--at 可指定时间（补录/复现）",
+           proc.returncode == 0 and proc.stdout.strip().endswith("run-20261114-105545"),
+           f"out={proc.stdout.strip()}")
+
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--work-root", str(d / "w")], d)
+    newdirs = [p.name for p in (pkg / "asset-runs").iterdir() if re.fullmatch(r"run-\d{8}-\d{6}", p.name)]
+    record("正例：work_copy 省略 --run-id 时自动生成规范名",
+           proc.returncode == 0 and len(newdirs) >= 1, f"dirs={newdirs[:3]}")
+
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-20261113-verify-b5",
+                "--work-root", str(d / "w")], d)
+    record("负例：非规范 run-id 被拒（提示加 --allow-nonstandard）",
+           proc.returncode != 0 and "run-[YYYYMMDD]-[hhmmss]" in (proc.stderr or ""),
+           f"rc={proc.returncode}")
+
+    proc = run([str(SCRIPTS / "work_copy.py"), "init", str(pkg), "--run-id", "run-20261113-verify-b5",
+                "--allow-nonstandard", "--work-root", str(d / "w")], d)
+    record("正例：历史批次加 --allow-nonstandard 可放行", proc.returncode == 0, f"rc={proc.returncode}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -766,7 +806,7 @@ def main() -> int:
     print(f"临时目录：{tmp}")
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
-               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained):
+               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

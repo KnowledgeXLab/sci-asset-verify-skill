@@ -23,11 +23,11 @@
 
 - 材料尚未齐备，仅需确认缺口：「只做盘点和填表，先别跑用例」
 - 服务已部署，仅需补跑用例：「跳过部署，直接用 http://xxx 那个服务」
-- 上次执行中断：「接着 `asset-runs/run-YYYYMMDD` 那次继续」
+- 上次执行中断：「接着 `asset-runs/run-20261114-105545` 那次继续」
 
 资产涉及大模型调用且需进行 Sage A1.5 兼容性验证时，应提供 `SAGE_BASE_URL`、`SAGE_MODEL`、`SAGE_API_KEY`。未提供时，agent 将暂停并向用户索取，不会跳过该环节。
 
-核验完成后，资产目录下生成 `asset-runs/<run_id>/`。其中以下三项为主要交付物：
+核验完成后，资产目录下生成 `asset-runs/run-[YYYYMMDD]-[hhmmss]/`（批次目录名固定为「日期-时分秒」，便于按时间追溯）。其中以下三项为主要交付物：
 
 - `validation-report.md`：核验结论，含通过项、未通过项及原因
 - `registration/科学数字资产清单.xlsx`：可直接随包提交的资产清单
@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十二个脚本，共 69 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十三个脚本，共 75 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -128,7 +128,7 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十二个自检脚本
+scripts/           十三个自检脚本
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
@@ -136,7 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空）尚未发版。
+> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`）尚未发版。
 
 ### 1.2-beta.2 — 2026-11-13
 
@@ -217,4 +217,4 @@ vendor/            随包分发的 openpyxl
 
 Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
 
-脚本变更后应先执行 `python tests/selftest.py`，69 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`，75 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。

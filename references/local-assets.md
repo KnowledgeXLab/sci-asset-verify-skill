@@ -11,7 +11,7 @@
 
 ## 副本执行与完整性
 
-执行一律在副本中进行：`python scripts/work_copy.py init <资产根目录> --run-id <run_id> --manifest` 生成副本（默认 `<资产根目录父目录>/.asset-work/<run_id>/`），跑完 `clean --verify` 删副本并复核原包摘要。原始包只写 `asset-runs/<run_id>/`。
+执行一律在副本中进行：批次目录用 `python scripts/new_run.py --package <资产根目录>` 生成（规范名 `run-[YYYYMMDD]-[hhmmss]`）；`python scripts/work_copy.py init <资产根目录> --run-id <run_id> --manifest` 生成副本（默认 `<资产根目录父目录>/.asset-work/<run_id>/`），跑完 `clean --verify` 删副本并复核原包摘要。原始包只写 `asset-runs/<run_id>/`。
 
 **不核验、也不生成包根 `SHA256SUMS`**：完整性用文件数/字节数判断，实体级摘要按 `asset.json` 里声明的 `sha256` 逐个核对（`validate_envelope.py`）。若需要引用包内自带的清单文件，只作旁证，不据此判失败。
 
