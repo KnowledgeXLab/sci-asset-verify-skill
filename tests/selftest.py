@@ -89,7 +89,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/12] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/13] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -213,7 +213,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/12] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/13] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -300,7 +300,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/12] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/13] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -344,7 +344,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/12] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/13] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -398,7 +398,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/12] prune_evidence.py — 只留报告类证据")
+    print("\n[5/13] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -438,7 +438,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/12] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/13] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -509,7 +509,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/12] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/13] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -549,7 +549,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/12] external_refs.py — 外部资产引用校验与「资产关联」列")
+    print("\n[8/13] external_refs.py — 外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
     (pkg / "data" / "scotia").mkdir(parents=True)
@@ -617,7 +617,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/12] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/13] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -693,7 +693,7 @@ def t9_version_stamp(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T10 报告分级
 def t10_report_levels(tmp: Path) -> None:
-    print("\n[10/12] check_report.py — 问题清单 P0/P1/P2 分级")
+    print("\n[10/13] check_report.py — 问题清单 P0/P1/P2 分级")
     d = tmp / "t10"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -731,7 +731,7 @@ def t10_report_levels(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T11 资产自包含
 def t11_selfcontained(tmp: Path) -> None:
-    print("\n[11/12] check_selfcontained.py — 资产只能引用自己目录内的文件")
+    print("\n[11/13] check_selfcontained.py — 资产只能引用自己目录内的文件")
     d = tmp / "t11"
     pkg = d / "pkg"
     good = pkg / "asset-a"
@@ -779,7 +779,7 @@ def t11_selfcontained(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T12 批次目录规范
 def t12_run_id(tmp: Path) -> None:
-    print("\n[12/12] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
+    print("\n[12/13] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
     d = tmp / "t12"
     pkg = d / "pkg"
     pkg.mkdir(parents=True)
@@ -816,6 +816,57 @@ def t12_run_id(tmp: Path) -> None:
     record("正例：历史批次加 --allow-nonstandard 可放行", proc.returncode == 0, f"rc={proc.returncode}")
 
 
+# --------------------------------------------------------------------------- T13 外部资产挂载
+def t13_mount_external(tmp: Path) -> None:
+    print("\n[13/13] mount_external.py — 按 external_assets.json 副本挂载外部资产")
+    d = tmp / "t13"
+    pkg = d / "pkg"
+    (pkg / "mine").mkdir(parents=True)
+    (pkg / "mine" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/tool/mine"}, ensure_ascii=False), encoding="utf-8")
+    (pkg / "external_assets.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0",
+                    "target_path": "data/ext", "required": True}]}, ensure_ascii=False), encoding="utf-8")
+
+    src = d / "mounts" / "ext-asset"
+    (src / "data").mkdir(parents=True)
+    (src / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0"},
+        ensure_ascii=False), encoding="utf-8")
+    (src / "data" / "x.csv").write_text("x", encoding="utf-8")
+
+    into = d / "work" / "external"
+    out = d / "mount.json"
+    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(into),
+                "--search-root", str(d / "mounts"), "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：在用户挂载目录的一级子目录命中并副本挂载",
+           proc.returncode == 0 and rep["status"] == "complete"
+           and (into / "ext" / "data" / "x.csv").is_file(),
+           f"rc={proc.returncode} status={rep.get('status')}")
+
+    (into / "ext" / "data" / "x.csv").write_text("polluted", encoding="utf-8")
+    record("正例：挂载副本可写，源资产不受影响（副本形式）",
+           (src / "data" / "x.csv").read_text(encoding="utf-8") == "x", "源被污染")
+
+    src_aj = json.loads((src / "asset.json").read_text(encoding="utf-8"))
+    src_aj["asset_version"] = "9.9.9"
+    (src / "asset.json").write_text(json.dumps(src_aj, ensure_ascii=False), encoding="utf-8")
+    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w2"),
+                "--search-root", str(d / "mounts"), "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    record("负例：版本不符判缺失（required 阻断，退出码 3）",
+           proc.returncode == 3 and rep["status"] == "blocked"
+           and "版本不符" in (rep["missing"][0]["reason"] if rep["missing"] else ""),
+           f"rc={proc.returncode} status={rep.get('status')}")
+
+    (pkg / "external_assets.json").unlink()
+    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w3")], d)
+    record("正例：无 external_assets.json 时无需挂载、退出码 0",
+           proc.returncode == 0 and "无需挂载" in proc.stdout, f"rc={proc.returncode}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -823,7 +874,7 @@ def main() -> int:
     print(f"临时目录：{tmp}")
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
-               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id):
+               t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id, t13_mount_external):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

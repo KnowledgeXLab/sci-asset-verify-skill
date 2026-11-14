@@ -83,6 +83,22 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 完成条件：表格可重新打开，表头与 `assets/external-list-schema.json` 逐列一致（`scripts/check_list.py` 无 error；若用户显式指定其他 schema，则以 schema-snapshot 为准且差异已在 field-map.json 说明）、每个资产恰好一行、必填项缺口明确、枚举值在词表内、关联可解析，表内结论与所引用报告/`comparison.json` 一致。
 
+## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
+
+用例若用到**别的资产**（`external_assets.json` 里声明的那些），不把它们放到位就跑不起来。挂载一律用**副本**，避免用例写产物污染原资产：
+
+```
+python scripts/mount_external.py --package <资产根目录> --into <工作副本>/external \
+    --search-root <用户在 prompt 里给的挂载目录> [--search-root ...] --json-out <run>/external-mounts.json
+```
+
+**搜索顺序（命中即止）**：① 用户指定目录本身及其**一级子目录**；② 同一资产包内的**其他资产目录**；③ 资产包**父级目录下的二级子目录**（`<父>/<A>/<B>`）。
+判定看候选目录里的 `asset.json`：`asset_id` 完全一致且 `asset_version` 相符才算命中。已挂载的副本（含 `.mounted-external.json` 留痕）与 `.asset-work` 不会再被当作源。
+
+- 挂到 `<副本>/external/<slug>/`，`external-mounts.json` 记录每个资产的源路径、挂载位置、文件数、`required`。
+- **找不到就跳过并在报告里声明**：`required: true` 的缺失会让依赖它的用例只能记 `blocked`（脚本退出码 3），`required: false` 的缺失不阻断但要写明。
+- 用例入口若需要指向外部资产，把路径指到 `<副本>/external/<slug>/…`，不要指原资产。
+
 ## 3. 注册 MCP、部署模型
 
 读取包内配置和启动脚本；记录计划使用的解释器、工作目录、依赖、权重、设备、端口和客户端。复用可用服务；检查现有配置后仅增加或更新目标条目。已获得的部署/注册授权沿用，正常执行；缺目标平台、凭证或所需权限时完成本地配置和检查，并明确具体阻塞，不设置额外的固定审批步骤。
