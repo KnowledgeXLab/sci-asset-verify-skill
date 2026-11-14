@@ -108,6 +108,18 @@ def main(argv=None) -> int:
                                'detail': f'{type(exc).__name__}: {exc}', 'hint': '修包络后重跑'})
             asset = {}
 
+        # 0) 该资产声明的外部资产挂载点（软链到目录外属合规通道）
+        declared_targets = set()
+        ext = adir / 'external_assets.json'
+        if ext.is_file():
+            try:
+                for a in (json.loads(ext.read_text(encoding='utf-8')).get('assets') or []):
+                    tp = str(a.get('target_path') or '').strip().lstrip('./').rstrip('/')
+                    if tp:
+                        declared_targets.add(tp)
+            except Exception:  # noqa: BLE001
+                pass
+
         # 1) asset.json 里的路径字段
         for field, uri in local_paths_of(asset):
             p = (adir / unquote(uri)).resolve()
@@ -116,9 +128,31 @@ def main(argv=None) -> int:
                 violations.append({'kind': 'asset-json-escape', 'where': field, 'value': uri,
                                    'resolves_to': str(p), 'hint': hint})
 
+        # 1.5) 软链：指向目录外的，若是本资产声明的 target_path 则属合规挂载，否则算违规
+        for link in sorted(adir.rglob('*')):
+            if not link.is_symlink():
+                continue
+            try:
+                tgt = link.resolve()
+            except Exception:  # noqa: BLE001
+                continue
+            if inside(adir, tgt):
+                continue
+            rel_link = str(link.relative_to(adir)).replace('\\', '/')
+            if rel_link.rstrip('/') in declared_targets:
+                violations.append({'kind': 'declared-external-link', 'severity': 'note',
+                                   'where': rel_link, 'value': str(link.readlink()),
+                                   'resolves_to': str(tgt),
+                                   'hint': '由 external_assets.json 声明并软链到副本内其他资产，属合规通道'})
+            else:
+                violations.append({'kind': 'symlink-escape', 'severity': 'violation',
+                                   'where': rel_link, 'value': str(link.readlink()),
+                                   'resolves_to': str(tgt),
+                                   'hint': '软链指向资产目录外且未在 external_assets.json 声明'})
+
         # 2) 目录内文本文件里的越界引用
         for f in sorted(adir.rglob('*')):
-            if not f.is_file() or f.suffix.lower() not in SCAN_SUFFIX:
+            if f.is_symlink() or not f.is_file() or f.suffix.lower() not in SCAN_SUFFIX:
                 continue
             rel = f.relative_to(adir)
             if SKIP_PARTS & set(rel.parts):

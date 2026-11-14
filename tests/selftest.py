@@ -761,6 +761,33 @@ def t11_selfcontained(tmp: Path) -> None:
                    for v in by_asset.get("asset-b", {}).get("violations") or []),
            f"rc={proc.returncode}")
 
+    # 软链：声明的 target_path 属合规；未声明的越界软链算违规
+    outside_dir = tmp / "t11" / "elsewhere"
+    (outside_dir / "inner").mkdir(parents=True, exist_ok=True)
+    (outside_dir / "inner" / "z.csv").write_text("z", encoding="utf-8")
+    (good / "ref" / "path").mkdir(parents=True, exist_ok=True)
+    try:
+        (good / "ref" / "path" / "declared").symlink_to(outside_dir / "inner", target_is_directory=True)
+        (good / "undeclared").symlink_to(outside_dir / "inner", target_is_directory=True)
+        (good / "external_assets.json").write_text(json.dumps({
+            "schema_version": "1.0.0",
+            "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/other", "asset_version": "1.0.0",
+                        "target_path": "ref/path/declared"}]}, ensure_ascii=False), encoding="utf-8")
+        proc = run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(pkg),
+                    "--json-out", str(out)], d)
+        rep = json.loads(out.read_text(encoding="utf-8"))
+        a = next(r for r in rep["results"] if r["asset_dir"] == "asset-a")
+        kinds = [v["kind"] for v in a["violations"]]
+        record("正例：声明的挂载软链豁免，未声明的越界软链仍算违规",
+               "declared-external-link" in kinds and "symlink-escape" in kinds
+               and a["violation_count"] == 1,
+               f"kinds={kinds} violations={a['violation_count']}")
+        (good / "external_assets.json").unlink()
+        (good / "ref" / "path" / "declared").unlink()
+        (good / "undeclared").unlink()
+    except OSError as exc:
+        record("正例：声明的挂载软链豁免，未声明的越界软链仍算违规", False, f"无法建软链：{exc}")
+
     # 文档里的绝对路径只算提示，不判违规
     (good / "README.md").write_text("示例：结果写到 /home/someone/out.csv\n", encoding="utf-8")
     proc = run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(pkg),
@@ -813,76 +840,81 @@ def t12_run_id(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T13 外部资产挂载
 def t13_mount_external(tmp: Path) -> None:
-    print("\n[13/13] mount_external.py — 按 external_assets.json 副本挂载外部资产")
+    print("\n[13/13] mount_external.py — 先同包解析，包外复制进副本，再按 target_path 建软链")
     d = tmp / "t13"
-    pkg = d / "pkg"
-    (pkg / "mine").mkdir(parents=True)
-    (pkg / "mine" / "asset.json").write_text(json.dumps(
-        {"asset_id": "sciasset://2026ZD123456/earth/tool/mine"}, ensure_ascii=False), encoding="utf-8")
-    (pkg / "mine" / "external_assets.json").write_text(json.dumps({
+    copy_root = d / ".asset-work" / "run-x"
+
+    def put_asset(slug: str, aid: str, ver: str = "1.0.0") -> pathlib.Path:
+        a = copy_root / slug
+        (a / "payload").mkdir(parents=True, exist_ok=True)
+        (a / "asset.json").write_text(json.dumps({"asset_id": aid, "asset_version": ver},
+                                                 ensure_ascii=False), encoding="utf-8")
+        (a / "payload" / "x.csv").write_text("x", encoding="utf-8")
+        return a
+
+    a_asset = put_asset("asset-a", "sciasset://2026ZD123456/earth/skill/asset-a")
+    put_asset("asset-b", "sciasset://2026ZD123456/earth/data/asset-b")
+    (a_asset / "external_assets.json").write_text(json.dumps({
         "schema_version": "1.0.0",
-        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/asset-b", "asset_version": "1.0.0",
+                    "target_path": "ref/path/b", "required": True}]}, ensure_ascii=False), encoding="utf-8")
+
+    out = d / "m.json"
+    proc = run([str(SCRIPTS / "mount_external.py"), "--copy-root", str(copy_root),
+                "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    link = a_asset / "ref" / "path" / "b"
+    record("正例：同包资产直接命中，按 target_path 建软链（父目录自动创建）",
+           proc.returncode == 0 and rep["status"] == "complete" and link.is_symlink()
+           and link.resolve() == (copy_root / "asset-b").resolve(),
+           f"rc={proc.returncode} link={link.is_symlink()}")
+
+    proc = run([str(SCRIPTS / "mount_external.py"), "--copy-root", str(copy_root),
+                "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    record("正例：重复执行幂等（软链不重复建、不报错）",
+           proc.returncode == 0 and any("已存在" in (l.get("note") or "") for l in rep["links"]),
+           f"links={[l.get('note') for l in rep['links']]}")
+
+    # 包外资产：按优先级找到后复制进副本，再建软链
+    c_asset = put_asset("asset-c", "sciasset://2026ZD123456/earth/skill/asset-c")
+    (c_asset / "external_assets.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext-c", "asset_version": "2.0.0",
                     "target_path": "data/ext", "required": True}]}, ensure_ascii=False), encoding="utf-8")
-
-    src = d / "mounts" / "ext-asset"
-    (src / "data").mkdir(parents=True)
-    (src / "asset.json").write_text(json.dumps(
-        {"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0"},
+    origin = d / "origin-pkg"
+    origin.mkdir(parents=True, exist_ok=True)
+    outside = d / "outside" / "ext-c"
+    (outside / "data").mkdir(parents=True, exist_ok=True)
+    (outside / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/data/ext-c", "asset_version": "2.0.0"},
         ensure_ascii=False), encoding="utf-8")
-    (src / "data" / "x.csv").write_text("x", encoding="utf-8")
-
-    into = d / "work" / "external"
-    out = d / "mount.json"
-    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(into),
-                "--search-root", str(d / "mounts"), "--json-out", str(out)], d)
+    (outside / "data" / "y.csv").write_text("y", encoding="utf-8")
+    proc = run([str(SCRIPTS / "mount_external.py"), "--copy-root", str(copy_root),
+                "--origin-package", str(origin), "--json-out", str(out)], d)
     rep = json.loads(out.read_text(encoding="utf-8"))
-    record("正例：在用户挂载目录的一级子目录命中并副本挂载",
-           proc.returncode == 0 and rep["status"] == "complete"
-           and (into / "mine" / "ext" / "data" / "x.csv").is_file(),
-           f"rc={proc.returncode} status={rep.get('status')}")
+    link_c = c_asset / "data" / "ext"
+    record("正例：包外资产按优先级找到后复制进副本，并软链到 target_path",
+           proc.returncode == 0 and (copy_root / "ext-c" / "asset.json").is_file()
+           and link_c.is_symlink() and link_c.resolve() == (copy_root / "ext-c").resolve(),
+           f"rc={proc.returncode} copied={(copy_root / 'ext-c').is_dir()} link={link_c.is_symlink()}")
 
-    (into / "mine" / "ext" / "data" / "x.csv").write_text("polluted", encoding="utf-8")
-    record("正例：挂载副本可写，源资产不受影响（副本形式）",
-           (src / "data" / "x.csv").read_text(encoding="utf-8") == "x", "源被污染")
-
-    src_aj = json.loads((src / "asset.json").read_text(encoding="utf-8"))
-    src_aj["asset_version"] = "9.9.9"
-    (src / "asset.json").write_text(json.dumps(src_aj, ensure_ascii=False), encoding="utf-8")
-    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w2"),
-                "--search-root", str(d / "mounts"), "--json-out", str(out)], d)
-    rep = json.loads(out.read_text(encoding="utf-8"))
-    record("负例：版本不符记为缺失，但**不退出**（仍 0，只写 status 与 required_missing）",
-           proc.returncode == 0 and rep["status"] == "incomplete"
-           and rep.get("required_missing") and rep["missing"]
-           and "版本不符" in rep["missing"][0]["reason"],
-           f"rc={proc.returncode} status={rep.get('status')}")
-
-    # 回归：包本身位于 .asset-work/<run>/ 下（work_copy 的副本就是这样），候选不应被整片排除
-    aw = d / ".asset-work" / "run-x" / "pkg"
-    (aw / "mine").mkdir(parents=True)
-    (aw / "mine" / "asset.json").write_text(json.dumps(
-        {"asset_id": "sciasset://2026ZD123456/earth/tool/mine"}, ensure_ascii=False), encoding="utf-8")
-    (aw / "mine" / "external_assets.json").write_text(json.dumps({
+    # 找不到：只在报告里说明，不中断
+    (c_asset / "external_assets.json").write_text(json.dumps({
         "schema_version": "1.0.0",
-        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0",
-                    "required": True}]}, ensure_ascii=False), encoding="utf-8")
-    (aw / "other").mkdir(parents=True)
-    (aw / "other" / "asset.json").write_text(json.dumps(
-        {"asset_id": "sciasset://2026ZD123456/earth/data/ext", "asset_version": "1.0.0"},
-        ensure_ascii=False), encoding="utf-8")
-    into_aw = d / ".asset-work" / "run-x" / "external"
-    out_aw = d / "aw.json"
-    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(aw), "--into", str(into_aw),
-                "--json-out", str(out_aw)], d)
-    rep_aw = json.loads(out_aw.read_text(encoding="utf-8"))
-    record("回归：包位于 .asset-work 下也能扫到同包其他资产并挂载",
-           proc.returncode == 0 and rep_aw["status"] == "complete"
-           and (into_aw / "mine" / "ext" / "asset.json").is_file(),
-           f"rc={proc.returncode} status={rep_aw.get('status')} scanned={rep_aw.get('candidate_dirs_scanned')}")
+        "assets": [{"asset_id": "sciasset://2026ZD123456/earth/data/nope", "asset_version": "1.0.0",
+                    "target_path": "data/none", "required": True}]}, ensure_ascii=False), encoding="utf-8")
+    proc = run([str(SCRIPTS / "mount_external.py"), "--copy-root", str(copy_root), "--json-out", str(out)], d)
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    record("负例：找不到的外部资产只记 missing（退出码仍 0、status=incomplete）",
+           proc.returncode == 0 and rep["status"] == "incomplete"
+           and any(m["asset_id"].endswith("/nope") for m in rep["missing"]),
+           f"rc={proc.returncode} status={rep.get('status')}")
 
-    (pkg / "mine" / "external_assets.json").unlink()
-    proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w3")], d)
-    record("正例：各资产目录都无 external_assets.json 时无需挂载、退出码 0",
+    empty = d / "empty"
+    (empty / "x").mkdir(parents=True)
+    proc = run([str(SCRIPTS / "mount_external.py"), "--copy-root", str(empty)], d)
+    record("正例：没有任何 external_assets.json 时无需挂载、退出码 0",
            proc.returncode == 0 and "无需挂载" in proc.stdout, f"rc={proc.returncode}")
 
 

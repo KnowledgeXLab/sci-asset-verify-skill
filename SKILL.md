@@ -85,21 +85,28 @@ python scripts/build_list.py --rows rows.json --out registration/科学数字资
 
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
 
-用例若用到**别的资产**（`external_assets.json` 里声明的那些），不把它们放到位就跑不起来。挂载一律用**副本**，避免用例写产物污染原资产：
+用例若用到**别的资产**（`external_assets.json` 里声明的那些），不把它们放到位就跑不起来。挂载在**工作副本内**完成，原资产包不动：
 
 ```
-python scripts/mount_external.py --package <资产根目录> --into <工作副本>/external \
-    --search-root <用户在 prompt 里给的挂载目录> [--search-root ...] --json-out <run>/external-mounts.json
+python scripts/mount_external.py --copy-root <副本根> \
+    --origin-package <原始资产包根> [--search-root <用户给的挂载目录> ...] --json-out <run>/external-mounts.json
 ```
 
-**声明在哪**：每个资产目录下一份 `<资产目录>/external_assets.json`，只声明**该资产**用到的外部资产；一个包有多个资产就各自一份。
+`--copy-root` 就是 `.asset-work/<run_id>/`；`--origin-package` 用于按优先级到包外找资产。
 
-**搜索顺序（命中即止）**：① 用户指定目录本身及其**一级子目录**；② 同一资产包内的**其他资产目录**；③ 资产包**父级目录下的二级子目录**（`<父>/<A>/<B>`）。
-判定看候选目录里的 `asset.json`：`asset_id` 完全一致且 `asset_version` 相符才算命中。已挂载的副本（含 `.mounted-external.json` 留痕）与 `.asset-work` 不会再被当作源。
+**① 先找同包资产**：副本里已有的各资产目录（`<副本根>/<资产目录>/asset.json`，校验时已被 `work_copy` 一起复制进来）按
+`asset_id` + `asset_version` 匹配。命中就直接用，不复制。
 
-- 挂到 `<副本>/external/<消费方资产名>/<外部资产 slug>/`（按消费方分目录，避免不同资产要同一外部资产的不同版本时打架），`external-mounts.json` 记录消费方、源路径、挂载位置、文件数、`required`。
-- **找不到就跳过，只在报告里声明**：挂载缺失**不中断校验、不改变脚本退出码**（始终 0）。`external-mounts.json` 里记 `status: incomplete` 与 `required_missing`；是否真的影响结果由用例执行说话——依赖它的用例跑不通就按执行结果记 `blocked`/`failed`，跑通了照常判 pass。
-- 用例入口若需要指向外部资产，把路径指到 `<副本>/external/<消费方资产名>/<外部资产 slug>/…`，不要指原资产。
+**② 同包没有才到包外找**：用户指定目录及其**一级子目录** → 原始包的**其他资产目录** → 原始包**父级目录下的二级子目录**。
+找到后整目录**复制到 `<副本根>/<资产目录名>/`**（与消费方同级；同名且不同 asset_id 时加后缀）。
+
+**③ 按 `target_path` 建软链**：在**消费方资产目录内**建 `target_path → <副本根>/<资产目录名>` 的绝对软链，
+`target_path` 的父目录不存在就先建出来（不要因为"路径不存在"报错）。软链指向副本内的资产，原资产不会被写入。
+
+- 一个外部资产被多个资产引用时，副本里只放一份，各自建链。
+- 找不到就跳过并在报告里声明：**不中断校验**，`external-mounts.json` 记 `status: incomplete` 与 `required_missing`；
+  是否真的影响结果由用例执行说话——依赖它的用例跑不通就记 `blocked`/`failed`，跑通了照常 pass。
+- 自包含校验认得这条合规通道：软链指向目录外但路径等于该资产声明的 `target_path` 时只记 note，不算越界。
 
 ## 3. 注册 MCP、部署模型
 
