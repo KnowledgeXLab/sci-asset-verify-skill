@@ -41,6 +41,12 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+try:                                     # 布局约定：跳过核验期挂载进来的外部资产副本
+    from _layout import is_mounted_external as _is_mounted
+except Exception:                        # noqa: BLE001
+    def _is_mounted(d):
+        return (d / '.mounted-external.json').is_file()
+
 try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
     from _version import stamp as _stamp
 except Exception:                        # noqa: BLE001
@@ -105,7 +111,7 @@ def detect(root: Path) -> dict:
     if not assets:
         for f in sorted(root.rglob('asset.json')):
             rel = f.relative_to(root)
-            if SKIP_PARTS & set(rel.parts):
+            if SKIP_PARTS & set(rel.parts) or _is_mounted(f.parent):
                 continue
             try:
                 doc = load_json(f)

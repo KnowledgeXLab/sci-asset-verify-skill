@@ -24,6 +24,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:                                     # 布局约定：跳过核验期挂载进来的外部资产副本
+    from _layout import is_mounted_external as _is_mounted
+except Exception:                        # noqa: BLE001
+    def _is_mounted(d):
+        return (d / '.mounted-external.json').is_file()
+
 try:                                     # 版本戳：报告与证据 JSON 都要能追溯校验 skill 版本
     from _version import stamp as _stamp
 except Exception:                        # noqa: BLE001
@@ -70,7 +76,8 @@ def collect_assets(path_list):
             seen = set()
             for pat in ('asset.json', '*.asset.json', 'catalog.json', '*.json'):
                 hits = [f for f in sorted(p.rglob(pat))
-                        if 'asset-runs' not in f.parts and '.git' not in f.parts]
+                        if 'asset-runs' not in f.parts and '.git' not in f.parts
+                        and not _is_mounted(f.parent)]     # 挂载进来的外部资产不参与本包校验
                 for f in hits:
                     if f.resolve() in seen:
                         continue

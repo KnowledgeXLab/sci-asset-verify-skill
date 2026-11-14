@@ -107,6 +107,8 @@ python scripts/mount_external.py --copy-root <副本根> \
 - 找不到就跳过并在报告里声明：**不中断校验**，`external-mounts.json` 记 `status: incomplete` 与 `required_missing`；
   是否真的影响结果由用例执行说话——依赖它的用例跑不通就记 `blocked`/`failed`，跑通了照常 pass。
 - 自包含校验认得这条合规通道：软链指向目录外但路径等于该资产声明的 `target_path` 时只记 note，不算越界。
+- **挂载进来的资产不算本包资产**：从包外复制进副本的目录里带 `.mounted-external.json` 标记，
+  包络/自包含/资产ID/清单/Sage 判定都会跳过它们——核验对象始终是原包声明的那些资产。
 
 ## 3. 注册 MCP、部署模型
 

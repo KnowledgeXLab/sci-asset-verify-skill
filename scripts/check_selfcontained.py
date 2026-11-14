@@ -27,6 +27,12 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
+try:                                     # 布局约定：跳过核验期挂载进来的外部资产副本
+    from _layout import is_mounted_external as _is_mounted
+except Exception:                        # noqa: BLE001
+    def _is_mounted(d):
+        return (d / '.mounted-external.json').is_file()
+
 try:
     from _version import stamp as _stamp
 except Exception:  # noqa: BLE001
@@ -88,7 +94,8 @@ def main(argv=None) -> int:
 
     # 资产目录 = 含 asset.json 的目录（包根本身可能就是资产）
     candidates = [p.parent for p in sorted(root.rglob('asset.json'))
-                  if not (SKIP_PARTS & set(p.relative_to(root).parts))]
+                  if not (SKIP_PARTS & set(p.relative_to(root).parts))
+                  and not _is_mounted(p.parent)]          # 挂载副本不算本包资产
     if args.asset:
         want = (root / args.asset).resolve()
         candidates = [c for c in candidates if c.resolve() == want or want in c.resolve().parents]
