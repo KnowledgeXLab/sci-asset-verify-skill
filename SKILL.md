@@ -98,7 +98,7 @@ python scripts/mount_external.py --package <资产根目录> --into <工作副�
 判定看候选目录里的 `asset.json`：`asset_id` 完全一致且 `asset_version` 相符才算命中。已挂载的副本（含 `.mounted-external.json` 留痕）与 `.asset-work` 不会再被当作源。
 
 - 挂到 `<副本>/external/<消费方资产名>/<外部资产 slug>/`（按消费方分目录，避免不同资产要同一外部资产的不同版本时打架），`external-mounts.json` 记录消费方、源路径、挂载位置、文件数、`required`。
-- **找不到就跳过并在报告里声明**：`required: true` 的缺失会让依赖它的用例只能记 `blocked`（脚本退出码 3），`required: false` 的缺失不阻断但要写明。
+- **找不到就跳过，只在报告里声明**：挂载缺失**不中断校验、不改变脚本退出码**（始终 0）。`external-mounts.json` 里记 `status: incomplete` 与 `required_missing`；是否真的影响结果由用例执行说话——依赖它的用例跑不通就按执行结果记 `blocked`/`failed`，跑通了照常判 pass。
 - 用例入口若需要指向外部资产，把路径指到 `<副本>/external/<消费方资产名>/<外部资产 slug>/…`，不要指原资产。
 
 ## 3. 注册 MCP、部署模型

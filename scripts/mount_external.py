@@ -20,7 +20,10 @@
 
 `--into` 一般是工作副本里的目录（例如 `<副本>/external`），不要指到原始资产包里。
 
-退出码：0 全部就绪（含"没有需要挂载的"与"可选资产缺失"）；3 有 required 资产未找到；2 参数/IO 问题。
+退出码：0 正常（**包括有外部资产没找到**——挂载缺失不中断校验，只写进 JSON 与报告里说明）；2 参数/IO 问题。
+
+为什么缺失不退出：某个外部资产没挂上，**不代表**依赖它的用例一定跑不了（有的用例只用一部分数据、
+有的自带回退），是否影响由用例执行结果说话。所以这里只如实记录，不当作门禁。
 """
 from __future__ import annotations
 
@@ -233,8 +236,8 @@ def main(argv=None) -> int:
                       'declared': len(mounted) + len(missing),
                       'candidate_dirs_scanned': scanned,
                       'mounted': mounted, 'missing': missing,
-                      'blocked_by_required': [f"{m['consumer']}→{m['asset_id']}" for m in blocked],
-                      'status': 'blocked' if blocked else ('partial' if missing else 'complete')})
+                      'required_missing': [f"{m['consumer']}→{m['asset_id']}" for m in blocked],
+                      'status': 'complete' if not missing else 'incomplete'})
 
     print(f'{len(consumers)} 个资产声明了外部引用，扫描 {scanned} 个候选目录 → 挂载 {len(mounted)}，缺失 {len(missing)}')
     for m in mounted:
@@ -243,12 +246,13 @@ def main(argv=None) -> int:
     for m in missing:
         flag = 'required' if m['required'] else 'optional'
         print(f"  ✗ [{m['consumer']}] {m['asset_id']}（{flag}）：{m['reason']}", file=sys.stderr)
-    if blocked:
-        print(f'有 {len(blocked)} 项 required 外部资产未找到，依赖它们的用例须跳过并在报告中声明', file=sys.stderr)
+    if missing:
+        print(f'有 {len(missing)} 项外部资产没挂上（其中 required {len(blocked)} 项）：不中断校验，'
+              '请在报告中声明；依赖它的用例若跑不通，按用例执行结果记 blocked/failed', file=sys.stderr)
     if args.json_out:
         Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-    return 3 if blocked else 0
+    return 0
 
 
 if __name__ == '__main__':

@@ -851,9 +851,10 @@ def t13_mount_external(tmp: Path) -> None:
     proc = run([str(SCRIPTS / "mount_external.py"), "--package", str(pkg), "--into", str(d / "w2"),
                 "--search-root", str(d / "mounts"), "--json-out", str(out)], d)
     rep = json.loads(out.read_text(encoding="utf-8"))
-    record("负例：版本不符判缺失（required 阻断，退出码 3）",
-           proc.returncode == 3 and rep["status"] == "blocked"
-           and "版本不符" in (rep["missing"][0]["reason"] if rep["missing"] else ""),
+    record("负例：版本不符记为缺失，但**不退出**（仍 0，只写 status 与 required_missing）",
+           proc.returncode == 0 and rep["status"] == "incomplete"
+           and rep.get("required_missing") and rep["missing"]
+           and "版本不符" in rep["missing"][0]["reason"],
            f"rc={proc.returncode} status={rep.get('status')}")
 
     (pkg / "mine" / "external_assets.json").unlink()

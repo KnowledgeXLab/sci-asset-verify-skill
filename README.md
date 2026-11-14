@@ -136,7 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter；外部资产按 `external_assets.json` 自动副本挂载；`external_assets.json` 位置由包根改为**每个资产目录**各一份）尚未发版。
+> 当前开发中版本为 `1.2-beta.3-dev`（**未发版**）：1.2-beta.2 之后的口径修订（「资产关联」列只填 `external_assets.json` 声明的资产编号、去前缀逗号分隔、无则留空；批次输出目录统一为 `run-[YYYYMMDD]-[hhmmss]`；报告版本信息改为文件头 front matter；外部资产按 `external_assets.json` 自动副本挂载；`external_assets.json` 位置由包根改为**每个资产目录**各一份；挂载缺失只报告不中断）尚未发版。
 
 ### 1.2-beta.2 — 2026-11-13
 
