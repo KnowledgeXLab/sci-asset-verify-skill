@@ -92,9 +92,6 @@ def check_paths(adir: Path, text: str) -> tuple[list[str], list[str]]:
     return errs, warns
 
 
-CASE_ID = re.compile(r'\bC\d{2}-[A-Za-z0-9][A-Za-z0-9-]*')
-
-
 def check_case_docs(adir: Path, text: str) -> tuple[list[str], list[str]]:
     """说明文档列出的用例编号要与 validate/cases.json 对齐——文档漂移会让交付方按错的清单复核。"""
     spec = adir / 'validate' / 'cases.json'
@@ -106,8 +103,8 @@ def check_case_docs(adir: Path, text: str) -> tuple[list[str], list[str]]:
         return [], []
     if not declared:
         return [], []
-    shown = set(CASE_ID.findall(text))
-    missing = [c for c in declared if c not in shown]
+    # 不猜编号格式：直接从 cases.json 取 id，看它在说明文档里有没有出现
+    missing = [c for c in declared if c and c not in text]
     if not missing:
         return [], []
     return [], [f'说明文档未提到用例 {", ".join(missing)}（validate/cases.json 共 {len(declared)} 组）——'
