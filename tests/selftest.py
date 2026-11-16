@@ -1227,9 +1227,9 @@ def t17_reproducible(tmp: Path) -> None:
         encoding="utf-8")
     proc = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir / "validation-report.md")], d)
     blob = (proc.stdout or "") + (proc.stderr or "")
-    record("提示：新式批次里 P1 行未引用 check_id 时报告警（清单外发现应记 OBS）",
-           "check_id" in blob and "没写检查项 id" in blob and "引用正确" not in blob,
-           f"rc={proc.returncode}")
+    record("提示：新式批次里 P1 行未引用 check_id 时报告警；P2 自由条目不告警",
+           "check_id" in blob and "没写检查项 id" in blob and "引用正确" not in blob
+           and "自由建议" not in blob, f"rc={proc.returncode}")
 
     # 覆盖表：na 必须带理由；数据资产声明与实体不符要判 P1
     data_pkg = d / "data_pkg"

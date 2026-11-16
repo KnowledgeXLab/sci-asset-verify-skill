@@ -45,19 +45,19 @@ def section_of(text: str) -> str:
 
 
 def check_checklist_citation(report: Path, text: str) -> list[str]:
-    """新式批次（run 里有 probe-report.json）里，P0/P1/P2 的每一行都要引用固定清单的 check_id。"""
+    """新式批次（run 里有 probe-report.json）里，只有 P0/P1 必须引用 check_id；P2 是建议，允许自由条目。"""
     if not (report.parent / 'probe-report.json').is_file():
         return []
     block = section_of(text) or ''
     warns = []
-    for p_ in SECTIONS:
+    for p_ in ('P0', 'P1'):          # P2 就是"建议"，不限制来源
         for line in block.splitlines():
             line = line.strip()
             if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
                 continue
             if 'CHK-' not in line:
                 warns.append(f'{p_} 行未引用固定检查清单的 check_id：{line[:50]}…'
-                             f'（清单外的发现请记「观察 OBS」，不要计入 {p_}）')
+                             f'（{p_} 是判定性结论，必须来自清单；纯建议请降到 P2）')
     return warns
 
 
