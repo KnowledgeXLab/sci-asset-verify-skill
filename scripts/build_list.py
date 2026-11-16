@@ -43,6 +43,7 @@ def main(argv=None) -> int:
     ap.add_argument('--out', required=True, help='输出 xlsx 路径')
     ap.add_argument('--schema', default=str(DEFAULT_SCHEMA))
     ap.add_argument('--cases', help='用例明细 JSON（数组）')
+    ap.add_argument('--package', help='资产包根目录：给了就从各资产 validate/cases.json 里取用例标题补「用例名称」')
     ap.add_argument('--no-check', action='store_true', help='跳过生成后的自检')
     ap.add_argument('--check-json-out',
                     help='把自检结果写成 JSON（默认 <out 同目录>/check-list-report.json）')
@@ -122,6 +123,24 @@ def main(argv=None) -> int:
         dv_count += 1
 
     if cases:
+        if args.package:                      # 用例名称要用资产自带的标题，别把预期值塞进去
+            root = Path(args.package).expanduser().resolve()
+            title_idx = {}
+            for f in root.rglob('validate/cases.json'):
+                try:
+                    doc = json.loads(f.read_text(encoding='utf-8'))
+                except Exception:  # noqa: BLE001
+                    continue
+                for c in doc.get('cases') or []:
+                    title_idx[str(c.get('id') or '')] = str(c.get('title') or '')
+            filled = 0
+            for c in cases:
+                cid = str(c.get('用例编号') or '')
+                if not c.get('用例名称') and title_idx.get(cid):
+                    c['用例名称'] = title_idx[cid]
+                    filled += 1
+            if filled:
+                print(f'用例名称：从资产 validate/cases.json 补全 {filled} 条')
         ws2 = wb.create_sheet('用例明细')
         ws2.append(CASE_COLUMNS)
         for c in ws2[1]:

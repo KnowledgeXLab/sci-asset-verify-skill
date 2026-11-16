@@ -46,6 +46,43 @@ REGISTRY = Path(__file__).resolve().parents[1] / 'assets' / 'harness-registry.js
 SAGE_ENV = {'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
             'model': ['SAGE_MODEL', 'SAGE_LLM_MODEL'],
             'api_key': ['SAGE_API_KEY', 'SAGE_LLM_API_KEY']}
+DSH_HOME_AUTO = 'auto'
+
+
+def dsh_home_runtime(out: Path, skill_name: str, mode: str = 'auto') -> tuple[dict, str]:
+    """nested dsh 要写 $DSH_HOME/profiles/*/cordis.yml；核验沙箱常把它挡掉。
+
+    返回 (要注入的环境变量, 说明)。mode:
+      default  → 用宿主的 ~/.dsh
+      isolated → 复制一份到 run 目录下（工作区内可写），profiles/headless + node_modules 软链 + 凭据 600 复制
+      auto     → 宿主 DSH_HOME 可写就用宿主的，否则隔离
+    """
+    real = Path(os.environ.get('DSH_HOME') or (Path.home() / '.dsh'))
+    if mode == 'default':
+        return {}, f'用宿主 DSH_HOME={real}'
+    if mode == 'auto' and os.access(real / 'profiles' / 'headless', os.W_OK):
+        return {}, f'用宿主 DSH_HOME={real}（可写）'
+
+    home = out.parent / f'.dsh-home-{skill_name}'
+    prof = home / 'profiles'
+    if not (prof / 'headless').exists():
+        prof.mkdir(parents=True, exist_ok=True)
+        src = real / 'profiles'
+        if (src / 'headless').is_dir():
+            shutil.copytree(src / 'headless', prof / 'headless', dirs_exist_ok=True)
+        nm_src, nm_dst = src / 'node_modules', prof / 'node_modules'
+        if nm_src.is_dir() and not nm_dst.exists():
+            try:
+                nm_dst.symlink_to(nm_src, target_is_directory=True)
+            except OSError:
+                shutil.copytree(nm_src, nm_dst, dirs_exist_ok=True)
+        cred_src, cred_dst = real / '.credentials.yaml', home / '.credentials.yaml'
+        if cred_src.is_file() and not cred_dst.exists():
+            shutil.copy2(cred_src, cred_dst)
+            os.chmod(cred_dst, 0o600)
+    return {'DSH_HOME': str(home)}, f'隔离 DSH_HOME={home}（工作区内可写，凭据以 600 复制）'
+
+
 SAGE_PATCH = """# Sage 后端补丁：注册端砚 provider 并把默认模型切到 Sage-A1.5（harness 不变）
 - id: llm-pi-ai
   config:
@@ -207,6 +244,8 @@ def main(argv=None) -> int:
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--list-harnesses', action='store_true',
                     help='列出预设 harness 与本机安装情况')
+    ap.add_argument('--dsh-home', choices=['auto', 'default', 'isolated'], default='auto',
+                    help='nested dsh 的 DSH_HOME 策略（沙箱挡住默认目录时用 isolated）')
     ap.add_argument('--show-help', metavar='HARNESS',
                     help='打印该 harness 的 --help，用于预设之外的"就地分析"（也可直接跑 <bin> --help）')
     args = ap.parse_args(argv)
@@ -275,6 +314,10 @@ def main(argv=None) -> int:
     prompt = build_prompt(spec, skill, out)
     cmd = build_argv(harness, prompt, model)
     env = dict(os.environ)
+    dsh_note = ''
+    if harness['name'] == 'dsh':
+        extra, dsh_note = dsh_home_runtime(out, skill.name, args.dsh_home)
+        env.update(extra)
 
     patch_file = None
     if args.backend == 'sage' and harness['name'] != 'custom':
@@ -284,8 +327,12 @@ def main(argv=None) -> int:
             patch_file.write_text(SAGE_PATCH % {'provider': sage_mech.get('provider', 'inkstone'),
                                                 'model': sage['model'], 'base_url': sage['base_url']},
                                   encoding='utf-8')
-            idx = cmd.index('--') if '--' in cmd else max(len(cmd) - 2, 1)
-            cmd = cmd[:idx] + ['--patch', str(patch_file)] + cmd[idx:]
+            # --patch 是 launcher 选项，必须紧跟 --profile <name>；放到 app 参数之后会被 dsh 拒（unknown option）
+            if '--profile' in cmd:
+                pi = cmd.index('--profile') + 2
+            else:
+                pi = 1
+            cmd = cmd[:pi] + ['--patch', str(patch_file)] + cmd[pi:]
             env.setdefault('INKSTONE_API_KEY', sage.get('api_key', ''))
         elif sage_mech.get('kind') == 'env':
             for k, template in (sage_mech.get('env') or {}).items():
@@ -297,6 +344,7 @@ def main(argv=None) -> int:
         print(json.dumps({'harness': harness['name'], 'display': harness['preset'].get('display'),
                           'argv': cmd[:8] + (['…'] if len(cmd) > 8 else []), 'cwd': str(out),
                           'backend': args.backend, 'provider': provider, 'model': model or '(harness 默认)',
+                          'dsh_home': dsh_note, 'cmd_full': cmd[:10],
                           'sage_env_used': sorted(sage.keys()) if args.backend == 'sage' else [],
                           'substituted': substituted or None, 'reason': harness['reason']},
                          ensure_ascii=False, indent=2))
@@ -312,6 +360,23 @@ def main(argv=None) -> int:
         return 3
     (out.parent / f'agent-{skill.name}-stdout.txt').write_text(proc.stdout or '', encoding='utf-8')
     (out.parent / f'agent-{skill.name}-stderr.txt').write_text(proc.stderr or '', encoding='utf-8')
+
+    # 宿主 DSH_HOME 写不进去（沙箱拒绝）时，隔离一份再试一次；第一次现场留在 attempt-01 前缀文件里
+    retried_isolated = False
+    if (harness['name'] == 'dsh' and proc.returncode != 0 and not dsh_note.startswith('隔离')):
+        blob = f'{proc.stdout or ""}{proc.stderr or ""}'.lower()
+        if any(k in blob for k in ('permission denied', 'eacces', 'sandbox', 'read-only', '无法写入')):
+            shutil.copy2(out.parent / f'agent-{skill.name}-stdout.txt',
+                         out.parent / f'agent-{skill.name}-attempt-01-sandbox-stdout.txt')
+            shutil.copy2(out.parent / f'agent-{skill.name}-stderr.txt',
+                         out.parent / f'agent-{skill.name}-attempt-01-sandbox-stderr.txt')
+            extra, dsh_note = dsh_home_runtime(out, skill.name, 'isolated')
+            env.update(extra)
+            proc = subprocess.run(cmd, cwd=str(out), capture_output=True, text=True,
+                                  timeout=args.timeout, env=env)
+            (out.parent / f'agent-{skill.name}-stdout.txt').write_text(proc.stdout or '', encoding='utf-8')
+            (out.parent / f'agent-{skill.name}-stderr.txt').write_text(proc.stderr or '', encoding='utf-8')
+            retried_isolated = True
 
     gate_cmd = (spec['gate_cmd'] or '').replace('<agent 产物目录>', str(out)).replace('<agent 产物>', str(out))
     if not gate_cmd:
@@ -353,11 +418,12 @@ def main(argv=None) -> int:
                       'harness_hint': harness['hint'], 'harness_reason': harness['reason'],
                       'substituted_harness': substituted or None,
                       'backend': args.backend, 'provider': provider, 'model': model or '(harness 默认)',
-                      'cmd_head': cmd[:8], 'agent_rc': proc.returncode,
+                      'cmd_head': cmd[:8], 'dsh_home': dsh_note, 'agent_rc': proc.returncode,
                       'gate_cmd': gate_cmd, 'gate_rc': gate_proc.returncode,
                       'gate_stdout': (gate_proc.stdout or '')[-1500:],
                       'gate_stderr': (gate_proc.stderr or '')[-1500:],
                       'artifact_retry_dirs': retried, 'stray_artifacts': hint,
+                      'retried_with_isolated_dsh_home': retried_isolated,
                       'verdict': 'pass' if gate_ok else 'fail'})
     print(json.dumps({'harness': harness['name'], 'backend': args.backend,
                       'agent_rc': proc.returncode, 'gate_rc': gate_proc.returncode,
