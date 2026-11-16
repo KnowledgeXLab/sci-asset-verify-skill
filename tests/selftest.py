@@ -999,6 +999,10 @@ def t15_skill_spec(tmp: Path) -> None:
         {"asset_id": "sciasset://2026ZD123456/earth/tool/tool-b", "asset_type": "tool"},
         ensure_ascii=False), encoding="utf-8")
 
+    (a / "validate" / "validate.py").write_text("print('ok')\n", encoding="utf-8")
+    (a / "validate" / "cases" / "C01").mkdir(parents=True)
+    (a / "validate" / "cases" / "C01" / "points.csv").write_text("x,y,value\n0,0,10\n", encoding="utf-8")
+    (a / "validate" / "cases" / "C01" / "targets.csv").write_text("x,y\n0,0\n", encoding="utf-8")
     good = """# 测试说明
 
 ## Agent
@@ -1013,7 +1017,7 @@ def t15_skill_spec(tmp: Path) -> None:
 
 ## 通过门槛
 - 指标：value_est_exact = 0
-- 验证脚本：validate/validate.py --case C01-hits --out-dir <out>
+- 验证脚本：validate/validate.py --case C01-hits --artifact <agent 产物目录>（直接判产物，不重跑脚本）
 """
     spec = a / "validate" / "readme.md"
     spec.write_text(good, encoding="utf-8")
@@ -1062,13 +1066,25 @@ def t15_skill_spec(tmp: Path) -> None:
            proc.returncode == 1 and ("输入" in proc.stderr and "输出" in proc.stderr),
            f"rc={proc.returncode}")
 
-    spec.write_text(good.replace("- 指标：value_est_exact = 0\n- 验证脚本：validate/validate.py --case C01-hits --out-dir <out>\n",
-                                 "- 看着对就行\n"), encoding="utf-8")
+    bad_gate = good.split("## 通过门槛")[0] + "## 通过门槛\n- 看着对就行\n"
+    spec.write_text(bad_gate, encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
     record("负例：通过门槛既没指标也没验证脚本被拒",
            proc.returncode == 1 and "通过门槛" in proc.stderr, f"rc={proc.returncode}")
 
-    spec.write_text("# 测试说明\n\n## Agent Harness\n- 建议 harness：<如 DSH>\n", encoding="utf-8")
+    spec.write_text(good.replace("- 输入：validate/cases/C01/points.csv 与 targets.csv",
+                                 "- 输入：validate/cases/C09/points.csv 与 targets.csv"), encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("负例：文档引用的 validate/ 路径在包内不存在被拒（属于没法验证）",
+           proc.returncode == 1 and "不存在" in proc.stderr, f"rc={proc.returncode}")
+
+    spec.write_text(good.replace("--artifact <agent 产物目录>（直接判产物，不重跑脚本）",
+                                 "--out-dir <dir>"), encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("提示：门槛脚本看不出在判 agent 产物时给告警（不阻断）",
+           proc.returncode == 0 and "artifact" in proc.stderr, f"rc={proc.returncode}")
+
+    spec.write_text("# 测试说明\n\n## Agent\n- 建议 harness：<如 DSH>\n", encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
     record("负例：只有模板占位符被拒",
            proc.returncode == 1 and "缺少" in proc.stderr, f"rc={proc.returncode}")

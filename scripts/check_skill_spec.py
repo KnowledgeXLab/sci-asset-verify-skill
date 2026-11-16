@@ -46,6 +46,7 @@ SECTIONS = [
     ('gate', ('门槛', '通过标准', '验收标准'), ('通过门槛',)),
 ]
 PLACEHOLDER = re.compile(r'<[^>\n]{1,80}>')
+PATH_TOKEN = re.compile(r'(?<![\w/])((?:[\w.-]+/)*[\w.-]+\.(?:csv|tsv|json|jsonl|py|md|txt|ya?ml|nc|tif|tiff|h5|npy|npz))(?![\w])')
 
 
 def split_sections(text: str) -> dict:
@@ -71,7 +72,25 @@ def find(sections: dict, keywords) -> tuple[str, str]:
     return '', ''
 
 
-def check_md(text: str) -> tuple[list[str], list[str]]:
+def check_paths(adir: Path, text: str) -> tuple[list[str], list[str]]:
+    """文档里点名的包内文件必须真实存在——否则校验方按说明跑不起来（曾出现引用 validate/cases/C01/*.csv 而包内无此目录）。"""
+    errs, warns, seen = [], [], set()
+    body = PLACEHOLDER.sub(' ', text)               # 去掉 <占位符>
+    for tok in PATH_TOKEN.findall(body):
+        if tok in seen or '{' in tok or '*' in tok or tok.startswith(('/', 'http')):
+            continue
+        seen.add(tok)
+        if (adir / tok).exists():
+            continue
+        msg = f'文档提到的包内路径不存在：{tok}'
+        if tok.startswith(('validate/', './validate/')):
+            errs.append(msg + '（随包交付该文件，或改成实际存在的路径）')
+        else:
+            warns.append(msg + '（如为示例占位可忽略）')
+    return errs, warns
+
+
+def check_md(adir: Path, text: str) -> tuple[list[str], list[str]]:
     errs, warns = [], []
     sections = split_sections(text)
     bodies = {}
@@ -102,7 +121,14 @@ def check_md(text: str) -> tuple[list[str], list[str]]:
     g = bodies.get('gate', '')
     if g and not re.search(r'validate/|脚本|指标|阈值|threshold', g, re.I):
         errs.append('「通过门槛」要给出指标阈值或对产物的验证脚本（如 validate/validate.py）')
+    if g and re.search(r'validate/|\.py|脚本', g, re.I) \
+            and not re.search(r'artifact|产物|agent 输出|agent 产物', g, re.I):
+        warns.append('「通过门槛」的脚本看不出在判 agent 产物：建议用 --artifact <产物目录> 之类参数直接读 agent 输出，'
+                     '否则容易变成"重跑一遍脚本"，拦不住误用')
 
+    perr, pwarn = check_paths(adir, text)
+    errs += perr
+    warns += pwarn
     return errs, warns
 
 
@@ -130,7 +156,7 @@ def main(argv=None) -> int:
         spec_md = adir / SPEC_MD
         errs, warns = [], []
         if spec_md.is_file():
-            errs, warns = check_md(spec_md.read_text(encoding='utf-8'))
+            errs, warns = check_md(adir, spec_md.read_text(encoding='utf-8'))
         elif any((adir / n).is_file() for n in OLD_NAMES):
             errs = [f'验证说明的固定文件名是 {rel}/validate/readme.md（test-spec.* 已不再接受），请改名']
         else:
