@@ -78,7 +78,7 @@
 | schema_version | 是 | 语义化版本 |
 | assets[].asset_id | 是 | 四段 `sciasset://{project-id}/{namespace}/{asset-type}/{slug}`，与资产清单登记一致，**不含版本号** |
 | assets[].asset_version | 是 | 与清单「版本」列一致 |
-| assets[].target_path | 是 | 相对包根的 POSIX 路径；不得绝对路径、不得含 `..` |
+| assets[].target_path | 是 | **相对该资产目录**（即声明文件所在目录）的 POSIX 路径，如 `ref/path/b`；不得绝对路径、不得含 `..` |
 | assets[].media_type | 否 | 目录型资产填 `inode/directory` |
 | assets[].required | 否 | **可不填**，缺省即视为 `true`（资产缺失则任务启动失败）；填 `false` 时资产缺失不阻断启动，但对应分项不计分并在评分报告中标注 |
 | assets[].license / access | 否 | 许可与访问限制 |
