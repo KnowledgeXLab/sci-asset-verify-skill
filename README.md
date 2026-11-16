@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十五个脚本，共 95 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十五个脚本，共 104 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -136,7 +136,12 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发版 `1.2-beta.4-dev`（未发版），两条改动：**外部资产挂载重做**（先同包解析 → 包外复制进副本 → 按 `target_path` 建软链，挂载副本不参与本包校验）、**skill 资产必须有验证说明**（`validate/readme.md` 写 Agent harness+model、怎么测、通过门槛；验收用独立 CLI 进程跑，内置 dsh/codex/claude/cursor/gemini/opencode/aider 预设，声明之外的 harness 可就地固化；Sage 沿用同一 harness 只换后端）。
+### 1.2-beta.4 — 2026-11-16
+
+- **外部资产挂载重做**：先在同包内按 `asset_id` 解析，包外才按优先级查找并复制进副本，最后按 `target_path` 建软链（父目录自动创建）；挂载进来的副本不计入本包校验，挂载缺失只报告不中断
+- **skill 验收改造**：`validate/readme.md` 写清 Agent（harness + model）、怎么测（任务/输入/输出）、通过门槛；验收用 `run_skill_agent.py` 起**独立 CLI 进程**跑，内置 dsh/codex/claude/cursor/gemini/opencode/aider 预设，声明之外的 harness 就地固化；Sage 测试沿用同一 harness 只换后端（`SAGE_*`），门槛判 agent 产物
+- **降噪与口径**：`asset_protocol` 不校验内容；`target_path` 本地缺失不告警；文档里的产物文件名不误判为路径；清单词表缺口（如「敏感级别」无「公开」档）不算缺陷；不参考包内已有核验结果、不做跨批次对比
+- 自测 80 → **104 项断言**
 
 ### 1.2-beta.3 — 2026-11-14
 
