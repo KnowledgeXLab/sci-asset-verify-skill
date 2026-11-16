@@ -1,39 +1,79 @@
 {
   "schema_version": "1.0.0",
   "note": "固定检查清单。核验必须逐条执行；结论里的问题清单只能引用这里的 check_id。严重度写死，不随执行者判断浮动。清单之外的发现只能记 OBS（观察，不计 P0/P1/P2，也不进通过率）。",
-  "intent_options": ["delivery", "review"],
+  "intent_options": [
+    "delivery",
+    "review"
+  ],
   "severity_rules": {
     "P0": "资产无法运行 / 无法复现 / 无法验证（实体缺失、摘要不符、入口跑不起来）",
-    "P1": "声明与实体或契约不一致，会让下游误用或验收形同虚设（lifecycle/license 与交付用途冲突、无用例可验、错误码缺洞、外部引用不合规）",
+    "P1": "声明与实体或契约不一致，会让下游误用或验收形同虚设（license 与交付用途冲突、无用例可验、错误码缺洞、外部引用不合规）",
     "P2": "文档、词表、风格、占位信息等不影响可用性的问题"
   },
   "checks": [
-    {"id": "CHK-ART-01", "level": "P0", "name": "实体完整性",
-     "criterion": "每个 spec.artifacts[].uri 指向的文件存在，且 size_bytes / sha256 与声明一致（有声明时）",
-     "fact_path": "artifact_integrity", "decide": "artifacts_mismatch"},
-    {"id": "CHK-CASE-01", "level": "P1", "name": "可验证性：至少有用例",
-     "criterion": "每个资产自带用例（validate/cases.json 或等价的验收脚本/用例说明）；没有用例的资产无法验收",
-     "fact_path": "cases_profile", "decide": "assets_without_cases"},
-    {"id": "CHK-CASE-02", "level": "P1", "name": "声明的验收输入必须存在",
-     "criterion": "acceptance.json 等验收声明里引用的包内路径必须真实存在，否则按声明无法复现",
-     "fact_path": "cases_profile", "decide": "acceptance_missing_paths"},
-    {"id": "CHK-LIFE-01", "level": "P1", "name": "lifecycle 与交付用途一致",
-     "criterion": "intent=delivery 时 lifecycle 不得全部为 draft（未验证就交付）",
-     "fact_path": "lifecycle_profile", "decide": "lifecycle_draft_on_delivery"},
-    {"id": "CHK-LIC-01", "level": "P1", "name": "license 与交付用途一致",
-     "criterion": "intent=delivery 时 governance.license 不得全部是「仅限内部/禁止再分发」类受限文本",
-     "fact_path": "governance_profile", "decide": "license_restricted_on_delivery"},
-    {"id": "CHK-EXT-01", "level": "P1", "name": "外部引用声明合规",
-     "criterion": "external_assets.json 的 target_path 必须是相对资产目录的 POSIX 路径，不得绝对路径、不得含 ..",
-     "fact_path": "external_refs_profile", "decide": "invalid_target_path"},
-    {"id": "CHK-TOOL-01", "level": "P1", "name": "工具错误契约",
-     "criterion": "实现里返回的 error 名 / 退出码必须都在声明（tool.json 或 readme）里出现过",
-     "fact_path": "tool_contract_profile", "decide": "impl_error_names_not_declared"},
-    {"id": "CHK-SPEC-01", "level": "P2", "name": "包级入口说明",
-     "criterion": "包根应有 catalog.json 或 README/交付说明，便于集成方知道包里有什么",
-     "fact_path": "package_summary", "decide": "no_package_entry"},
-    {"id": "CHK-RM-01", "level": "P1", "name": "skill 类资产验证说明",
-     "criterion": "skill 资产的 validate/readme.md 必须含 Agent（harness+model）、测试任务、通过门槛三节",
-     "fact_path": "validate_readme_profile", "decide": "skill_readme_incomplete"}
+    {
+      "id": "CHK-ART-01",
+      "level": "P0",
+      "name": "实体完整性",
+      "criterion": "每个 spec.artifacts[].uri 指向的文件存在，且 size_bytes / sha256 与声明一致（有声明时）",
+      "fact_path": "artifact_integrity",
+      "decide": "artifacts_mismatch"
+    },
+    {
+      "id": "CHK-CASE-01",
+      "level": "P1",
+      "name": "可验证性：至少有用例",
+      "criterion": "每个资产自带用例（validate/cases.json 或等价的验收脚本/用例说明）；没有用例的资产无法验收",
+      "fact_path": "cases_profile",
+      "decide": "assets_without_cases"
+    },
+    {
+      "id": "CHK-CASE-02",
+      "level": "P1",
+      "name": "声明的验收输入必须存在",
+      "criterion": "acceptance.json 等验收声明里引用的包内路径必须真实存在，否则按声明无法复现",
+      "fact_path": "cases_profile",
+      "decide": "acceptance_missing_paths"
+    },
+    {
+      "id": "CHK-LIC-01",
+      "level": "P1",
+      "name": "license 与交付用途一致",
+      "criterion": "intent=delivery 时 governance.license 不得全部是「仅限内部/禁止再分发」类受限文本",
+      "fact_path": "governance_profile",
+      "decide": "license_restricted_on_delivery"
+    },
+    {
+      "id": "CHK-EXT-01",
+      "level": "P1",
+      "name": "外部引用声明合规",
+      "criterion": "external_assets.json 的 target_path 必须是相对资产目录的 POSIX 路径，不得绝对路径、不得含 ..",
+      "fact_path": "external_refs_profile",
+      "decide": "invalid_target_path"
+    },
+    {
+      "id": "CHK-TOOL-01",
+      "level": "P1",
+      "name": "工具错误契约",
+      "criterion": "实现里返回的 error 名 / 退出码必须都在声明（tool.json 或 readme）里出现过",
+      "fact_path": "tool_contract_profile",
+      "decide": "impl_error_names_not_declared"
+    },
+    {
+      "id": "CHK-SPEC-01",
+      "level": "P2",
+      "name": "包级入口说明",
+      "criterion": "包根应有 catalog.json 或 README/交付说明，便于集成方知道包里有什么",
+      "fact_path": "package_summary",
+      "decide": "no_package_entry"
+    },
+    {
+      "id": "CHK-RM-01",
+      "level": "P1",
+      "name": "skill 类资产验证说明",
+      "criterion": "skill 资产的 validate/readme.md 必须含 Agent（harness+model）、测试任务、通过门槛三节",
+      "fact_path": "validate_readme_profile",
+      "decide": "skill_readme_incomplete"
+    }
   ]
 }

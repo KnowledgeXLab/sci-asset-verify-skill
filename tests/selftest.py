@@ -1201,9 +1201,9 @@ def t17_reproducible(tmp: Path) -> None:
     rep = json.loads(out.read_text(encoding="utf-8"))
     ids = [f["check_id"] for f in rep["verdict"]["findings"]]
     levels = {f["check_id"]: f["level"] for f in rep["verdict"]["findings"]}
-    record("正例：结论按固定清单给出——无用例/lifecycle=draft/license 受限 均判 P1，无包级入口判 P2",
-           "CHK-CASE-01" in ids and levels.get("CHK-LIFE-01") == "P1"
-           and levels.get("CHK-LIC-01") == "P1" and levels.get("CHK-SPEC-01") == "P2",
+    record("正例：结论按固定清单给出——无用例/license 受限判 P1，无包级入口判 P2，lifecycle 不判",
+           "CHK-CASE-01" in ids and levels.get("CHK-LIC-01") == "P1"
+           and levels.get("CHK-SPEC-01") == "P2" and "CHK-LIFE-01" not in ids,
            f"ids={ids}")
 
     out2 = d / "probe2.json"

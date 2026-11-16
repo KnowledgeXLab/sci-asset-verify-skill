@@ -246,10 +246,6 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     if missing_acc:
         add('CHK-CASE-02', 'cases_profile', missing_acc)
 
-    life = (checks.get('lifecycle_profile') or {}).get('distribution') or {}
-    if intent == 'delivery' and life and set(life) == {'draft'}:
-        add('CHK-LIFE-01', 'lifecycle_profile', {'distribution': life, 'intent': intent})
-
     lic = (checks.get('governance_profile') or {}).get('license') or {}
     if intent == 'delivery' and lic and all(any(k in text for k in RISKY_LICENSE) for text in lic):
         add('CHK-LIC-01', 'governance_profile', {'license': lic, 'intent': intent})
