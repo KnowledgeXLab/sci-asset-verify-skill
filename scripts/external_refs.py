@@ -88,14 +88,13 @@ def validate(doc, root: Path):
         else:
             tp = str(tp)
             if tp.startswith('/') or re.match(r'^[A-Za-z]:[\\/]', tp):
-                err(problems, f'{w}.target_path', f'应为相对任务包根的 POSIX 路径：{tp!r}')
+                err(problems, f'{w}.target_path', f'应为相对资产目录的 POSIX 路径：{tp!r}')
             elif '..' in Path(tp).parts:
-                err(problems, f'{w}.target_path', f'不得包含 ..（越出包根）：{tp!r}')
+                err(problems, f'{w}.target_path', f'不得包含 ..（越出资产目录）：{tp!r}')
             elif '\\' in tp:
                 err(problems, f'{w}.target_path', f'应使用 POSIX 正斜杠：{tp!r}')
-            elif not (root / tp).exists():
-                warnings.append({'where': f'{w}.target_path',
-                                 'message': f'包内未见该路径（若由平台解析可忽略）：{tp}'})
+            # 注意：不检查 target_path 在包内是否已存在——它是**运行环境挂载**后才会出现的路径
+            # （校验 skill 的 mount_external.py 或平台自动挂载负责创建），本地未挂载属于正常状态，不告警。
         if a.get('media_type') is not None and not isinstance(a.get('media_type'), str):
             err(problems, f'{w}.media_type', '应为字符串')
         if a.get('required') is not None and not isinstance(a.get('required'), bool):

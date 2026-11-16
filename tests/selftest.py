@@ -605,7 +605,7 @@ def t8_external_refs(tmp: Path) -> None:
         {"asset_id": "sciasset://mineralmind/data/raw", "asset_version": "1.0.0", "target_path": "a"}]},
         "不含版本号")
     bad("bad2", {"schema_version": "1.0.0", "assets": [
-        dict(good_ext, target_path="/abs/path.nc")]}, "相对任务包根")
+        dict(good_ext, target_path="/abs/path.nc")]}, "相对资产目录")
     bad("bad3", {"schema_version": "1.0.0", "assets": [
         {"asset_id": good_ext["asset_id"], "target_path": "a"}]}, "缺少 asset_version")
     bad("bad4", {"schema_version": "1.0.0", "assets": [
