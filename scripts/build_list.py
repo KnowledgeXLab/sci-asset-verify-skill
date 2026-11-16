@@ -135,9 +135,12 @@ def main(argv=None) -> int:
                     title_idx[str(c.get('id') or '')] = str(c.get('title') or '')
             filled = 0
             for c in cases:
+                if c.get('用例名称'):
+                    continue
                 cid = str(c.get('用例编号') or '')
-                if not c.get('用例名称') and title_idx.get(cid):
-                    c['用例名称'] = title_idx[cid]
+                title = title_idx.get(cid) or title_idx.get(cid.split('/')[-1])
+                if title:
+                    c['用例名称'] = title
                     filled += 1
             if filled:
                 print(f'用例名称：从资产 validate/cases.json 补全 {filled} 条')
