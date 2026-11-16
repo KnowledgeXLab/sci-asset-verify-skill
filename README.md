@@ -136,7 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发版 `1.2-beta.5-dev`（未发版）：**核验可复现性**——新增 `probe_package.py` 确定性探测 + `assets/audit-checks.json` 固定检查清单，问题清单只能引用 `CHK-xxx`，清单外发现记 OBS 不计级。
+> 当前开发版 `1.2-beta.5-dev`（未发版）：**核验可复现性与覆盖**——`probe_package.py` 确定性探测 + `assets/audit-checks.json` 分层清单（L1 通用 / L2 按类型 / L3 声明驱动 / L4 只能记 OBS）；问题清单必须引用 `CHK-xxx`，报告须附 pass/fail/na 覆盖表。
 
 ### 1.2-beta.4 — 2026-11-16
 

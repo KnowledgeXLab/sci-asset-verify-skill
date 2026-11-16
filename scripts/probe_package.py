@@ -190,6 +190,65 @@ def probe_tool_contract(assets: list, metas: dict) -> dict:
     return {'assets': dict(sorted(rows.items()))}
 
 
+def probe_data_declarations(assets: list, metas: dict) -> dict:
+    """data 资产：metadata.json 的声明 vs 实体（记录数/列名/bbox/网格/公式复算）。"""
+    import csv as _csv
+    import math as _math
+
+    rows = {}
+    for d in assets:
+        if str((metas.get(d.name) or {}).get('asset_type')) != 'data':
+            continue
+        meta = load(d / 'metadata.json')
+        if not isinstance(meta, dict):
+            rows[d.name] = {'has_metadata': False}
+            continue
+        payload = None
+        for cand in sorted(d.rglob('*.csv')):
+            payload = cand
+            break
+        info = {'has_metadata': True, 'payload': str(payload.relative_to(d)) if payload else None,
+                'records_mismatch': None, 'columns_mismatch': None,
+                'bbox_mismatch': None, 'grid_incomplete': None, 'formula_max_dev': None,
+                'formula_tolerance': (meta.get('formula') or {}).get('tolerance')}
+        if payload is None:
+            rows[d.name] = info
+            continue
+        with payload.open(encoding='utf-8', errors='replace') as f:
+            data = list(_csv.DictReader(f))
+        if isinstance(meta.get('records'), int):
+            info['records_mismatch'] = None if len(data) == meta['records'] else {'declared': meta['records'], 'actual': len(data)}
+        if isinstance(meta.get('columns'), list):
+            cols = list(data[0].keys()) if data else []
+            info['columns_mismatch'] = None if cols == meta['columns'] else {'declared': meta['columns'], 'actual': cols}
+        if isinstance(meta.get('bbox'), dict) and data and 'x' in data[0] and 'y' in data[0]:
+            xs = [float(r['x']) for r in data]
+            ys = [float(r['y']) for r in data]
+            bx, by = meta['bbox'].get('x'), meta['bbox'].get('y')
+            if bx and by and ([min(xs), max(xs)] != bx or [min(ys), max(ys)] != by):
+                info['bbox_mismatch'] = {'declared': meta['bbox'], 'actual': {'x': [min(xs), max(xs)], 'y': [min(ys), max(ys)]}}
+        grid = meta.get('grid') or {}
+        if grid.get('nx') and grid.get('ny') and data and 'x' in data[0] and 'y' in data[0]:
+            cells = {(int(float(r['x'])), int(float(r['y']))) for r in data}
+            want = {(x, y) for x in range(int(grid['nx'])) for y in range(int(grid['ny']))}
+            if cells != want:
+                info['grid_incomplete'] = {'missing': len(want - cells), 'extra': len(cells - want)}
+        formula = meta.get('formula') or {}
+        if formula.get('expr') and data and {'x', 'y'} <= set(data[0]) and 'value' in data[0]:
+            ns0 = {'sin': _math.sin, 'cos': _math.cos, 'sqrt': _math.sqrt, 'pi': _math.pi, 'exp': _math.exp}
+            base = int(formula.get('i_base', 1))
+            worst = 0.0
+            try:
+                for k, r in enumerate(data, start=base):
+                    env = dict(ns0, x=float(r['x']), y=float(r['y']), i=k)
+                    worst = max(worst, abs(eval(formula['expr'], {'__builtins__': {}}, env) - float(r['value'])))
+                info['formula_max_dev'] = worst
+            except Exception as exc:  # noqa: BLE001
+                info['formula_error'] = str(exc)[:120]
+        rows[d.name] = info
+    return {'assets': dict(sorted(rows.items()))}
+
+
 def checks_of(root: Path) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
@@ -204,6 +263,7 @@ def checks_of(root: Path) -> dict:
         'validate_readme_profile': probe_validate_readme(assets, metas),
         'external_refs_profile': probe_external_refs(assets),
         'tool_contract_profile': probe_tool_contract(assets, metas),
+        'data_declaration_profile': probe_data_declarations(assets, metas),
     }
 
 
@@ -218,6 +278,8 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     except Exception:  # noqa: BLE001
         return {'error': '读不到 assets/audit-checks.json', 'findings': []}
     checks = dict(checks)
+    metas = {k: {'asset_type': t} for t, n in ((checks.get('package_summary') or {}).get('asset_types') or {}).items()
+             for k in [f'{t}#{i}' for i in range(n)]}
     # skill 类资产的说明文档完备性（只对 skill 资产判）
     rmp = checks.get('validate_readme_profile', {})
     cases = checks.get('cases_profile', {}).get('assets', {})
@@ -255,6 +317,26 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     if bad_ext:
         add('CHK-EXT-01', 'external_refs_profile', bad_ext)
 
+    data = (checks.get('data_declaration_profile') or {}).get('assets') or {}
+    bad_decl = {}
+    for name, info in data.items():
+        issues = {k: info.get(k) for k in ('records_mismatch', 'columns_mismatch', 'bbox_mismatch', 'grid_incomplete')
+                  if info.get(k)}
+        if issues:
+            bad_decl[name] = issues
+    if bad_decl:
+        add('CHK-DATA-01', 'data_declaration_profile', bad_decl)
+
+    bad_formula = {}
+    for name, info in data.items():
+        dev, tol = info.get('formula_max_dev'), info.get('formula_tolerance')
+        if info.get('formula_error'):
+            bad_formula[name] = {'formula_error': info['formula_error']}
+        elif dev is not None and isinstance(tol, (int, float)) and dev > tol:
+            bad_formula[name] = {'max_dev': dev, 'tolerance': tol}
+    if bad_formula:
+        add('CHK-DATA-02', 'data_declaration_profile', bad_formula)
+
     tool = (checks.get('tool_contract_profile') or {}).get('assets') or {}
     bad_tool = {k: v['impl_error_names_not_declared'] for k, v in tool.items()
                 if v.get('impl_error_names_not_declared')}
@@ -268,7 +350,38 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     if not pkg.get('has_catalog_json') and not pkg.get('root_markdown'):
         add('CHK-SPEC-01', 'package_summary', {'root_files': pkg.get('root_files') or []})
 
-    return {'intent': intent, 'findings': findings,
+    failed = {f['check_id'] for f in findings}
+    dprof = (checks.get('data_declaration_profile') or {}).get('assets') or {}
+    na_rules = {
+        'CHK-DATA-01': (any(v.get('has_metadata') for v in dprof.values()),
+                        '没有 data 资产声明 metadata.json，无可核对项'),
+        'CHK-DATA-02': (any((v.get('formula_max_dev') is not None) or v.get('formula_error') for v in dprof.values()),
+                        '没有 data 资产声明 formula，无可复算项'),
+        'CHK-TOOL-01': (bool((checks.get('tool_contract_profile') or {}).get('assets')),
+                        '包内没有工具类资产实现'),
+        'CHK-RM-01': (bool([k for k, v in ((checks.get('validate_readme_profile') or {}).get('assets') or {}).items()
+                            if v.get('is_skill')]), '包内没有 skill 类资产'),
+        'CHK-CASE-02': (any(v.get('has_acceptance_json') for v in ((checks.get('cases_profile') or {}).get('assets') or {}).values()),
+                        '没有任何资产提供 acceptance.json'),
+        'CHK-EXT-01': (bool((checks.get('external_refs_profile') or {}).get('assets')),
+                       '没有任何资产声明 external_assets.json'),
+    }
+    coverage = []
+    for c in spec['checks']:
+        if c['id'] in failed:
+            status, reason = 'fail', ''
+        elif c['id'] in na_rules and not na_rules[c['id']][0]:
+            status, reason = 'na', na_rules[c['id']][1]
+        elif c.get('applies_to') not in ('all', None) and not any(
+                str((m or {}).get('asset_type')) == c['applies_to'] for m in metas.values()):
+            status, reason = 'na', f"包内没有 {c['applies_to']} 类型资产"
+        else:
+            status, reason = 'pass', ''
+        coverage.append({'check_id': c['id'], 'layer': c.get('layer'), 'level': c.get('level'),
+                         'status': status, 'na_reason': reason})
+    cov_summary = {k: sum(1 for c in coverage if c['status'] == k) for k in ('pass', 'fail', 'na')}
+    return {'intent': intent, 'findings': findings, 'coverage': coverage,
+            'coverage_summary': cov_summary,
             'summary': {'P0': sum(1 for f in findings if f['level'] == 'P0'),
                         'P1': sum(1 for f in findings if f['level'] == 'P1'),
                         'P2': sum(1 for f in findings if f['level'] == 'P2')},
@@ -308,6 +421,9 @@ def main(argv=None) -> int:
         print(f"按固定清单判定（intent={v['intent']}）：P0 {v['summary']['P0']} / P1 {v['summary']['P1']} / P2 {v['summary']['P2']}")
         for f in v['findings']:
             print(f"  [{f['level']}] {f['check_id']} {f['name']}")
+        cs = v.get('coverage_summary') or {}
+        print(f"  覆盖：pass {cs.get('pass', 0)} / fail {cs.get('fail', 0)} / na {cs.get('na', 0)}"
+              '（na 表示该检查项对本包不适用，理由写进 probe-report.json 的 coverage）')
     if args.json_out:
         p = Path(args.json_out)
         p.parent.mkdir(parents=True, exist_ok=True)

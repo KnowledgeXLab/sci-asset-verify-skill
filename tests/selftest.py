@@ -1231,6 +1231,35 @@ def t17_reproducible(tmp: Path) -> None:
            "check_id" in blob and "没写检查项 id" in blob and "引用正确" not in blob,
            f"rc={proc.returncode}")
 
+    # 覆盖表：na 必须带理由；数据资产声明与实体不符要判 P1
+    data_pkg = d / "data_pkg"
+    (data_pkg / "d1" / "payload").mkdir(parents=True)
+    (data_pkg / "d1" / "payload" / "p.csv").write_text("x,y,value\n0,0,1\n1,0,2\n", encoding="utf-8")
+    (data_pkg / "d1" / "metadata.json").write_text(json.dumps(
+        {"records": 3, "columns": ["x", "y", "value"], "bbox": {"x": [0, 1], "y": [0, 0]},
+         "formula": {"expr": "x + y + i", "i_base": 1, "tolerance": 1e-9}}, ensure_ascii=False),
+        encoding="utf-8")
+    (data_pkg / "d1" / "validate").mkdir()
+    (data_pkg / "d1" / "validate" / "cases.json").write_text(
+        json.dumps({"cases": [{"id": "C01"}]}, ensure_ascii=False), encoding="utf-8")
+    (data_pkg / "d1" / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/d1", "asset_type": "data",
+        "name": "d1", "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "payload/p.csv", "media_type": "text/csv"}]}},
+        ensure_ascii=False), encoding="utf-8")
+    out3 = d / "data_probe.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(data_pkg), "--evaluate",
+         "--json-out", str(out3)], d)
+    rep3 = json.loads(out3.read_text(encoding="utf-8"))["verdict"]
+    ids3 = [f["check_id"] for f in rep3["findings"]]
+    cov3 = {c["check_id"]: c for c in rep3["coverage"]}
+    record("正例：声明与实体不符（records 声明 3 实为 2）判 CHK-DATA-01；公式复算不符判 CHK-DATA-02",
+           "CHK-DATA-01" in ids3 and "CHK-DATA-02" in ids3, f"ids={ids3}")
+    record("正例：覆盖表把不适用项标 na 并写理由（无工具/无 skill/无 acceptance）",
+           cov3["CHK-TOOL-01"]["status"] == "na" and cov3["CHK-TOOL-01"]["na_reason"]
+           and cov3["CHK-RM-01"]["status"] == "na" and cov3["CHK-CASE-02"]["status"] == "na",
+           f"cov={ {k: v['status'] for k, v in cov3.items()} }")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:
