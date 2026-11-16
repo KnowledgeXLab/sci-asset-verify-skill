@@ -1215,6 +1215,22 @@ def t17_reproducible(tmp: Path) -> None:
            "CHK-LIFE-01" not in ids2 and "CHK-LIC-01" not in ids2 and "CHK-CASE-01" in ids2,
            f"ids={ids2}")
 
+    # 新式批次：报告里的 P1 必须引用 check_id
+    run_dir = d / "run"
+    run_dir.mkdir()
+    (run_dir / "probe-report.json").write_text('{"verdict": {"findings": []}}', encoding="utf-8")
+    (run_dir / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n无\n\n### P1 重要\n\n| 编号 | 问题 |\n|---|---|\n"
+        "| P1-1 | 没写检查项 id |\n| P1-2 | CHK-CASE-01 引用正确 |\n\n"
+        "### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
+        encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir / "validation-report.md")], d)
+    blob = (proc.stdout or "") + (proc.stderr or "")
+    record("提示：新式批次里 P1 行未引用 check_id 时报告警（清单外发现应记 OBS）",
+           "check_id" in blob and "没写检查项 id" in blob and "引用正确" not in blob,
+           f"rc={proc.returncode}")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:

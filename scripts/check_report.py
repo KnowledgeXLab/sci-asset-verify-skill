@@ -44,6 +44,23 @@ def section_of(text: str) -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
+def check_checklist_citation(report: Path, text: str) -> list[str]:
+    """新式批次（run 里有 probe-report.json）里，P0/P1/P2 的每一行都要引用固定清单的 check_id。"""
+    if not (report.parent / 'probe-report.json').is_file():
+        return []
+    block = section_of(text) or ''
+    warns = []
+    for p_ in SECTIONS:
+        for line in block.splitlines():
+            line = line.strip()
+            if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
+                continue
+            if 'CHK-' not in line:
+                warns.append(f'{p_} 行未引用固定检查清单的 check_id：{line[:50]}…'
+                             f'（清单外的发现请记「观察 OBS」，不要计入 {p_}）')
+    return warns
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='检查报告问题清单的 P0/P1/P2 分级')
     ap.add_argument('--report', required=True)
@@ -93,6 +110,7 @@ def main(argv=None) -> int:
         warnings.append('报告开头缺 front matter 的 skill_version / generated_at（跑 scripts/stamp_report.py 生成）')
     if '<!-- evidence-prune:begin -->' not in text:
         warnings.append('缺少「证据保留口径」小节（跑 scripts/prune_evidence.py 生成）')
+    warnings += check_checklist_citation(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),
                       'levels_present': present, 'errors': errors, 'warnings': warnings,
