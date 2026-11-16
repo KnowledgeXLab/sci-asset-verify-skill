@@ -80,6 +80,8 @@ def check_paths(adir: Path, text: str) -> tuple[list[str], list[str]]:
         if tok in seen or '{' in tok or '*' in tok or tok.startswith(('/', 'http')):
             continue
         seen.add(tok)
+        if '/' not in tok:
+            continue                       # 裸文件名多为**产物名**（report.json / interpolated.csv），不是包内路径
         if (adir / tok).exists():
             continue
         msg = f'文档提到的包内路径不存在：{tok}'
