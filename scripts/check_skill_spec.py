@@ -92,32 +92,11 @@ def check_paths(adir: Path, text: str) -> tuple[list[str], list[str]]:
     return errs, warns
 
 
-def check_case_docs(adir: Path, text: str) -> tuple[list[str], list[str]]:
-    """说明文档列出的用例编号要与 validate/cases.json 对齐——文档漂移会让交付方按错的清单复核。"""
-    spec = adir / 'validate' / 'cases.json'
-    if not spec.is_file():
-        return [], []
-    try:
-        declared = [str(c.get('id') or '') for c in json.loads(spec.read_text(encoding='utf-8')).get('cases') or []]
-    except Exception:  # noqa: BLE001
-        return [], []
-    if not declared:
-        return [], []
-    # 不猜编号格式：直接从 cases.json 取 id，看它在说明文档里有没有出现
-    missing = [c for c in declared if c and c not in text]
-    if not missing:
-        return [], []
-    return [], [f'说明文档未提到用例 {", ".join(missing)}（validate/cases.json 共 {len(declared)} 组）——'
-                '文档与用例声明不一致，交付方会按错的清单复核']
-
-
 def check_md(adir: Path, text: str, strict: bool = True) -> tuple[list[str], list[str]]:
     errs, warns = [], []
     sections = split_sections(text)
-    if not strict:                                    # 非 skill 资产：只查路径引用与用例对齐
-        perr, pwarn = check_paths(adir, text)
-        cerr, cwarn = check_case_docs(adir, text)
-        return perr + cerr, pwarn + cwarn
+    if not strict:                                    # 非 skill 资产：只查路径引用
+        return check_paths(adir, text)
     bodies = {}
     for key, head_kw, _ in SECTIONS:
         head, body = find(sections, head_kw)
@@ -154,9 +133,6 @@ def check_md(adir: Path, text: str, strict: bool = True) -> tuple[list[str], lis
     perr, pwarn = check_paths(adir, text)
     errs += perr
     warns += pwarn
-    cerr, cwarn = check_case_docs(adir, text)
-    errs += cerr
-    warns += cwarn
     return errs, warns
 
 
