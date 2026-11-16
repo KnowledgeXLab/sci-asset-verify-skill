@@ -80,7 +80,9 @@ def dsh_home_runtime(out: Path, skill_name: str, mode: str = 'auto') -> tuple[di
         if cred_src.is_file() and not cred_dst.exists():
             shutil.copy2(cred_src, cred_dst)
             os.chmod(cred_dst, 0o600)
-    return {'DSH_HOME': str(home)}, f'隔离 DSH_HOME={home}（工作区内可写，凭据以 600 复制）'
+    return ({'DSH_HOME': str(home)},
+            f'隔离 DSH_HOME={home}（工作区内可写；凭据以 600 复制到 {home}/.credentials.yaml，'
+            '删 run 目录时一并清掉）')
 
 
 SAGE_PATCH = """# Sage 后端补丁：注册端砚 provider 并把默认模型切到 Sage-A1.5（harness 不变）
