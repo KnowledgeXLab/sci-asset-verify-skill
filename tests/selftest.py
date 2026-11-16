@@ -1123,19 +1123,47 @@ def t16_skill_agent_cli(tmp: Path) -> None:
 - 验证脚本：validate/validate.py --case C01-hits --artifact <agent 产物目录>
 """, encoding="utf-8")
 
-    out = d / "dry.json"
-    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
-                "--out-dir", str(d / "agent"), "--dry-run"], d)
-    record("正例：能解析 readme 的 harness/model/提示词，并规划出独立 CLI 命令",
-           proc.returncode == 0 and "dsh --profile headless" in proc.stdout
-           and "agent-center" in proc.stdout,
-           f"rc={proc.returncode}")
+    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--list-harnesses"], d)
+    record("正例：--list-harnesses 列出预设与本机安装情况",
+           proc.returncode == 0 and "dsh" in proc.stdout and "codex" in proc.stdout
+           and "harness-cmd" in proc.stdout, f"rc={proc.returncode}")
 
     proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
-                "--out-dir", str(d / "agent2"), "--backend", "sage", "--dry-run"], d)
-    record("正例：--backend sage 复用同一 harness，只把模型换成 Sage-A1.5",
-           proc.returncode == 0 and "Sage-A1.5" in proc.stdout and "inkstone" in proc.stdout,
-           f"rc={proc.returncode}")
+                "--out-dir", str(d / "agent"), "--dry-run"], d)
+    record("正例：默认按 readme 建议解析 harness（DSH），provider 用 harness 默认、不覆盖模型",
+           proc.returncode == 0 and "dsh" in proc.stdout and "harness-default" in proc.stdout
+           and "(harness 默认)" in proc.stdout, f"rc={proc.returncode}")
+
+    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
+                "--out-dir", str(d / "agent-c"), "--harness", "cursor", "--dry-run"], d)
+    rep = json.loads(proc.stdout)
+    record("正例：指定的 harness 未安装时退用已安装的，并说明原因",
+           proc.returncode == 0 and rep["harness"] != "cursor" and "未安装" in rep["reason"],
+           f"harness={rep.get('harness')} reason={rep.get('reason')}")
+
+    env = dict(os.environ)
+    env.pop("SAGE_BASE_URL", None)
+    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
+                "--out-dir", str(d / "agent-s0"), "--backend", "sage"], d, env_extra=env)
+    record("负例：Sage 测试缺 SAGE_* 配置时明确失败，不降级用默认后端",
+           proc.returncode == 2 and "SAGE_BASE_URL" in proc.stderr, f"rc={proc.returncode}")
+
+    env2 = dict(os.environ)
+    env2.update({"SAGE_BASE_URL": "https://sage.example/v1", "SAGE_MODEL": "Sage-A1.5",
+                 "SAGE_API_KEY": "k"})
+    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
+                "--out-dir", str(d / "agent-sage"), "--backend", "sage", "--dry-run"], d, env_extra=env2)
+    rep = json.loads(proc.stdout)
+    record("正例：Sage 后端从 SAGE_* 取地址/模型，harness 不变",
+           proc.returncode == 0 and rep["model"] == "Sage-A1.5"
+           and "base_url" in rep["sage_env_used"], f"model={rep.get('model')}")
+
+    proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
+                "--out-dir", str(d / "agent-x"), "--harness-cmd", "myagent run {prompt}", "--dry-run"], d)
+    rep = json.loads(proc.stdout)
+    record("正例：预设之外的 harness 用 --harness-cmd 就地固化",
+           proc.returncode == 0 and rep["harness"] == "custom" and rep["argv"][:2] == ["myagent", "run"],
+           f"argv={rep.get('argv')}")
 
     bad = d / "pkg" / "no-spec"
     (bad / "validate").mkdir(parents=True)

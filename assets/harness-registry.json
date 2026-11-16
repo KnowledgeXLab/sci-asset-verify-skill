@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0.0",
+  "note": "常见 agent harness 的一次性调用方式。argv 里 {bin} 为可执行文件、{prompt} 为任务文本、{model} 为模型；sage 段描述怎么把后端换成 Sage（kind=env 注入环境变量 / kind=patch 写配置补丁 / kind=unsupported 明确不支持）。用户环境不在本表内时，用 run_skill_agent.py --harness-cmd 就地固化。",
+  "preference": [
+    "dsh",
+    "codex",
+    "claude",
+    "cursor",
+    "gemini",
+    "opencode",
+    "aider"
+  ],
+  "harnesses": {
+    "dsh": {
+      "display": "DSH（DeepSeek Harness）",
+      "bins": [
+        "dsh"
+      ],
+      "argv": [
+        "{bin}",
+        "--profile",
+        "headless",
+        "--permission-mode",
+        "workspace-write",
+        "--",
+        "{prompt}"
+      ],
+      "notes": "headless profile，一次性回答后退出；模型由 profile 的 agent-default-model 决定",
+      "sage": {
+        "kind": "patch",
+        "provider": "inkstone"
+      }
+    },
+    "codex": {
+      "display": "OpenAI Codex CLI",
+      "bins": [
+        "codex"
+      ],
+      "argv": [
+        "{bin}",
+        "exec",
+        "--skip-git-repo-check",
+        "-s",
+        "workspace-write",
+        "{prompt}"
+      ],
+      "model_flag": [
+        "-m",
+        "{model}"
+      ],
+      "notes": "codex exec 非交互；-s workspace-write 允许在 workspace 内执行。早期版本还有 --full-auto，若无此参数会被拒（0.153 实测已移除）",
+      "sage": {
+        "kind": "env",
+        "env": {
+          "OPENAI_BASE_URL": "{base_url}",
+          "OPENAI_API_KEY": "{api_key}"
+        }
+      }
+    },
+    "claude": {
+      "display": "Claude Code",
+      "bins": [
+        "claude"
+      ],
+      "argv": [
+        "{bin}",
+        "-p",
+        "{prompt}",
+        "--permission-mode",
+        "acceptEdits"
+      ],
+      "model_flag": [
+        "--model",
+        "{model}"
+      ],
+      "notes": "claude -p 打印模式；acceptEdits 允许改文件",
+      "sage": {
+        "kind": "env",
+        "env": {
+          "ANTHROPIC_BASE_URL": "{base_url}",
+          "ANTHROPIC_AUTH_TOKEN": "{api_key}",
+          "ANTHROPIC_MODEL": "{model}"
+        }
+      }
+    },
+    "cursor": {
+      "display": "Cursor CLI（cursor-agent）",
+      "bins": [
+        "cursor-agent",
+        "cursor"
+      ],
+      "argv": [
+        "{bin}",
+        "-p",
+        "{prompt}",
+        "--force"
+      ],
+      "model_flag": [
+        "--model",
+        "{model}"
+      ],
+      "notes": "cursor-agent -p 非交互；--force 跳过交互确认",
+      "sage": {
+        "kind": "unsupported",
+        "why": "cursor-agent 只连 Cursor 后端，无法指向自定义 base_url"
+      }
+    },
+    "gemini": {
+      "display": "Gemini CLI",
+      "bins": [
+        "gemini"
+      ],
+      "argv": [
+        "{bin}",
+        "-p",
+        "{prompt}",
+        "--yolo"
+      ],
+      "model_flag": [
+        "-m",
+        "{model}"
+      ],
+      "notes": "gemini -p 非交互；--yolo 自动批准工具调用",
+      "sage": {
+        "kind": "env",
+        "env": {
+          "GOOGLE_GEMINI_BASE_URL": "{base_url}"
+        }
+      }
+    },
+    "opencode": {
+      "display": "opencode",
+      "bins": [
+        "opencode"
+      ],
+      "argv": [
+        "{bin}",
+        "run",
+        "{prompt}"
+      ],
+      "model_flag": [
+        "--model",
+        "{model}"
+      ],
+      "notes": "opencode run 一次性执行",
+      "sage": {
+        "kind": "env",
+        "env": {
+          "OPENAI_BASE_URL": "{base_url}",
+          "OPENAI_API_KEY": "{api_key}"
+        }
+      }
+    },
+    "aider": {
+      "display": "Aider",
+      "bins": [
+        "aider"
+      ],
+      "argv": [
+        "{bin}",
+        "--yes",
+        "--no-auto-commits",
+        "--exit",
+        "--message",
+        "{prompt}"
+      ],
+      "model_flag": [
+        "--model",
+        "{model}"
+      ],
+      "notes": "aider --message 单轮后退出",
+      "sage": {
+        "kind": "env",
+        "env": {
+          "OPENAI_API_BASE": "{base_url}",
+          "OPENAI_API_KEY": "{api_key}"
+        }
+      }
+    }
+  }
+}

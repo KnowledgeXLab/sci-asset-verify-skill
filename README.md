@@ -136,7 +136,7 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发版 `1.2-beta.4-dev`（未发版），两条改动：**外部资产挂载重做**（先同包解析 → 包外复制进副本 → 按 `target_path` 建软链，挂载副本不参与本包校验）、**skill 资产必须有验证说明**（`validate/readme.md` 写 Agent harness+model、怎么测、通过门槛，验收须上 agent，Sage A1.5 沿用同一 harness）。
+> 当前开发版 `1.2-beta.4-dev`（未发版），两条改动：**外部资产挂载重做**（先同包解析 → 包外复制进副本 → 按 `target_path` 建软链，挂载副本不参与本包校验）、**skill 资产必须有验证说明**（`validate/readme.md` 写 Agent harness+model、怎么测、通过门槛；验收用独立 CLI 进程跑，内置 dsh/codex/claude/cursor/gemini/opencode/aider 预设，声明之外的 harness 可就地固化；Sage 沿用同一 harness 只换后端）。
 
 ### 1.2-beta.3 — 2026-11-14
 

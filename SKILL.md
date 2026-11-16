@@ -102,24 +102,31 @@ python scripts/check_skill_spec.py --package <资产根目录> --check --json-ou
 - 文件名固定为 `validate/readme.md`（Markdown）；`test-spec.md` / `test-spec.json` 已废弃，出现会提示改名。
 - **按文档执行**：用声明的 agent harness 与模型跑任务，再用声明的门槛判通过。
 - **找不到建议的 harness** 时，可改用系统里已有的 agent harness 替代，但必须在报告里写明「建议 X、实际 Y、原因」。
-- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）：直接复用 skill 验收的命令加 `--backend sage`，即 `run_skill_agent.py --skill … --out-dir … --backend sage`；这是流程规则，不需要在验证说明里单列一节。
+- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）：复用 skill 验收的命令加 `--backend sage`，后端参数取自 `SAGE_*` 环境变量；这是流程规则，不需要在验证说明里单列一节。
 - 缺文档或要素不全 → 记 **P0**（属于"没法验证"），不得跳过。
 
-### 2.4.1 怎么跑：独立 CLI 进程，不在当前会话里做
+### 2.4.1 怎么跑：独立 CLI 进程 + harness 预设
 
-skill 的 agent 验收**一律用 `scripts/run_skill_agent.py` 起独立进程跑**，不要在当前核验会话里让本 agent 直接做：
+skill 的 agent 验收**一律用 `scripts/run_skill_agent.py` 起独立进程跑**，不要在当前核验会话里让本 agent 直接做。
 
 ```
 python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run>/agent/<资产> \
+    [--harness auto|dsh|codex|claude|cursor|gemini|opencode|aider] \
     [--backend harness|sage] [--json-out <run>/agent/<资产>-report.json]
+python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装了哪些"
 ```
 
-它按顺序决定 harness：
+**harness 选择**（预设表在 `assets/harness-registry.json`，内置 dsh / codex / claude / cursor / gemini / opencode / aider：
 
-1. **首选 `validate/readme.md` 里建议的 harness**；本机有对应 CLI（DSH → `dsh --profile headless`）就用它；
-2. 系统里找不到建议的 harness → **退回当前 harness 的 CLI 模式**（同样是 `dsh --profile headless`），
-   并在证据里写明"建议 X、实际用 Y"；
-3. **Sage 测试沿用同一 harness**，只换后端：`--backend sage`（注入 provider/model 补丁，harness 不变）。
+1. 首选 `validate/readme.md` 建议的 harness（按名字/显示名匹配预设，要有本机可执行文件）；
+2. 建议的没装 → 按预设顺序挑一个**已安装**的，证据里写明「建议 X、实际用 Y、为什么」；
+3. 一个都没装 → 报错并让你就地固化：`--harness-cmd "<本地命令模板，用 {prompt} 占位>"`；
+4. 预设之外的 harness 先就地分析：`--show-help <名字>` 或直接跑 `<bin> --help`，确认一次性调用的子命令与自动化开关，
+   再用 `--harness-cmd` 固化（**用户环境千变万化，预设只是加速，不是限制**）。
+
+**provider / 模型**：默认**用 harness 自己配置的默认 provider 与模型**，脚本不覆盖。
+**Sage 测试**：沿用同一 harness，只换后端 —— `--backend sage` 时从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`
+（含 `SAGE_LLM_*` 别名）读取，按预设声明的方式注入（env 变量或配置补丁）；预设声明不支持自定义后端（如 cursor-agent）时明确失败，不偷用默认后端。
 
 跑完自动用 readme 声明的门槛脚本判 **agent 产物**（`--artifact <产物目录>`），证据落 `agent-<资产>-report.json`。
 

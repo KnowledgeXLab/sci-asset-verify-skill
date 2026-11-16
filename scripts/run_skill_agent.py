@@ -2,18 +2,24 @@
 """在**独立 CLI 进程**里跑 skill 资产的 agent 验收（不在当前会话内跑），再按 readme 的门槛判产物。
 
 为什么必须单独用 CLI：skill 是给 agent 用的，验收要让一个 agent 真实完成任务；但**不能**在当前核验会话里做
-（会污染会话、也无法为 Sage 换后端）。所以固定用 harness 的 CLI 模式起一个独立进程：
+（会污染会话、也无法为 Sage 换后端）。所以固定用 harness 的 CLI 一次性调用模式起独立进程。
 
-  1. 首选 `validate/readme.md` 里建议的 harness；本机若有同名 CLI（DSH → `dsh --profile headless`）就直接用；
-  2. 找不到就退回"当前 harness 的 CLI 模式"（同样是 `dsh --profile headless`），并在证据里注明替代原因；
-  3. Sage 测试**沿用同一 harness**，只把后端换成 Sage（`--backend sage` → 注入 provider/model 补丁）。
-
-产物判定：跑 readme 里声明的门槛脚本（形如 `validate/validate.py ... --artifact <目录>`），
-判的是 agent 交出的产物，不是重跑资产自带脚本。
+harness 选定顺序
+----------------
+1. 首选 `validate/readme.md` 里建议的 harness（按名字匹配预设：dsh / codex / claude / cursor / gemini / opencode / aider，
+   见 assets/harness-registry.json）；
+2. 建议的没装，就按预设顺序挑一个**已安装**的，并在证据里注明"建议 X、实际用 Y"；
+3. 一个都没装 → 报错，并提示用 `--harness-cmd` 就地固化本地命令（用户环境千变万化，预设只是加速）；
+4. **provider 用 harness 自己配置的默认值**，本脚本不覆盖；
+5. Sage 测试**沿用同一 harness**，只换后端：从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`（含 `SAGE_LLM_*` 别名）读取，
+   按预设声明的方式注入（env 或配置补丁）；预设声明不支持时明确失败，不偷偷用默认后端。
 
 用法：
-  python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run>/agent/<资产> \
-      [--backend harness|sage] [--provider P --model M] [--timeout 900] [--json-out F] [--dry-run]
+  python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run>/agent/<资产> \\
+      [--harness auto|dsh|codex|claude|cursor|gemini|opencode|aider] \\
+      [--harness-cmd "<命令模板，用 {prompt} 占位>"] \\
+      [--backend harness|sage] [--model M] [--timeout 900] [--json-out F] [--dry-run]
+  python scripts/run_skill_agent.py --list-harnesses
 
 退出码：0 判定通过；1 判定不通过；2 参数/环境问题；3 无法启动 harness。
 """
@@ -36,8 +42,10 @@ except Exception:  # noqa: BLE001
         return payload
 
 SPEC = 'validate/readme.md'
-DEFAULT_PROVIDER, DEFAULT_MODEL = 'agent-center', 'DeepSeek-V4.1-Flash-1017'
-SAGE_PROVIDER, SAGE_MODEL = 'inkstone', 'Sage-A1.5'
+REGISTRY = Path(__file__).resolve().parents[1] / 'assets' / 'harness-registry.json'
+SAGE_ENV = {'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
+            'model': ['SAGE_MODEL', 'SAGE_LLM_MODEL'],
+            'api_key': ['SAGE_API_KEY', 'SAGE_LLM_API_KEY']}
 SAGE_PATCH = """# Sage 后端补丁：注册端砚 provider 并把默认模型切到 Sage-A1.5（harness 不变）
 - id: llm-pi-ai
   config:
@@ -57,6 +65,7 @@ SAGE_PATCH = """# Sage 后端补丁：注册端砚 provider 并把默认模型�
 """
 
 
+# ---------------------------------------------------------------- readme 解析
 def sections(text: str) -> dict:
     out, cur, buf = {}, None, []
     for line in text.splitlines():
@@ -101,25 +110,70 @@ def parse_spec(skill: Path) -> dict:
     m = re.search(r'(python\s+validate/\S+[^\n`]*)', gate)
     if m:
         gate_cmd = m.group(1).strip()
-    case = ''
-    m = re.search(r'--case\s+(\S+)', gate_cmd)
-    if m:
-        case = m.group(1)
     return {'text': text, 'harness_hint': harness, 'model_hint': model,
-            'task': task, 'gate': gate, 'prompt': prompt, 'gate_cmd': gate_cmd, 'case': case}
+            'task': task, 'gate': gate, 'prompt': prompt, 'gate_cmd': gate_cmd}
 
 
-def find_harness(spec: dict) -> tuple[str, str]:
-    """返回 (harness 名称, 可执行命令)；找不到返回 ('', '')。"""
-    dsh = shutil.which('dsh')
-    hint = (spec['harness_hint'] or '').lower()
-    if dsh and ('dsh' in hint or 'deepseek harness' in hint or not hint):
-        return 'dsh --profile headless', dsh
-    if dsh:
-        return 'dsh --profile headless', dsh          # 当前 harness 的 CLI 模式
-    return '', ''
+# ---------------------------------------------------------------- harness 预设
+def load_registry() -> dict:
+    try:
+        return json.loads(REGISTRY.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        return {'preference': [], 'harnesses': {}}
 
 
+def sage_env() -> dict:
+    out = {}
+    for key, names in SAGE_ENV.items():
+        for n in names:
+            if os.environ.get(n):
+                out[key] = os.environ[n]
+                break
+    return out
+
+
+def _matches(preset: dict, name: str, hint: str) -> bool:
+    if not hint:
+        return False
+    h = hint.lower()
+    return name in h or (preset.get('display', '').lower() in h)
+
+
+def resolve_harness(spec: dict, registry: dict, wanted: str = 'auto') -> dict:
+    presets = registry.get('harnesses') or {}
+    order = list(registry.get('preference') or presets.keys())
+    hint = spec['harness_hint'] or ''
+    preferred = [n for n in order if n in presets and _matches(presets[n], n, hint)]
+    candidates = ([wanted] if wanted and wanted != 'auto' else preferred) + [n for n in order if n not in preferred]
+    for name in candidates:
+        preset = presets.get(name)
+        if not preset:
+            continue
+        for b in preset.get('bins') or []:
+            exe = shutil.which(b)
+            if exe:
+                if wanted and wanted != 'auto' and name != wanted:
+                    reason = f'指定的 {wanted} 本机未安装，退用已安装的 {name}'
+                elif _matches(preset, name, hint):
+                    reason = '按 readme 建议'
+                else:
+                    reason = f'readme 未指定可用的 harness，退用已安装的 {name}'
+                return {'name': name, 'preset': preset, 'bin': exe, 'hint': hint, 'reason': reason}
+    return {}
+
+
+def list_harnesses(registry: dict) -> int:
+    print(f'预设 harness（{len(registry.get("harnesses") or {})} 个）：')
+    for name, preset in (registry.get('harnesses') or {}).items():
+        found = next((shutil.which(b) for b in preset.get('bins') or [] if shutil.which(b)), None)
+        mark = f'✓ {found}' if found else '✗ 未安装'
+        print(f'  {name:9s} {preset.get("display", ""):26s} {mark}')
+        print(f'            argv: {" ".join(preset.get("argv") or [])}')
+    print('未列出的 harness 可用 --harness-cmd "<命令模板>" 就地固化（模板里用 {prompt} 占位）。')
+    return 0
+
+
+# ---------------------------------------------------------------- 执行
 def build_prompt(spec: dict, skill: Path, out: Path) -> str:
     body = spec['prompt'] or spec['task']
     return (f'{body}\n\n'
@@ -129,17 +183,51 @@ def build_prompt(spec: dict, skill: Path, out: Path) -> str:
             '3. 完成后用一句话回报产物绝对路径。')
 
 
+def build_argv(harness: dict, prompt: str, model: str) -> list:
+    preset = harness['preset']
+    argv = [harness['bin'] if a == '{bin}' else a for a in (preset.get('argv') or ['{prompt}'])]
+    argv = [prompt if a == '{prompt}' else a for a in argv]
+    if model and preset.get('model_flag'):
+        flag = [model if a == '{model}' else a for a in preset['model_flag']]
+        argv += flag
+    return argv
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='独立 CLI 进程里跑 skill 的 agent 验收')
-    ap.add_argument('--skill', required=True, help='副本内的 skill 资产目录')
-    ap.add_argument('--out-dir', required=True, help='agent 产物目录（也是 agent 的工作输出位置）')
-    ap.add_argument('--backend', choices=['harness', 'sage'], default='harness')
-    ap.add_argument('--provider')
-    ap.add_argument('--model')
+    ap.add_argument('--skill', help='副本内的 skill 资产目录')
+    ap.add_argument('--out-dir', help='agent 产物目录（同时作为 agent 工作目录）')
+    ap.add_argument('--harness', default='auto', help='auto（默认）或预设名')
+    ap.add_argument('--harness-cmd', help='自定义命令模板（用 {prompt} 占位），用于预设之外的 harness')
+    ap.add_argument('--backend', choices=['harness', 'sage'], default='harness',
+                    help='harness=用 harness 自己的默认 provider；sage=同一 harness 换 Sage 后端（SAGE_* 环境变量）')
+    ap.add_argument('--model', help='覆盖模型（默认：harness 自行决定；Sage 时取 SAGE_MODEL）')
     ap.add_argument('--timeout', type=int, default=900)
     ap.add_argument('--json-out')
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--list-harnesses', action='store_true',
+                    help='列出预设 harness 与本机安装情况')
+    ap.add_argument('--show-help', metavar='HARNESS',
+                    help='打印该 harness 的 --help，用于预设之外的"就地分析"（也可直接跑 <bin> --help）')
     args = ap.parse_args(argv)
+
+    registry = load_registry()
+    if args.list_harnesses:
+        return list_harnesses(registry)
+    if args.show_help:
+        preset = (registry.get('harnesses') or {}).get(args.show_help) or {}
+        exe = next((shutil.which(b) for b in (preset.get('bins') or [args.show_help]) if shutil.which(b)), None)
+        if not exe:
+            print(f'找不到可执行文件：{args.show_help}', file=sys.stderr)
+            return 2
+        print(f'# {exe} --help（据此确认一次性调用的子命令与自动化开关，必要时用 --harness-cmd 固化）')
+        print(subprocess.run([exe, '--help'], capture_output=True, text=True).stdout)
+        if preset.get('argv'):
+            print(f"# 当前预设 argv：{' '.join(preset['argv'])}")
+        return 0
+    if not args.skill or not args.out_dir:
+        print('需要 --skill 与 --out-dir', file=sys.stderr)
+        return 2
 
     skill = Path(args.skill).expanduser().resolve()
     out = Path(args.out_dir).expanduser().resolve()
@@ -147,62 +235,99 @@ def main(argv=None) -> int:
         print(f'缺少 {skill / SPEC}', file=sys.stderr)
         return 2
     spec = parse_spec(skill)
-    harness, exe = find_harness(spec)
+
+    if args.harness_cmd:
+        bin0 = (args.harness_cmd.split() or [''])[0]
+        harness = {'name': 'custom', 'bin': shutil.which(bin0) or bin0, 'hint': spec['harness_hint'],
+                   'preset': {'display': '自定义命令', 'argv': args.harness_cmd.split(),
+                              'sage': {'kind': 'env', 'env': {}}},
+                   'reason': '用户用 --harness-cmd 就地指定'}
+    else:
+        harness = resolve_harness(spec, registry, args.harness)
     if not harness:
-        print('系统中找不到可用的 harness CLI（dsh）', file=sys.stderr)
+        names = ', '.join((registry.get('harnesses') or {}).keys())
+        print(f'找不到可用的 harness。已检测预设：{names}\n'
+              '· 装其中一个即可；或\n'
+              '· 用 --harness-cmd "<命令模板>" 把本地命令就地固化（模板里用 {prompt} 占位）；\n'
+              '· --list-harnesses 查看本机安装情况。', file=sys.stderr)
         return 3
+
+    sage = sage_env()
     substituted = ''
-    if spec['harness_hint'] and 'dsh' not in spec['harness_hint'].lower():
-        substituted = f"readme 建议 {spec['harness_hint']}；系统中无该 harness，改用当前 harness 的 CLI（dsh --profile headless）"
+    if (args.harness == 'auto' and harness['name'] != 'custom' and harness['hint']
+            and not _matches(harness['preset'], harness['name'], harness['hint'])):
+        substituted = f"readme 建议 {harness['hint']}；本机没有可用的，改用已安装的 {harness['preset'].get('display')}"
 
-    provider = args.provider or (SAGE_PROVIDER if args.backend == 'sage' else DEFAULT_PROVIDER)
-    model = args.model or (SAGE_MODEL if args.backend == 'sage' else DEFAULT_MODEL)
+    model = args.model or (sage.get('model', '') if args.backend == 'sage' else '')
+    provider = 'sage-env' if args.backend == 'sage' else 'harness-default'
+    if args.backend == 'sage' and harness['name'] != 'custom':
+        sage_mech = (harness['preset'].get('sage') or {}).get('kind')
+        if sage_mech == 'unsupported':
+            print(f"{harness['preset'].get('display')} 无法指向自定义后端（{(harness['preset'].get('sage') or {}).get('why', '')}）；"
+                  '请换一个支持 env 注入的 harness 或用 --harness-cmd 指定。', file=sys.stderr)
+            return 2
+        if not sage.get('base_url') or not sage.get('model'):
+            print('Sage 测试需要 SAGE_BASE_URL 与 SAGE_MODEL（或 SAGE_LLM_* 别名）环境变量；'
+                  'README 声明的是同一 harness 换后端，缺配置时不做降级。', file=sys.stderr)
+            return 2
+
     out.mkdir(parents=True, exist_ok=True)
-    cwd = out                                     # 工作目录=产物目录：workspace-write 才允许写，且相对路径也落在正确位置
-    cwd.mkdir(parents=True, exist_ok=True)
     prompt = build_prompt(spec, skill, out)
+    cmd = build_argv(harness, prompt, model)
+    env = dict(os.environ)
 
-    cmd = [exe, '--profile', 'headless', '--permission-mode', 'workspace-write', '--', prompt]
     patch_file = None
-    if args.backend == 'sage':
-        patch_file = Path(tempfile.mkdtemp(prefix='sage-patch-')) / 'sage.yml'
-        patch_file.write_text(SAGE_PATCH % {'provider': provider, 'model': model,
-                                            'base_url': 'https://discovery-api.intern-ai.org.cn/v1'},
-                              encoding='utf-8')
-        cmd = [exe, '--profile', 'headless', '--patch', str(patch_file),
-               '--permission-mode', 'workspace-write', '--', prompt]
+    if args.backend == 'sage' and harness['name'] != 'custom':
+        sage_mech = (harness['preset'].get('sage') or {})
+        if sage_mech.get('kind') == 'patch':
+            patch_file = Path(tempfile.mkdtemp(prefix='sage-patch-')) / 'sage.yml'
+            patch_file.write_text(SAGE_PATCH % {'provider': sage_mech.get('provider', 'inkstone'),
+                                                'model': sage['model'], 'base_url': sage['base_url']},
+                                  encoding='utf-8')
+            idx = cmd.index('--') if '--' in cmd else max(len(cmd) - 2, 1)
+            cmd = cmd[:idx] + ['--patch', str(patch_file)] + cmd[idx:]
+            env.setdefault('INKSTONE_API_KEY', sage.get('api_key', ''))
+        elif sage_mech.get('kind') == 'env':
+            for k, template in (sage_mech.get('env') or {}).items():
+                env[k] = (template.replace('{base_url}', sage.get('base_url', ''))
+                                 .replace('{api_key}', sage.get('api_key', ''))
+                                 .replace('{model}', sage.get('model', '')))
 
     if args.dry_run:
-        print(json.dumps({'harness': harness, 'provider': provider, 'model': model,
-                          'cmd': cmd[:6] + ['<prompt>'], 'prompt': prompt[:300]},
+        print(json.dumps({'harness': harness['name'], 'display': harness['preset'].get('display'),
+                          'argv': cmd[:8] + (['…'] if len(cmd) > 8 else []), 'cwd': str(out),
+                          'backend': args.backend, 'provider': provider, 'model': model or '(harness 默认)',
+                          'sage_env_used': sorted(sage.keys()) if args.backend == 'sage' else [],
+                          'substituted': substituted or None, 'reason': harness['reason']},
                          ensure_ascii=False, indent=2))
         return 0
 
-    print(f'启动 agent：{harness}（backend={args.backend}, model={provider}/{model}）', file=sys.stderr)
+    print(f"启动 agent：{harness['preset'].get('display')}（backend={args.backend}, model={model or 'harness 默认'}）",
+          file=sys.stderr)
     try:
-        proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, timeout=args.timeout)
+        proc = subprocess.run(cmd, cwd=str(out), capture_output=True, text=True,
+                              timeout=args.timeout, env=env)
     except subprocess.TimeoutExpired:
         print(f'agent 执行超时（{args.timeout}s）', file=sys.stderr)
         return 3
     (out.parent / f'agent-{skill.name}-stdout.txt').write_text(proc.stdout or '', encoding='utf-8')
     (out.parent / f'agent-{skill.name}-stderr.txt').write_text(proc.stderr or '', encoding='utf-8')
 
-    # 门槛：跑 readme 声明的验证脚本，判 agent 产物
-    gate_cmd = spec['gate_cmd'].replace('<agent 产物目录>', str(out)).replace('<agent 产物>', str(out))
+    gate_cmd = (spec['gate_cmd'] or '').replace('<agent 产物目录>', str(out)).replace('<agent 产物>', str(out))
+    if not gate_cmd:
+        print('readme 的「通过门槛」里没找到验证脚本命令', file=sys.stderr)
+        return 2
     if '--artifact' not in gate_cmd:
         gate_cmd = f'{gate_cmd} --artifact {out}'
     gate_proc = subprocess.run(gate_cmd.split(), cwd=str(skill), capture_output=True, text=True)
     gate_ok = gate_proc.returncode == 0
-
-    # 有的说明模板会写 "结果放到 out/" → agent 就在产物目录下再建一层；允许下探一层以内重试，并记录用过的目录
     retried = []
-    if not gate_ok:
+    if not gate_ok:                     # 有的模板写 "结果放 out/" → 允许下探一层重试，并记录
         for sub in sorted([d for d in out.rglob('*') if d.is_dir()], key=lambda d: len(d.parts))[:3]:
             if not any(f.is_file() for f in sub.iterdir()):
                 continue
-            parts = gate_cmd.split()
-            cmd2, skip = [], False
-            for tok in parts:                        # 去掉原来的 --artifact <out> 两段
+            parts, cmd2, skip = gate_cmd.split(), [], False
+            for tok in parts:
                 if skip:
                     skip = False
                     continue
@@ -216,8 +341,6 @@ def main(argv=None) -> int:
             if gp.returncode == 0:
                 gate_proc, gate_cmd, gate_ok = gp, ' '.join(cmd2), True
                 break
-
-    # 产物没落在指定目录时，给出线索（agent 写错地方属于失败，不做搬运掩盖）
     hint = None
     if not gate_ok:
         strays = [str(p) for p in list(skill.rglob('interpolated.csv')) + list(skill.rglob('report.json'))
@@ -226,18 +349,19 @@ def main(argv=None) -> int:
             hint = f'agent 产物没写到指定目录，发现这些位置的产物：{strays}'
 
     payload = _stamp({'tool': 'run_skill_agent.py', 'skill': str(skill), 'out_dir': str(out),
-                      'harness': harness, 'harness_hint': spec['harness_hint'],
+                      'harness': harness['name'], 'harness_display': harness['preset'].get('display'),
+                      'harness_hint': harness['hint'], 'harness_reason': harness['reason'],
                       'substituted_harness': substituted or None,
-                      'backend': args.backend, 'provider': provider, 'model': model,
-                      'agent_rc': proc.returncode, 'agent_exit': 'ok' if proc.returncode == 0 else 'failed',
+                      'backend': args.backend, 'provider': provider, 'model': model or '(harness 默认)',
+                      'cmd_head': cmd[:8], 'agent_rc': proc.returncode,
                       'gate_cmd': gate_cmd, 'gate_rc': gate_proc.returncode,
                       'gate_stdout': (gate_proc.stdout or '')[-1500:],
                       'gate_stderr': (gate_proc.stderr or '')[-1500:],
-                      'artifact_retry_dirs': retried,
-                      'stray_artifacts': hint,
+                      'artifact_retry_dirs': retried, 'stray_artifacts': hint,
                       'verdict': 'pass' if gate_ok else 'fail'})
-    print(json.dumps({'harness': harness, 'backend': args.backend, 'agent_rc': proc.returncode,
-                      'gate_rc': gate_proc.returncode, 'verdict': payload['verdict']}, ensure_ascii=False))
+    print(json.dumps({'harness': harness['name'], 'backend': args.backend,
+                      'agent_rc': proc.returncode, 'gate_rc': gate_proc.returncode,
+                      'verdict': payload['verdict'], 'hint': hint}, ensure_ascii=False))
     if args.json_out:
         p = Path(args.json_out)
         p.parent.mkdir(parents=True, exist_ok=True)
