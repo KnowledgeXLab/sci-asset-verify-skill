@@ -1085,6 +1085,16 @@ def t15_skill_spec(tmp: Path) -> None:
     record("提示：门槛脚本看不出在判 agent 产物时给告警（不阻断）",
            proc.returncode == 0 and "artifact" in proc.stderr, f"rc={proc.returncode}")
 
+    cases_json = a / "validate" / "cases.json"
+    cases_json.write_text(json.dumps({"cases": [{"id": "C01-hits", "title": "a"},
+                                                {"id": "C09-new", "title": "b"}]}, ensure_ascii=False),
+                          encoding="utf-8")
+    spec.write_text(good, encoding="utf-8")
+    proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
+    record("提示：说明文档漏写 cases.json 里的用例时告警（文档漂移）",
+           proc.returncode == 0 and "C09-new" in proc.stderr, f"rc={proc.returncode}")
+    cases_json.unlink()
+
     spec.write_text("# 测试说明\n\n## Agent\n- 建议 harness：<如 DSH>\n", encoding="utf-8")
     proc = run([str(SCRIPTS / "check_skill_spec.py"), "--package", str(pkg), "--check"], d)
     record("负例：只有模板占位符被拒",

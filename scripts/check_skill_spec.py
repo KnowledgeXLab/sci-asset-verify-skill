@@ -92,9 +92,35 @@ def check_paths(adir: Path, text: str) -> tuple[list[str], list[str]]:
     return errs, warns
 
 
-def check_md(adir: Path, text: str) -> tuple[list[str], list[str]]:
+CASE_ID = re.compile(r'\bC\d{2}-[A-Za-z0-9][A-Za-z0-9-]*')
+
+
+def check_case_docs(adir: Path, text: str) -> tuple[list[str], list[str]]:
+    """说明文档列出的用例编号要与 validate/cases.json 对齐——文档漂移会让交付方按错的清单复核。"""
+    spec = adir / 'validate' / 'cases.json'
+    if not spec.is_file():
+        return [], []
+    try:
+        declared = [str(c.get('id') or '') for c in json.loads(spec.read_text(encoding='utf-8')).get('cases') or []]
+    except Exception:  # noqa: BLE001
+        return [], []
+    if not declared:
+        return [], []
+    shown = set(CASE_ID.findall(text))
+    missing = [c for c in declared if c not in shown]
+    if not missing:
+        return [], []
+    return [], [f'说明文档未提到用例 {", ".join(missing)}（validate/cases.json 共 {len(declared)} 组）——'
+                '文档与用例声明不一致，交付方会按错的清单复核']
+
+
+def check_md(adir: Path, text: str, strict: bool = True) -> tuple[list[str], list[str]]:
     errs, warns = [], []
     sections = split_sections(text)
+    if not strict:                                    # 非 skill 资产：只查路径引用与用例对齐
+        perr, pwarn = check_paths(adir, text)
+        cerr, cwarn = check_case_docs(adir, text)
+        return perr + cerr, pwarn + cwarn
     bodies = {}
     for key, head_kw, _ in SECTIONS:
         head, body = find(sections, head_kw)
@@ -131,6 +157,9 @@ def check_md(adir: Path, text: str) -> tuple[list[str], list[str]]:
     perr, pwarn = check_paths(adir, text)
     errs += perr
     warns += pwarn
+    cerr, cwarn = check_case_docs(adir, text)
+    errs += cerr
+    warns += cwarn
     return errs, warns
 
 
@@ -152,19 +181,23 @@ def main(argv=None) -> int:
             asset = json.loads((adir / 'asset.json').read_text(encoding='utf-8'))
         except Exception:  # noqa: BLE001
             continue
-        if str(asset.get('asset_type')) != 'skill':
-            continue
+        is_skill = str(asset.get('asset_type')) == 'skill'
+        if not is_skill and not (adir / SPEC_MD).is_file():
+            continue                                  # 非 skill 资产：没有说明文档就不查（不强制）
         rel = str(adir.relative_to(root)) or '.'
         spec_md = adir / SPEC_MD
         errs, warns = [], []
         if spec_md.is_file():
-            errs, warns = check_md(adir, spec_md.read_text(encoding='utf-8'))
+            errs, warns = check_md(adir, spec_md.read_text(encoding='utf-8'), strict=is_skill)
+        elif not is_skill:
+            pass                                      # 非 skill 资产不要求说明文档
         elif any((adir / n).is_file() for n in OLD_NAMES):
             errs = [f'验证说明的固定文件名是 {rel}/validate/readme.md（test-spec.* 已不再接受），请改名']
         else:
             errs = [f'缺少验证说明：{rel}/validate/readme.md，需写清 Agent（harness+model）、'
                     '怎么测（任务/输入/输出）与通过门槛（模板见 assets/skill-test-spec.template.md）']
-        results.append({'asset_dir': rel, 'asset_id': asset.get('asset_id'),
+        results.append({'asset_dir': rel, 'asset_type': asset.get('asset_type'),
+                        'asset_id': asset.get('asset_id'),
                         'spec': SPEC_MD if spec_md.is_file() else None,
                         'errors': errs, 'warnings': warns, 'ok': not errs})
         flag = 'OK  ' if not errs else 'FAIL'
@@ -182,7 +215,8 @@ def main(argv=None) -> int:
                               'Agent（agent harness + agent model）、测试任务（任务/输入/输出）、'
                               '通过门槛（指标或对 agent 产物的验证脚本）；'
                               '缺建议 harness 可替代但须在报告注明'})
-    print(f'合计 {len(results)} 个 skill 资产：通过 {len(results) - len(bad)}，缺文档或要素不全 {len(bad)}')
+    n_skill = sum(1 for r in results if r.get("asset_type") == "skill")
+    print(f'合计检查 {len(results)} 个资产（其中 skill {n_skill} 个）：通过 {len(results) - len(bad)}，有问题 {len(bad)}')
     if args.json_out:
         p = Path(args.json_out)
         p.parent.mkdir(parents=True, exist_ok=True)

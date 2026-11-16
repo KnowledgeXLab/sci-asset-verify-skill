@@ -219,6 +219,7 @@ python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 | `spec.asset_protocol` 缺 `repository_uri` / 缺四段 | 规范未强制要求该字段，校验时不检查其内容 |
 | 示例包里的**占位编号/占位单位/占位 URI** 在包 readme 已明示为示例 | 演示用途，正式资产按任务书填写即可（可在 P2 提一句，不必升 P1） |
 | 资产内部实现风格（日志格式、参数命名、是否拆函数） | 与"可用、可复现、可验收"无关 |
+| 清单「敏感级别」词表与 `governance.access` 档次不完全对应（如 access=public 无对应档，按最低档填「内部」） | 属**清单词表缺口**，由清单维护方扩展档位；填最低档是对的，不判缺陷 |
 
 ## 6. Sage A1.5 附加测试（不计入判定）
 
