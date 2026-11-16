@@ -102,8 +102,26 @@ python scripts/check_skill_spec.py --package <资产根目录> --check --json-ou
 - 文件名固定为 `validate/readme.md`（Markdown）；`test-spec.md` / `test-spec.json` 已废弃，出现会提示改名。
 - **按文档执行**：用声明的 agent harness 与模型跑任务，再用声明的门槛判通过。
 - **找不到建议的 harness** 时，可改用系统里已有的 agent harness 替代，但必须在报告里写明「建议 X、实际 Y、原因」。
-- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）——这是流程规则，不需要在说明文档里单列一节。
+- Sage A1.5 附加测试**沿用同一 harness**（只换后端模型）：直接复用 skill 验收的命令加 `--backend sage`，即 `run_skill_agent.py --skill … --out-dir … --backend sage`；这是流程规则，不需要在验证说明里单列一节。
 - 缺文档或要素不全 → 记 **P0**（属于"没法验证"），不得跳过。
+
+### 2.4.1 怎么跑：独立 CLI 进程，不在当前会话里做
+
+skill 的 agent 验收**一律用 `scripts/run_skill_agent.py` 起独立进程跑**，不要在当前核验会话里让本 agent 直接做：
+
+```
+python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run>/agent/<资产> \
+    [--backend harness|sage] [--json-out <run>/agent/<资产>-report.json]
+```
+
+它按顺序决定 harness：
+
+1. **首选 `validate/readme.md` 里建议的 harness**；本机有对应 CLI（DSH → `dsh --profile headless`）就用它；
+2. 系统里找不到建议的 harness → **退回当前 harness 的 CLI 模式**（同样是 `dsh --profile headless`），
+   并在证据里写明"建议 X、实际用 Y"；
+3. **Sage 测试沿用同一 harness**，只换后端：`--backend sage`（注入 provider/model 补丁，harness 不变）。
+
+跑完自动用 readme 声明的门槛脚本判 **agent 产物**（`--artifact <产物目录>`），证据落 `agent-<资产>-report.json`。
 
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
 

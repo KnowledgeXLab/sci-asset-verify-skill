@@ -7,7 +7,7 @@
 
 检查内容
 --------
-1. `asset.json` 里所有本地路径（`spec.artifacts[].uri`、`spec.asset_protocol` 的 `repository_uri`/`path`）
+1. `asset.json` 里 `spec.artifacts[].uri` 的本地路径
    解析后必须落在**该资产目录内**；越界即 violations。
 2. 资产目录内的脚本/配置/文档里出现的相对路径（`../`）、绝对路径（`/home/…`、`C:\\…`）、`~/` 引用，
    解析后越出资产目录即 violations；越到**包内另一个资产目录**时额外提示改用 external_assets.json。
@@ -62,11 +62,6 @@ def local_paths_of(asset: dict):
         uri = a.get('uri') if isinstance(a, dict) else None
         if isinstance(uri, str) and uri and not SCHEME.match(uri):
             out.append((f'spec.artifacts[{i}].uri', uri))
-    proto = spec.get('asset_protocol') if isinstance(spec.get('asset_protocol'), dict) else {}
-    for key in ('repository_uri', 'path', 'entry', 'readme'):
-        v = proto.get(key)
-        if isinstance(v, str) and v and not SCHEME.match(v):
-            out.append((f'spec.asset_protocol.{key}', v))
     return out
 
 

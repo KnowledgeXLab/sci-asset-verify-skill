@@ -46,7 +46,7 @@ SOURCE_KIND = ['original', 'derived', 'generated']
 TOP_LEVEL = ['schema_version', 'asset_id', 'asset_type', 'name', 'description', 'asset_version',
              'lifecycle', 'domains', 'tasks', 'task_classes', 'provenance', 'governance',
              'extensions', 'spec']
-SPEC_KEYS = ['metadata', 'artifacts', 'domain_attributes', 'asset_protocol']
+SPEC_KEYS = ['metadata', 'artifacts', 'domain_attributes']   # asset_protocol 规范未明确要求，不校验
 SEMVER = re.compile(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$')
 ASSET_ID_SPEC = ('asset_id 格式为 sciasset://{project-id}/{namespace}/{asset-type}/{slug}，'
                  '其中 project-id 为项目编号（见项目任务书首页）、namespace 为自拟命名空间、'
@@ -470,7 +470,7 @@ def check(asset, file):
     if isinstance(spec, dict):
         for key in SPEC_KEYS:
             if key not in spec:
-                r.err(f'spec.{key}', 'spec 四件套缺失（metadata/artifacts/domain_attributes/asset_protocol，§5）')
+                r.err(f'spec.{key}', 'spec 四件套缺失（metadata/artifacts/domain_attributes，§5）')
         md = spec.get('metadata') if isinstance(spec.get('metadata'), dict) else {}
         arts = spec.get('artifacts') if isinstance(spec.get('artifacts'), list) else None
         proto = spec.get('asset_protocol') if isinstance(spec.get('asset_protocol'), dict) else {}
@@ -496,18 +496,6 @@ def check(asset, file):
             if CHECK_ARTIFACT_FILES:
                 check_artifacts(arts, atype, r)
 
-        # asset_protocol 里的本地路径同样要求落在资产目录内
-        proto_base = Path(r.file).resolve().parent
-        for key in ('repository_uri', 'path', 'entry', 'readme'):
-            v = proto.get(key) if isinstance(proto, dict) else None
-            if not isinstance(v, str) or not v or SCHEME.match(v):
-                continue
-            pth, in_dir = _resolve_local(proto_base, v)
-            if not in_dir:
-                r.err(f'spec.asset_protocol.{key}',
-                      f'不在资产目录内（§资产自包含）：{v!r} 解析到 {pth}；'
-                      '协议/共享文件应随资产目录交付，跨资产引用改用 external_assets.json')
-
         check_format_consistency(md, arts, r, atype)
 
         # 类型专有
@@ -530,25 +518,6 @@ def check(asset, file):
             r.err('spec.artifacts', 'environment 至少一个镜像/锁文件/环境定义（§5.4）')
         if atype == 'skill' and arts is not None and not arts:
             r.err('spec.artifacts', 'skill 至少一个指令或流程文件（§5.5）')
-        if atype == 'benchmark':
-            ev = proto.get('evaluate') if isinstance(proto.get('evaluate'), dict) else None
-            if not ev:
-                r.err('spec.asset_protocol.evaluate', 'benchmark 必须提供评测协议 evaluate（§5.8）')
-            else:
-                if not isinstance(ev.get('metrics'), list) or not ev.get('metrics'):
-                    r.err('spec.asset_protocol.evaluate.metrics', '至少一个指标（§5.8）')
-                else:
-                    for i, m in enumerate(ev['metrics']):
-                        if not isinstance(m, dict) or not m.get('id'):
-                            r.err(f'spec.asset_protocol.evaluate.metrics[{i}]', '需要 id')
-                        elif m.get('direction') and m['direction'] not in ('maximize', 'minimize'):
-                            r.err(f'spec.asset_protocol.evaluate.metrics[{i}].direction', 'direction 应为 maximize/minimize')
-                if not ev.get('entrypoint'):
-                    r.warn('spec.asset_protocol.evaluate.entrypoint', '建议给出唯一评测入口（§5.8）')
-
-        # asset_protocol 形态
-        if not (proto.get('repository_uri') or all(k in proto for k in ('readme', 'prepare', 'use', 'validate'))):
-            r.warn('spec.asset_protocol', '建议给出 repository_uri(+revision+path) 或 readme/prepare/use/validate 四段（§5）')
 
         # prohibited 硬约束
         if isinstance(gov, dict) and gov.get('risk_level') == 'prohibited' and arts:
