@@ -132,6 +132,10 @@ python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装�
 
 跑完自动用 readme 声明的门槛脚本判 **agent 产物**（`--artifact <产物目录>`），证据落 `agent-<资产>-report.json`。
 
+**沙箱提示**：nested dsh 要写 `$DSH_HOME/profiles/*/cordis.yml`，被核验沙箱（workspace-write）挡住时用
+`--dsh-home isolated`（自动复制一份 profiles 到 run 目录、node_modules 软链、凭据以 600 复制）；
+默认 `auto` 会先探宿主可写性，失败且命中沙箱关键词时自动隔离重试一次，首次现场留 `agent-<资产>-attempt-01-sandbox-*.txt`。
+
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
 
 用例若用到**别的资产**（`external_assets.json` 里声明的那些），不把它们放到位就跑不起来。挂载在**工作副本内**完成，原资产包不动：
