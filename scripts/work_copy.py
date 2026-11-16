@@ -199,6 +199,13 @@ def cmd_init(args) -> int:
         state['manifest_before'] = {'file': str(mf.relative_to(root)), 'entries': n}
     sp = save_state(root, args.run_id, state)
     print(str(copy))
+    runs_dir = root / RUNS_DIR
+    prior = sorted(x.name for x in runs_dir.iterdir() if x.is_dir()) if runs_dir.is_dir() else []
+    prior = [x for x in prior if x != args.run_id]
+    if prior:
+        print(f'# 注意：包内已有 {len(prior)} 个历史批次（{", ".join(prior[:3])}'
+              f'{"…" if len(prior) > 3 else ""}），按约定**不读取、不对比**；本次结论只依据资产实体与声明',
+              file=sys.stderr)
     print(f'# 副本就绪：{files} 个文件 / {bytes_} 字节；记录：{sp}', file=sys.stderr)
     return 0
 

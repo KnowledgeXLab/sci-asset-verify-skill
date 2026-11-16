@@ -34,6 +34,9 @@ python scripts/work_copy.py clean <资产根目录> --run-id run-YYYYMMDD-hhmmss
 - 副本默认放 `<资产根目录父目录>/.asset-work/<run_id>/`（可用 `--work-root` 或 `ASSET_WORK_ROOT` 覆盖，不可写时回退 `$TMPDIR`）；复制时跳过 `asset-runs/`、`__pycache__`、`*.pyc`。
 - `init` 复制完会**自检副本完整性**：文件数与字节数必须与源一致。**不核验、也不生成包根 `SHA256SUMS`**——它常把历史 run 产物一并登记，且不是交付判据；实体级摘要由 `validate_envelope.py` 按 `asset.json` 里声明的 `sha256` 核对。任一项不符就删掉副本、把原因写进 `work-copy.json` 并以非 0 退出——不允许在"可能缺文件"的副本上跑用例。
 - **历史批次只增不改**：每批核验一律新建 `asset-runs/run-[YYYYMMDD]-[hhmmss]/`，**不得删除、覆盖或清理已有的 run 目录**；需要重跑就换新 `run_id`，旧批次原样保留作为审计链。确认要删除某个旧批次时必须先问用户。
+- **不参考包内已有的核验结果**：`asset-runs/` 下已存在的历史批次（无论谁跑的、结论是什么）**一律不读**——
+不作为 expected 来源、不当基线、也不比较差异。核验结论只能由「资产实体 + 资产自己的声明 + 独立复算」得出；
+报告只描述本次批次的结果，不写"与上一批相比""整改对照"这类跨批次对比。
 - **原始包只写一处**：`<资产根目录>/asset-runs/<run_id>/`（最终产物：inventory/usage/state/cases/comparison/validation-report/登记表/部署记录，以及 `work-copy.json` 副本记录）。
 - 副本内执行时继续设 `PYTHONDONTWRITEBYTECODE=1`（避免 `.pyc` 污染），shell 里比对文本时统一加 `LC_ALL=C`（中文 locale 下部分命令会输出「成功」而非 `OK`，直接比对会误判）。
 - `clean --verify` 会删副本并复核原包文件数/字节数，结果写进 `work-copy.json`；清理失败或复核不通过要记为阻塞，不能静默留副本。副本路径必须位于资产根目录之外，脚本会拒绝删除根目录内的路径。
