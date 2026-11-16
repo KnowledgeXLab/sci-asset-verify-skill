@@ -113,7 +113,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十五个脚本，共 104 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十五个脚本，共 107 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -128,13 +128,15 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十五个自检脚本（另有 3 个内部模块）
+scripts/           十六个自检脚本（另有 3 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+> 当前开发版 `1.2-beta.5-dev`（未发版）：**核验可复现性**——新增 `probe_package.py` 确定性探测 + `assets/audit-checks.json` 固定检查清单，问题清单只能引用 `CHK-xxx`，清单外发现记 OBS 不计级。
 
 ### 1.2-beta.4 — 2026-11-16
 
