@@ -137,6 +137,7 @@ vendor/            随包分发的 openpyxl
 ## 版本记录
 
 > 当前开发版 `1.2-beta.5-dev`（未发版）：**核验可复现性与覆盖**——`probe_package.py` 确定性探测 + `assets/audit-checks.json` 分层清单（L1 通用 / L2 按类型 / L3 声明驱动 / L4 只能记 OBS）；问题清单必须引用 `CHK-xxx`，报告须附 pass/fail/na 覆盖表。
+> **Harbor 任务包支持**：识别 task / 显式 dataset / 隐式 dataset 三种形态；静态检查入固定清单（`CHK-HARB-01~08`，必需文件缺失与 oracle/nop 不符判 P0）；执行走官方 CLI 全量 oracle + nop 双 trial（`scripts/harbor_run.py`，真实 harbor 0.23/0.26 + Docker 端到端验证通过），跑不了记 blocked 不算 na 不算 fail；task@harbor 不触发 Sage 附加测试。
 
 ### 1.2-beta.4 — 2026-11-16
 

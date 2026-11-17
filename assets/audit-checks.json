@@ -99,6 +99,78 @@
       "decide": "acceptance_missing_paths"
     },
     {
+      "id": "CHK-HARB-01",
+      "layer": "L2",
+      "level": "P0",
+      "name": "harbor 任务必需文件完整",
+      "criterion": "每个 harbor 任务：task.toml 可解析、instruction.md 存在且非空、environment/（或 [environment].docker_image）、solution/solve.sh(.bat)、tests/test.sh(.bat) 全部存在",
+      "applies_to": "task",
+      "decide": "harbor_missing_files"
+    },
+    {
+      "id": "CHK-HARB-02",
+      "layer": "L2",
+      "level": "P0",
+      "name": "harbor oracle/nop 双 trial 通过",
+      "criterion": "每个任务全量执行两条 trial：oracle（注入 solution）reward=1 且 nop（不注入）reward=0；任一不符即 P0。执行由 harbor_run.py 完成（需 docker + harbor CLI），本探测只给占位 na",
+      "applies_to": "task",
+      "decide": "harbor_trial_failed"
+    },
+    {
+      "id": "CHK-HARB-03",
+      "layer": "L2",
+      "level": "P1",
+      "name": "harbor dataset.toml 与任务目录一致",
+      "criterion": "显式数据集：dataset.toml 声明的任务与本地任务目录双向一致（指向缺失、未声明多出、digest 格式非法均为不一致）",
+      "applies_to": "task",
+      "decide": "harbor_dataset_mismatch"
+    },
+    {
+      "id": "CHK-HARB-04",
+      "layer": "L2",
+      "level": "P1",
+      "name": "harbor 包络条目一致",
+      "criterion": "harbor 任务/数据集必须在 asset.json 有条目且 asset_type=task；包内出现不在任何资产条目下的 task.toml 视为缺登记",
+      "applies_to": "task",
+      "decide": "harbor_envelope_mismatch"
+    },
+    {
+      "id": "CHK-HARB-05",
+      "layer": "L2",
+      "level": "P2",
+      "name": "隐式数据集缺 dataset.toml",
+      "criterion": "资产目录下有多个任务目录但没有 dataset.toml 声明（建议补 manifest）",
+      "applies_to": "task",
+      "decide": "harbor_implicit_no_manifest"
+    },
+    {
+      "id": "CHK-HARB-06",
+      "layer": "L2",
+      "level": "P2",
+      "name": "verifier 依赖外部模型打分",
+      "criterion": "tests/ 内容出现 LLM 判分证据（API key 引用、chat/completions 等）时提示 reward 可能非确定；oracle/nop 仍按数值判定，不触发 Sage 附加测试",
+      "applies_to": "task",
+      "decide": "harbor_verifier_llm_hints"
+    },
+    {
+      "id": "CHK-HARB-07",
+      "layer": "L2",
+      "level": "P1",
+      "name": "harbor lint 正确性发现",
+      "criterion": "`harbor lint` 的正确性类规则（invalid-task-config / invalid-task-files / shared-verifier / agent-image-test-leak / overlapping-artifacts / artifact-log-overlap 等）发现即不一致；由 harbor_run.py 在执行阶段采集",
+      "applies_to": "task",
+      "decide": "harbor_lint_correctness"
+    },
+    {
+      "id": "CHK-HARB-08",
+      "layer": "L2",
+      "level": "P2",
+      "name": "harbor lint 可复现性建议",
+      "criterion": "`harbor lint` 的可复现性建议（unpinned-image / unpinned-python-dependency / verifier-network-download / verifier-runtime-install）记为建议；由 harbor_run.py 在执行阶段采集",
+      "applies_to": "task",
+      "decide": "harbor_lint_reproducibility"
+    },
+    {
       "id": "CHK-LIC-01",
       "layer": "L0",
       "level": "P1",

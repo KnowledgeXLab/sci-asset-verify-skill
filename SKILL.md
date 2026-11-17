@@ -22,7 +22,7 @@ python scripts/probe_package.py --package <包根> --evaluate --intent delivery 
 | 层 | 内容 | 为什么这样分层 |
 |---|---|---|
 | **L1 通用** | 实体完整性、用例可验证性、外部引用合规、包级入口 | 与包无关，任何包都必跑 |
-| **L2 类型** | 按 `asset_type` 展开（data 声明-实体、tool 错误契约、skill 验证说明…） | 类型在表内就不会因为"这次没想到"而漏 |
+| **L2 类型** | 按 `asset_type` 展开（data 声明-实体、tool 错误契约、skill 验证说明、harbor 任务必需文件与 oracle/nop…） | 类型在表内就不会因为"这次没想到"而漏 |
 | **L3 声明驱动** | 扫描资产自带声明（`metadata.formula/bbox/grid`、`acceptance.json` 引用、`tool.json` errors、`cases.json`），**凡声明必验** | 覆盖随包自动扩展，不随执行者兴致 |
 | **L4 自由探索** | 允许，**一律记入 P2（建议）**：现象 + 证据 + 复现命令 | 保留发现新类别的能力，同时不污染 P0/P1 判定 |
 
@@ -202,6 +202,24 @@ python scripts/mount_external.py --copy-root <副本根> \
 - 自包含校验认得这条合规通道：软链指向目录外但路径等于该资产声明的 `target_path` 时只记 note，不算越界。
 - **挂载进来的资产不算本包资产**：从包外复制进副本的目录里带 `.mounted-external.json` 标记，
   包络/自包含/资产ID/清单/Sage 判定都会跳过它们——核验对象始终是原包声明的那些资产。
+
+## 2.6 Harbor 任务包验证（task 资产，oracle/nop 全量验证）
+
+资产目录含 `task.toml`（或 `dataset.toml`）时按 harbor 格式（harbor-framework/harbor，task.toml `schema_version` 锚定版本）处理，三种形态都在**一个资产条目**内：单任务包（目录即任务）、显式数据集（`dataset.toml` + 任务子目录）、隐式数据集（无 manifest 的多任务目录，记 P2 建议补）。静态判定已并入 `probe_package.py` 的固定清单（`CHK-HARB-01/03~06`）；**执行层用本节流程**：
+
+```
+python scripts/harbor_run.py --package <工作副本根> --run-dir <run> [--task-timeout 1800] [--json-out <run>/harbor-run-report.json]
+```
+
+**验证只走官方 CLI 的两条伪 agent trial，全量、不允许抽样**：每个任务跑 `harbor run -p <任务目录> -a oracle`（注入 solution，期望 reward=1）与 `-a nop`（不注入，期望 reward=0），两条都符合才通过；任一不符判 **P0（CHK-HARB-02）**——判分体系坏了等于无法验证。reward 由 `harbor_run.py` 从 job 输出解析（trial `result.json` 的 `verifier_result`，兜底 `verifier/reward.txt`），不手工 grep 容器。
+
+**跑不了记 blocked，不算 na 也不算 fail**（责任在核验环境，不诬给资产）：docker 不可用 → `blocked_docker`；harbor CLI 不在 → 自动装进独立 venv（`ACI_ASSET_VERIFY_AUTO_INSTALL=0` 关闭），装不上 → `blocked_missing_harbor`；任务声明 `os=windows`（本机 Linux）、`gpus>0`（无 GPU）、`${VAR}` 宿主变量缺失 → 对应 blocked；blocked 项写进报告并显式列出，通过率分母 = 全部任务，不宣称闭环。**报告必须合并两处发现**：probe 的静态 CHK-HARB 与 `harbor-run-report.json` 的执行 CHK-HARB-02/07/08——只写静态结论等于没验证。
+
+注意点：
+- 执行一律在**工作副本**内（`harbor run` 会构建镜像、跑容器），原始包不动；job 原始输出落 `<run>/harbor/<任务>/<oracle|nop>/`，交付前由 `prune_evidence.py` 只保留 reward 证据（result.json / verifier/reward.* / 日志）。
+- solution 是 oracle 验证的前提：任务缺 `solution/solve.sh(.bat)` 直接判 P0（CHK-HARB-01），不存在"无 solution 任务"的跳过口径。
+- `harbor lint`（0.24+）的正确性类发现映射 P1（CHK-HARB-07）、可复现性建议映射 P2（CHK-HARB-08）；harbor 版本无 lint 子命令时如实记「未采集」，不编造。harbor < 0.24 要求 `environment/` 目录实际存在（仅 `[environment].docker_image` 会被当成 dataset 而报错），`harbor_run.py` 已把该错误翻译成可整改的 blocked 原因。
+- verifier 用 LLM 打分（tests/ 出现 API key/chat completions 证据）只记 P2 提示 reward 可能非确定（CHK-HARB-06）；**oracle/nop 是确定性伪 agent，task@harbor 不触发第 6 步 Sage 附加测试**，报告 Sage 小节记不适用及原因。
 
 ## 3. 注册 MCP、部署模型
 

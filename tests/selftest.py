@@ -1261,6 +1261,218 @@ def t17_reproducible(tmp: Path) -> None:
            f"cov={ {k: v['status'] for k, v in cov3.items()} }")
 
 
+# --------------------------------------------------------------------------- T18 harbor
+def _harbor_task(base: Path, name: str = "task-a", *, slug: str | None = None, env: str = "dir",
+                 solve: bool = True, tests: bool = True, instr: str | None = "do the thing",
+                 toml_body: str | None = None, os_name: str | None = None) -> Path:
+    """构造最小 harbor 任务目录（目录名 name，task.toml 里的 [task].name 用 slug）。
+    env: dir=environment/ 目录 / image=仅 docker_image 声明。"""
+    t = base / name
+    short = slug or name
+    (t / "solution").mkdir(parents=True, exist_ok=True)
+    (t / "tests").mkdir(parents=True, exist_ok=True)
+    toml = toml_body if toml_body is not None else (
+        f'schema_version = "1.4"\n\n[task]\nname = "acme/{short}"\n\n[environment]\n'
+        + (f'os = "{os_name}"\n' if os_name else '')
+        + ('docker_image = "python:3.12-slim"\n' if env == "image" else 'cpus = 1\n'))
+    (t / "task.toml").write_text(toml, encoding="utf-8")
+    if env == "dir" and toml_body is None:
+        (t / "environment").mkdir(exist_ok=True)
+        (t / "environment" / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    if instr is not None:
+        (t / "instruction.md").write_text(instr, encoding="utf-8")
+    if solve:
+        (t / "solution" / "solve.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    if tests:
+        (t / "tests" / "test.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    return t
+
+
+def _harbor_asset_json(t: Path, typ: str = "task") -> None:
+    (t / "asset.json").write_text(json.dumps({
+        "asset_id": f"sciasset://2026ZD123456/acme/{typ}/{t.name}", "asset_type": typ,
+        "name": t.name, "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "task.toml", "media_type": "text/prs.toml"}]}},
+        ensure_ascii=False), encoding="utf-8")
+
+
+def _probe(pkg: Path, out: Path, tmp: Path) -> dict:
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(pkg), "--evaluate",
+         "--json-out", str(out)], tmp)
+    return json.loads(out.read_text(encoding="utf-8"))["verdict"]
+
+
+def t18_harbor(tmp: Path) -> None:
+    print("\n[18/18] harbor 任务包 — 形态识别、静态检查、reward 解析、blocked 语义")
+    sys.path.insert(0, str(SCRIPTS))
+    from _harbor import probe_harbor, static_issues, compute_task_digest
+    from harbor_run import parse_job_reward
+
+    d = tmp / "t18"
+
+    # ---- 正例单任务包：必需文件齐 → 静态 P0 全过，CHK-HARB-02 是执行占位 na
+    pkg = d / "ok"
+    t = _harbor_task(pkg, "my-task")
+    _harbor_asset_json(t)
+    v = _probe(pkg, d / "ok.json", d)
+    ids = [f["check_id"] for f in v["findings"]]
+    cov = {c["check_id"]: c for c in v["coverage"]}
+    record("正例：必需文件齐全的 harbor 任务不产生 P0/P1 检查发现",
+           "CHK-HARB-01" not in ids and "CHK-HARB-03" not in ids and "CHK-HARB-04" not in ids,
+           f"ids={ids}")
+    record("正例：CHK-HARB-01 pass；CHK-HARB-02 na 且理由指向 harbor_run.py 执行",
+           cov["CHK-HARB-01"]["status"] == "pass"
+           and cov["CHK-HARB-02"]["status"] == "na" and "harbor_run.py" in cov["CHK-HARB-02"]["na_reason"],
+           f"cov={cov['CHK-HARB-01']},{cov['CHK-HARB-02']}")
+    prof = probe_harbor(pkg, [t])
+    record("正例：形态识别为 task，schema_version/task_name 解析正确",
+           prof["assets"]["my-task"]["form"] == "task"
+           and prof["assets"]["my-task"]["task"]["task_name"] == "acme/my-task",
+           f"profile={json.dumps(prof, ensure_ascii=False)[:200]}")
+
+    # ---- 负例矩阵：缺文件逐项判 P0 CHK-HARB-01
+    def missing_case(name: str, **kw) -> None:
+        p = d / name
+        t2 = _harbor_task(p, "t", **kw)
+        _harbor_asset_json(t2)
+        v2 = _probe(p, d / f"{name}.json", d)
+        f2 = next((f for f in v2["findings"] if f["check_id"] == "CHK-HARB-01"), None)
+        record(f"负例：{name} 判 P0 CHK-HARB-01",
+               f2 is not None and f2["level"] == "P0", f"findings={v2['findings']}")
+
+    missing_case("no-tests", tests=False)
+    missing_case("no-solution", solve=False)
+    missing_case("empty-instruction", instr="")
+    missing_case("bad-toml", toml_body='schema_version = "1.4"\n[task\nname = "x"\n')
+    p = d / "no-env"
+    t3 = _harbor_task(p, "t", env="none")
+    _harbor_asset_json(t3)
+    v3 = _probe(p, d / "no-env.json", d)
+    f3 = next((f for f in v3["findings"] if f["check_id"] == "CHK-HARB-01"), None)
+    record("负例：environment/ 与 docker_image 双缺判 P0", f3 is not None and f3["level"] == "P0",
+           f"findings={v3['findings']}")
+
+    # ---- 显式 dataset：dataset.toml 与 asset.json 在数据集目录上，任务为其子目录
+    p = d / "ds"
+    set_dir = p / "set"
+    _harbor_task(set_dir, "task1")
+    _harbor_task(set_dir, "task2")
+    (set_dir / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/acme/task/set", "asset_type": "task",
+        "name": "set", "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "dataset.toml", "media_type": "text/prs.toml"}]}},
+        ensure_ascii=False), encoding="utf-8")
+    (set_dir / "dataset.toml").write_text(
+        'schema_version = "1.0"\n\n[dataset]\nname = "acme/set"\n\n'
+        '[[tasks]]\nname = "acme/task1"\ndigest = "sha256:' + "0" * 64 + '"\n\n'
+        '[[tasks]]\nname = "acme/task3"\ndigest = "sha256:' + "1" * 64 + '"\n', encoding="utf-8")
+    v4 = _probe(p, d / "ds.json", d)
+    f4 = next((f for f in v4["findings"] if f["check_id"] == "CHK-HARB-03"), None)
+    record("负例：dataset.toml 指向缺失任务判 P1 CHK-HARB-03",
+           f4 is not None and f4["level"] == "P1" and "task3" in json.dumps(f4["detail"], ensure_ascii=False),
+           f"findings={v4['findings']}")
+
+    # ---- 隐式 dataset：一个资产目录下多个任务目录、无 dataset.toml → P2
+    p = d / "implicit"
+    set_dir = p / "set"
+    _harbor_task(set_dir, "task1")
+    _harbor_task(set_dir, "task2")
+    (set_dir / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/acme/task/set", "asset_type": "task",
+        "name": "set", "asset_version": "1.0.0", "spec": {"artifacts": []}},
+        ensure_ascii=False), encoding="utf-8")
+    v5 = _probe(p, d / "implicit.json", d)
+    ids5 = [f["check_id"] for f in v5["findings"]]
+    record("负例：隐式数据集（无 dataset.toml）只记 P2 建议",
+           "CHK-HARB-05" in ids5 and "CHK-HARB-03" not in ids5, f"ids={ids5}")
+
+    # ---- 未登记的 harbor 任务 → CHK-HARB-04（包络缺口）
+    p = d / "unreg"
+    _harbor_task(p, "loose-task")
+    v6 = _probe(p, d / "unreg.json", d)
+    f6 = next((f for f in v6["findings"] if f["check_id"] == "CHK-HARB-04"), None)
+    record("负例：harbor 任务不在任何 asset.json 条目下判 P1 CHK-HARB-04",
+           f6 is not None and f6["level"] == "P1", f"findings={v6['findings']}")
+
+    # ---- asset_type 声明不是 task → CHK-HARB-04
+    p = d / "wrongtype"
+    t7 = _harbor_task(p, "tw")
+    _harbor_asset_json(t7, typ="tool")
+    v7 = _probe(p, d / "wrongtype.json", d)
+    f7 = next((f for f in v7["findings"] if f["check_id"] == "CHK-HARB-04"), None)
+    record("负例：asset.json 声明 asset_type=tool 与 harbor 实体不符判 P1",
+           f7 is not None and "declared_asset_type_not_task" in json.dumps(f7["detail"]),
+           f"findings={v7['findings']}")
+
+    # ---- digest 复算（只作事实，不稳定判）
+    dig = compute_task_digest(t)
+    record("正例：任务目录内容摘要可复算且格式为 sha256:<64hex>",
+           bool(re.match(r"^sha256:[a-f0-9]{64}$", dig)), f"digest={dig[:20]}…")
+
+    # ---- reward 解析：三种真实输出形态
+    job = d / "job1"
+    trial = job / "oracle" / "task__abc"
+    trial.mkdir(parents=True)
+    (trial / "result.json").write_text(json.dumps(
+        {"task_name": "acme/t", "verifier_result": {"rewards": {"reward": 1.0}}}), encoding="utf-8")
+    r1 = parse_job_reward(job / "oracle")
+    record("正例：trial result.json 的 verifier_result.rewards 解析出 reward=1.0",
+           r1["reward"] == 1.0 and "result.json" in str(r1["source"]), f"got={r1}")
+    job2 = d / "job2" / "nop"
+    job2.mkdir(parents=True)
+    (job2 / "results.jsonl").write_text('{"verified_reward": 0}\n', encoding="utf-8")
+    r2 = parse_job_reward(job2)
+    record("正例：results.jsonl 的 verified_reward 解析出 0.0（前向兼容）",
+           r2["reward"] == 0.0, f"got={r2}")
+    job3 = d / "job3" / "oracle"
+    (job3 / "trialx" / "verifier").mkdir(parents=True)
+    (job3 / "trialx" / "verifier" / "reward.txt").write_text("0\n", encoding="utf-8")
+    r3 = parse_job_reward(job3)
+    record("正例：verifier/reward.txt 兜底解析", r3["reward"] == 0.0, f"got={r3}")
+    r4 = parse_job_reward(d / "job-none")
+    record("负例：job 目录不存在时 reward=None 不抛异常", r4["reward"] is None, f"got={r4}")
+
+    # ---- harbor_run.py：无任务 → na 退出 0；任务存在但环境不备 → blocked 退出 3
+    p = d / "notask"
+    p.mkdir(parents=True)
+    run_dir = p / "asset-runs" / "run-20261117-000000"
+    run_dir.mkdir(parents=True)
+    proc = run([str(SCRIPTS / "harbor_run.py"), "--package", str(p), "--skip-lint"], d)
+    rep = json.loads((run_dir / "harbor-run-report.json").read_text(encoding="utf-8"))
+    record("正例：包内无 harbor 任务时 verdict=not_applicable 且退出 0",
+           proc.returncode == 0 and rep["verdict"] == "not_applicable_no_harbor_tasks",
+           f"rc={proc.returncode} verdict={rep['verdict']}")
+
+    p = d / "blocked"
+    t8 = _harbor_task(p, "t")
+    _harbor_asset_json(t8)
+    run_dir = p / "asset-runs" / "run-20261117-000001"
+    run_dir.mkdir(parents=True)
+    proc = run([str(SCRIPTS / "harbor_run.py"), "--package", str(p), "--skip-lint"], d,
+               env_extra={"PATH": "/usr/bin:/bin", "ACI_ASSET_VERIFY_AUTO_INSTALL": "0"})
+    rep = json.loads((run_dir / "harbor-run-report.json").read_text(encoding="utf-8"))
+    blocked_reasons = {b["status"] for b in rep.get("blocked_tasks", [])}
+    record("正例：docker/harbor 不备时全部任务记 blocked（不是 na、不是 fail）且退出 3",
+           proc.returncode == 3 and rep["verdict"] == "blocked" and len(rep["blocked_tasks"]) == 1
+           and blocked_reasons <= {"blocked_docker", "blocked_missing_harbor"},
+           f"rc={proc.returncode} verdict={rep['verdict']} blocked={blocked_reasons}")
+
+    # ---- case-minimums：task 全量 + 负例要求
+    mins = json.loads((SKILL / "assets" / "case-minimums.json").read_text(encoding="utf-8"))
+    record("正例：case-minimums 给 task 规定 nop 负例（negative_expected=1）",
+           (mins["require_kinds"].get("task") or {}).get("negative_expected") == 1
+           and "全量" in mins["by_type"]["task"]["why"], f"task={mins['by_type']['task']}")
+
+    # ---- audit-checks：harbor 检查项已入清单且级别正确
+    ac = json.loads((SKILL / "assets" / "audit-checks.json").read_text(encoding="utf-8"))
+    lv = {c["id"]: c["level"] for c in ac["checks"] if c["id"].startswith("CHK-HARB")}
+    record("正例：audit-checks 含 8 条 CHK-HARB（01/02=P0，03/04/07=P1，05/06/08=P2）",
+           lv.get("CHK-HARB-01") == "P0" and lv.get("CHK-HARB-02") == "P0"
+           and lv.get("CHK-HARB-03") == "P1" and lv.get("CHK-HARB-04") == "P1"
+           and lv.get("CHK-HARB-05") == "P2" and lv.get("CHK-HARB-06") == "P2"
+           and lv.get("CHK-HARB-07") == "P1" and lv.get("CHK-HARB-08") == "P2", f"levels={lv}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -1269,7 +1481,7 @@ def main() -> int:
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
                t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id, t13_mount_external, t14_mounted_not_checked,
-               t15_skill_spec, t16_skill_agent_cli, t17_reproducible):
+               t15_skill_spec, t16_skill_agent_cli, t17_reproducible, t18_harbor):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

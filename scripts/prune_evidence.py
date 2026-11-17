@@ -17,6 +17,9 @@
   * 任意名为 `work` / `_prepared` / `refwork` / `data-offline` / `data-all` 的目录
     （逐 case 工作目录、现制真值、以及 prepare_data.py 可重建的数据目录）
   * `deployment/probes/*/out/`（探针输出；其内容已进 probe.json）
+  * `harbor/<任务>/<oracle|nop>/` 内除白名单（result.json / job.log / lock.json /
+    config.json / verifier/reward.* / verifier/test-stdout.txt）外的 trial 产物
+    （agent 产物、容器快照等，可由 `harbor run` 重跑复现）
   * `registration/` 之外的大体积实体文件：.tif .tiff .csv .npz .npy .shp .dbf .shx .prj .cpg .gpkg
     .zip .png .jpg .jpeg .pdf .h5 .pt .pkl .joblib .xls .xlsx（xlsx 指非 registration 的同名产物）
 
@@ -52,6 +55,12 @@ BULK_SUFFIX = {'.tif', '.tiff', '.csv', '.npz', '.npy', '.shp', '.dbf', '.shx', 
                '.zip', '.png', '.jpg', '.jpeg', '.pdf', '.h5', '.pt', '.pkl', '.joblib', '.xls',
                '.tif.gz', '.tar', '.gz'}
 NEVER_PRUNE_DIRS = ('registration', 'scripts', 'refs')   # refs/ 是冻结的期望值目录，整体保留（含 .npy）
+# harbor job 目录（harbor/<任务>/<oracle|nop>/）里保留的证据白名单；其余（trial 工作目录、
+# agent 产物、容器快照）都可由 `harbor run` 重跑复现
+HARBOR_JOB_AGENTS = ('oracle', 'nop')
+HARBOR_KEEP = {Path('result.json'), Path('job.log'), Path('lock.json'), Path('config.json'),
+               Path('verifier/reward.txt'), Path('verifier/reward.json'),
+               Path('verifier/test-stdout.txt')}
 
 
 def fmt(n: int) -> str:
@@ -103,6 +112,23 @@ def collect(run: Path, keep_work: bool, dry_run: bool) -> tuple[list[dict], int]
         pruned.append({'path': str(probe_out.relative_to(run)), 'kind': 'probe_out', 'bytes': b})
         pruned_bytes += b
         covered.append(probe_out)
+    for job in run.rglob('*'):
+        if not (job.is_dir() and job.name in HARBOR_JOB_AGENTS
+                and 'harbor' in job.relative_to(run).parts):
+            continue
+        if any(job.is_relative_to(c) for c in covered):
+            continue
+        b = 0
+        for f in sorted(job.rglob('*')):
+            if not f.is_file() or any(f.is_relative_to(c) for c in covered):
+                continue
+            rel = f.relative_to(job)
+            if rel in HARBOR_KEEP:
+                continue
+            b += f.stat().st_size
+            pruned.append({'path': str(f.relative_to(run)), 'kind': 'harbor_trial', 'bytes': f.stat().st_size})
+            covered.append(f)
+        pruned_bytes += b
     for f in run.rglob('*'):
         if not f.is_file():
             continue

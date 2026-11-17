@@ -233,3 +233,13 @@ python scripts/prune_evidence.py --run <asset-runs>/<run_id>
 ```
 
 对照写法：通用后端与 Sage 的用例数、通过数、失败用例并列一行即可；**不要**把两边结果混算成一个通过率。
+
+## harbor 任务包的用例口径（task@harbor）
+
+harbor 任务包（含 `task.toml` / `dataset.toml` 的资产）不套用上面的通用用例协议，按以下口径执行与记账：
+
+* **一个 task = 一条用例**，用例名取 `[task].name`（dataset 里逐任务）；用例内容是**两条 trial**：`harbor run -a oracle`（注入 solution，期望 reward=1）与 `-a nop`（不注入，期望 reward=0）。两条都符合 → `validation_status: pass`；任一不符 → `fail`（P0，CHK-HARB-02，附两个 reward 与证据路径）。
+* **全量执行**：dataset 里每个任务都要跑，不允许抽样；通过率分母 = 包内任务总数。跑不了的任务（docker/harbor 缺失、声明 windows/ GPUs、`${VAR}` 缺失）记 `execution_status: blocked` 并写明原因，**不计入分母且在报告显式列出**——blocked 不是 na（检查适用，是环境干不了），也不是 fail（没有证据判资产有罪）。
+* **comparison.json 记录**：每任务一行 `oracle_reward` / `nop_reward` / 判定 / 耗时 / 镜像 digest；reward 只从 harbor job 输出解析，不手工构造。
+* **覆盖度**：按 `case-minimums.json` 的 task 行——每任务含 nop 负例（`negative_expected=1` 天然满足），低于「任务全数执行」即在报告写「覆盖不足」。
+* **Sage 附加测试不适用**：oracle/nop 是确定性伪 agent，验证不依赖任何模型；报告 Sage 小节写「不适用：harbor oracle/nop 确定性验证」。verifier 内部用 LLM 打分时只在 P2 提示 reward 可能非确定，不触发 Sage。

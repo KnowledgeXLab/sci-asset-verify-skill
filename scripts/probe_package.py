@@ -44,6 +44,12 @@ except Exception:  # noqa: BLE001
     def _stamp(payload):
         return payload
 
+try:
+    from _harbor import probe_harbor, static_issues
+except Exception:  # noqa: BLE001
+    probe_harbor = None
+    static_issues = None
+
 
 def load(p: Path):
     try:
@@ -254,7 +260,7 @@ def checks_of(root: Path) -> dict:
     metas = {}
     for d in assets:
         metas[d.name] = load(d / 'asset.json') or {}
-    return {
+    checks = {
         'package_summary': probe_package(root, assets),
         'governance_profile': probe_governance(metas),
         'lifecycle_profile': probe_lifecycle(metas),
@@ -264,7 +270,11 @@ def checks_of(root: Path) -> dict:
         'external_refs_profile': probe_external_refs(assets),
         'tool_contract_profile': probe_tool_contract(assets, metas),
         'data_declaration_profile': probe_data_declarations(assets, metas),
+        'harbor_profile': probe_harbor(root, assets) if probe_harbor else {'asset_count': 0, 'assets': {}, 'unregistered_task_dirs': [], 'note': 'harbor 模块缺失'},
     }
+    for name, e in (checks['harbor_profile'].get('assets') or {}).items():
+        e['declared_asset_type'] = (metas.get(name) or {}).get('asset_type')
+    return checks
 
 
 RISKY_LICENSE = ('仅限内部', '仅限项目内部', '禁止再分发', '禁止修改', '不得再分发', 'internal only', 'no redistribution')
@@ -343,6 +353,36 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     if bad_tool:
         add('CHK-TOOL-01', 'tool_contract_profile', bad_tool)
 
+    harbor = checks.get('harbor_profile') or {}
+    harbor_assets = harbor.get('assets') or {}
+    if static_issues and (harbor_assets or harbor.get('unregistered_task_dirs')):
+        iss = static_issues(harbor)
+        if iss['missing_files']:
+            add('CHK-HARB-01', 'harbor_profile', {'missing_files': iss['missing_files']})
+        if iss['dataset_mismatch']:
+            add('CHK-HARB-03', 'harbor_profile', {'dataset_mismatch': iss['dataset_mismatch']})
+        env_probs = {}
+        if iss['unregistered_task_dirs']:
+            env_probs['unregistered_task_dirs'] = iss['unregistered_task_dirs']
+        wrong_type = {name: str(e.get('declared_asset_type')) for name, e in harbor_assets.items()
+                      if e.get('declared_asset_type') != 'task'}
+        if wrong_type:
+            env_probs['declared_asset_type_not_task'] = wrong_type
+        if env_probs:
+            add('CHK-HARB-04', 'harbor_profile', env_probs)
+        if iss['implicit_no_manifest']:
+            add('CHK-HARB-05', 'harbor_profile', {'implicit_datasets': iss['implicit_no_manifest']})
+        llm_hints = {}
+        for name, e in harbor_assets.items():
+            tasks = ([e['task']] if e.get('task') else []) \
+                + list(((e.get('dataset') or {}).get('local_tasks') or {}).values()) \
+                + list((e.get('tasks') or {}).values())
+            hints = sorted({h for t2 in tasks for h in (t2.get('verifier_llm_hints') or [])})
+            if hints:
+                llm_hints[name] = hints
+        if llm_hints:
+            add('CHK-HARB-06', 'harbor_profile', {'verifier_llm_hints': llm_hints})
+
     if skill_incomplete:
         add('CHK-RM-01', 'validate_readme_profile', {'skill_assets_incomplete': skill_incomplete})
 
@@ -352,6 +392,7 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
 
     failed = {f['check_id'] for f in findings}
     dprof = (checks.get('data_declaration_profile') or {}).get('assets') or {}
+    harbor_present = bool(harbor_assets or harbor.get('unregistered_task_dirs'))
     na_rules = {
         'CHK-DATA-01': (any(v.get('has_metadata') for v in dprof.values()),
                         '没有 data 资产声明 metadata.json，无可核对项'),
@@ -365,6 +406,14 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
                         '没有任何资产提供 acceptance.json'),
         'CHK-EXT-01': (bool((checks.get('external_refs_profile') or {}).get('assets')),
                        '没有任何资产声明 external_assets.json'),
+        'CHK-HARB-01': (harbor_present, '包内没有 harbor 任务/数据集资产'),
+        'CHK-HARB-02': (harbor_present, '包内没有 harbor 任务/数据集资产'),
+        'CHK-HARB-03': (any(e.get('form') == 'dataset_explicit' for e in harbor_assets.values()),
+                        '包内没有显式 dataset.toml 数据集'),
+        'CHK-HARB-04': (harbor_present, '包内没有 harbor 任务/数据集资产'),
+        'CHK-HARB-05': (any(e.get('form') == 'dataset_implicit' for e in harbor_assets.values()),
+                        '包内没有隐式数据集（多任务目录且无 dataset.toml）'),
+        'CHK-HARB-06': (harbor_present, '包内没有 harbor 任务/数据集资产'),
     }
     coverage = []
     for c in spec['checks']:
@@ -372,6 +421,10 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
             status, reason = 'fail', ''
         elif c['id'] in na_rules and not na_rules[c['id']][0]:
             status, reason = 'na', na_rules[c['id']][1]
+        elif c['id'] in ('CHK-HARB-02', 'CHK-HARB-07', 'CHK-HARB-08') and c['id'] not in failed:
+            status, reason = 'na', ('oracle/nop 由 harbor_run.py 执行判定（需 docker 与 harbor CLI），'
+                                    '执行后以 harbor-run-report.json 为准' if c['id'] == 'CHK-HARB-02'
+                                    else '由 harbor_run.py 在执行阶段采集（需 harbor CLI）')
         elif c.get('applies_to') not in ('all', None) and not any(
                 str((m or {}).get('asset_type')) == c['applies_to'] for m in metas.values()):
             status, reason = 'na', f"包内没有 {c['applies_to']} 类型资产"
