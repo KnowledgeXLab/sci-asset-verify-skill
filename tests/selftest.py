@@ -1176,89 +1176,64 @@ def t16_skill_agent_cli(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T17 可复现性
 def t17_reproducible(tmp: Path) -> None:
-    print("\n[17/17] probe_package.py — 同一份包多次探测事实恒定、结论固定")
+    print("\n[17/17] probe_package.py — 事实恒定 + P0×4/P1×5 固定判级")
     d = tmp / "t17"
-    pkg = d / "pkg"
-    for slug, typ, life, lic in (("asset-a", "tool", "draft", "仅限内部使用，禁止再分发"),
-                                 ("asset-b", "data", "draft", "仅限内部使用，禁止再分发")):
-        (pkg / slug / "payload").mkdir(parents=True)
-        (pkg / slug / "payload" / "x.csv").write_text("v\n1\n", encoding="utf-8")
-        (pkg / slug / "asset.json").write_text(json.dumps({
-            "asset_id": f"sciasset://2026ZD123456/earth/{typ}/{slug}", "asset_type": typ,
-            "name": slug, "asset_version": "1.0.0", "lifecycle": life,
-            "governance": {"license": lic, "access": "public"},
-            "spec": {"artifacts": [{"uri": "payload/x.csv", "media_type": "text/csv"}]}},
-            ensure_ascii=False), encoding="utf-8")
 
+    # ① 结构不合规 + 资产不完整 + 无验证入口
+    bad_pkg = d / "bad"
+    (bad_pkg / "stray" / "sub").mkdir(parents=True)
+    (bad_pkg / "a1" / "payload").mkdir(parents=True)
+    (bad_pkg / "a1" / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/a1", "asset_type": "data",
+        "name": "a1", "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "payload/missing.csv", "media_type": "text/csv"}]}},
+        ensure_ascii=False), encoding="utf-8")
+    out = d / "bad.json"
     hashes = []
-    out = d / "probe.json"
     for _ in range(2):
-        proc = run([str(SCRIPTS / "probe_package.py"), "--package", str(pkg),
+        proc = run([str(SCRIPTS / "probe_package.py"), "--package", str(bad_pkg),
                     "--evaluate", "--json-out", str(out)], d)
         hashes.append(proc.stdout.split("指纹 ")[-1].strip())
-    record("正例：两次探测的事实指纹相同（确定性）", len(set(hashes)) == 1 and len(hashes[0]) >= 8, f"hashes={hashes}")
+    record("正例：两次探测事实指纹相同（确定性）", len(set(hashes)) == 1 and len(hashes[0]) >= 8, f"hashes={hashes}")
 
-    rep = json.loads(out.read_text(encoding="utf-8"))
-    ids = [f["check_id"] for f in rep["verdict"]["findings"]]
-    levels = {f["check_id"]: f["level"] for f in rep["verdict"]["findings"]}
-    record("正例：结论按固定清单给出——无用例/license 受限判 P1，无包级入口判 P2，lifecycle 不判",
-           "CHK-CASE-01" in ids and levels.get("CHK-LIC-01") == "P1"
-           and levels.get("CHK-SPEC-01") == "P2" and "CHK-LIFE-01" not in ids,
-           f"ids={ids}")
+    rep = json.loads(out.read_text(encoding="utf-8"))["verdict"]
+    ids = {f["check_id"]: f["level"] for f in rep["findings"]}
+    record("正例：非资产目录 → P0-STRUCT；实体缺失 → P0-COMPLETE；无验证入口 → P0-VERIFY",
+           ids.get("P0-STRUCT") == "P0" and ids.get("P0-COMPLETE") == "P0"
+           and ids.get("P0-VERIFY") == "P0", f"ids={ids}")
 
-    out2 = d / "probe2.json"
-    run([str(SCRIPTS / "probe_package.py"), "--package", str(pkg), "--evaluate", "--intent", "review",
-         "--json-out", str(out2)], d)
-    rep2 = json.loads(out2.read_text(encoding="utf-8"))
-    ids2 = [f["check_id"] for f in rep2["verdict"]["findings"]]
-    record("正例：intent=review 时 lifecycle/license 不判缺陷（用途变了，判据跟着变）",
-           "CHK-LIFE-01" not in ids2 and "CHK-LIC-01" not in ids2 and "CHK-CASE-01" in ids2,
-           f"ids={ids2}")
+    cov = {c["check_id"]: c for c in rep["coverage"]}
+    record("正例：覆盖表对不适用项标 na 并写理由（事实类错误需人工）",
+           cov["P1-DOC-FACT"]["status"] == "na" and cov["P1-DOC-FACT"]["na_reason"],
+           f"status={cov['P1-DOC-FACT'].get('status')}")
 
-    # 新式批次：报告里的 P1 必须引用 check_id
-    run_dir = d / "run"
-    run_dir.mkdir()
-    (run_dir / "probe-report.json").write_text('{"verdict": {"findings": []}}', encoding="utf-8")
-    (run_dir / "validation-report.md").write_text(
-        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
-        "### P0 阻断\n\n无\n\n### P1 重要\n\n| 编号 | 问题 |\n|---|---|\n"
-        "| P1-1 | 没写检查项 id |\n| P1-2 | CHK-CASE-01 引用正确 |\n\n"
-        "### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
-        encoding="utf-8")
-    proc = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir / "validation-report.md")], d)
-    blob = (proc.stdout or "") + (proc.stderr or "")
-    record("提示：新式批次里 P1 行未引用 check_id 时报告警；P2 自由条目不告警",
-           "check_id" in blob and "没写检查项 id" in blob and "引用正确" not in blob
-           and "自由建议" not in blob, f"rc={proc.returncode}")
-
-    # 覆盖表：na 必须带理由；数据资产声明与实体不符要判 P1
-    data_pkg = d / "data_pkg"
-    (data_pkg / "d1" / "payload").mkdir(parents=True)
-    (data_pkg / "d1" / "payload" / "p.csv").write_text("x,y,value\n0,0,1\n1,0,2\n", encoding="utf-8")
-    (data_pkg / "d1" / "metadata.json").write_text(json.dumps(
-        {"records": 3, "columns": ["x", "y", "value"], "bbox": {"x": [0, 1], "y": [0, 0]},
-         "formula": {"expr": "x + y + i", "i_base": 1, "tolerance": 1e-9}}, ensure_ascii=False),
-        encoding="utf-8")
-    (data_pkg / "d1" / "validate").mkdir()
-    (data_pkg / "d1" / "validate" / "cases.json").write_text(
+    # ② 合规包：结构、实体、入口齐备
+    good = d / "good"
+    (good / "b1" / "validate").mkdir(parents=True)
+    (good / "b1" / "payload").write_text("x,y\n0,0\n", encoding="utf-8") if False else None
+    (good / "b1" / "payload.csv").write_text("x,y\n0,0\n", encoding="utf-8")
+    (good / "b1" / "validate" / "cases.json").write_text(
         json.dumps({"cases": [{"id": "C01"}]}, ensure_ascii=False), encoding="utf-8")
-    (data_pkg / "d1" / "asset.json").write_text(json.dumps({
-        "asset_id": "sciasset://2026ZD123456/earth/data/d1", "asset_type": "data",
-        "name": "d1", "asset_version": "1.0.0",
-        "spec": {"artifacts": [{"uri": "payload/p.csv", "media_type": "text/csv"}]}},
+    (good / "b1" / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/b1", "asset_type": "data",
+        "name": "b1", "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "payload.csv", "media_type": "text/csv"}]}},
         ensure_ascii=False), encoding="utf-8")
-    out3 = d / "data_probe.json"
-    run([str(SCRIPTS / "probe_package.py"), "--package", str(data_pkg), "--evaluate",
-         "--json-out", str(out3)], d)
+    out2 = d / "good.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(good), "--evaluate", "--json-out", str(out2)], d)
+    rep2 = json.loads(out2.read_text(encoding="utf-8"))["verdict"]
+    record("正例：合规包 P0/P1 均为 0",
+           rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
+           f"summary={rep2['summary']}")
+
+    # ③ 文档引用不存在脚本 → P1-DOC-REF
+    (good / "b1" / "readme.md").write_text("run `scripts/run_all.py` first\n", encoding="utf-8")
+    out3 = d / "doc.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(good), "--evaluate", "--json-out", str(out3)], d)
     rep3 = json.loads(out3.read_text(encoding="utf-8"))["verdict"]
-    ids3 = [f["check_id"] for f in rep3["findings"]]
-    cov3 = {c["check_id"]: c for c in rep3["coverage"]}
-    record("正例：声明与实体不符（records 声明 3 实为 2）判 CHK-DATA-01；公式复算不符判 CHK-DATA-02",
-           "CHK-DATA-01" in ids3 and "CHK-DATA-02" in ids3, f"ids={ids3}")
-    record("正例：覆盖表把不适用项标 na 并写理由（无工具/无 skill/无 acceptance）",
-           cov3["CHK-TOOL-01"]["status"] == "na" and cov3["CHK-TOOL-01"]["na_reason"]
-           and cov3["CHK-RM-01"]["status"] == "na" and cov3["CHK-CASE-02"]["status"] == "na",
-           f"cov={ {k: v['status'] for k, v in cov3.items()} }")
+    ids3 = {f["check_id"]: f["level"] for f in rep3["findings"]}
+    record("正例：文档指向不存在的脚本 → P1-DOC-REF（P1 不是 P0）",
+           ids3.get("P1-DOC-REF") == "P1" and "P0-DOC" not in ids3, f"ids={ids3}")
 
 
 # --------------------------------------------------------------------------- main

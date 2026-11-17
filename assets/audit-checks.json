@@ -1,111 +1,48 @@
 {
-  "schema_version": "2.0.0",
-  "note": "分层检查清单：L1 通用（与包无关，必跑）、L2 按资产类型（集合由类型决定，不由执行者决定）、L3 由资产自己的声明派生（声明什么就验什么）。**P0/P1 结论只能引用这里的 check_id**；P2 是「建议」，允许清单外的自由条目（原 OBS 全部并入 P2），但每条仍要写清现象与证据。",
-  "intent_options": [
-    "delivery",
-    "review"
-  ],
+  "schema_version": "3.0.0",
+  "note": "固定检查清单（P0 判定性 / P1 判定性）。P0/P1 结论只能引用这里的 check_id；P2 是建议，不限制来源。",
+  "intent_options": ["delivery", "review"],
   "severity_rules": {
-    "P0": "资产无法运行 / 无法复现 / 无法验证（实体缺失、摘要不符、入口跑不起来）",
-    "P1": "声明与实体或契约不一致，会让下游误用或验收形同虚设（license 与交付用途冲突、无用例可验、声明值与实体不符、错误码缺洞、外部引用不合规）",
-    "P2": "建议级：不影响可用性的改进项——文档、词表、风格、占位信息，以及清单外观察到但不足以判定为缺陷的现象（原 OBS 并入此级）"
+    "P0": "资产包结构不合规、包络不合规、资产不完整（含引用包外/绝对路径）、无可执行验证入口或验证不通过——任一出现即不可交付",
+    "P1": "文档/命令指向不存在的文件、版本口径不一致、声明与实现或实体不符、文档事实/算术错误、验证说明与实际用例不一致",
+    "P2": "建议级：文档措辞、风格、占位信息，以及清单外观察到的其他现象"
   },
-  "layers": {
-    "L1": "通用层：任何资产包都适用，必须全跑",
-    "L2": "类型层：按 asset_type 展开，类型在表内就不会漏",
-    "L3": "声明驱动层：扫描资产自带声明（metadata/acceptance/tool.json/cases.json…），凡声明必验",
-    "L4": "自由探索：允许，但只记 OBS（观察），必须给复现命令，不计 P0/P1/P2；反复出现的 OBS 才晋升为 L2/L3 检查项"
-  },
+  "exclusions": [
+    "不校验 governance 内容（license/access/risk_level/privacy/usage_constraints 等发布口径字段的取值）",
+    "不校验资产包根目录下的**一级文件**（catalog.json / README / 交付说明 / SHA256SUMS 等）",
+    "不校验 spec.asset_protocol 的字段内容",
+    "已存在的排除项：挂载进来的外部资产副本、asset-runs/、.git、__pycache__"
+  ],
+  "rules": [
+    "P0 的「验证不通过」只以资产自带用例/门槛的结论为准；核验方补建用例发现的问题最高算 P1"
+  ],
   "checks": [
-    {
-      "id": "CHK-ART-01",
-      "layer": "L1",
-      "level": "P0",
-      "name": "实体完整性",
-      "criterion": "每个 spec.artifacts[].uri 指向的文件存在，且 size_bytes / sha256 与声明一致（有声明时）",
-      "applies_to": "all",
-      "decide": "artifacts_mismatch"
-    },
-    {
-      "id": "CHK-CASE-01",
-      "layer": "L1",
-      "level": "P1",
-      "name": "可验证性：至少有用例",
-      "criterion": "每个资产自带用例（validate/cases.json 或等价验收脚本/用例说明）；没有用例的资产无法验收",
-      "applies_to": "all",
-      "decide": "assets_without_cases"
-    },
-    {
-      "id": "CHK-EXT-01",
-      "layer": "L1",
-      "level": "P1",
-      "name": "外部引用声明合规",
-      "criterion": "external_assets.json 的 target_path 必须是相对资产目录的 POSIX 路径，不得绝对路径、不得含 ..",
-      "applies_to": "all",
-      "decide": "invalid_target_path"
-    },
-    {
-      "id": "CHK-SPEC-01",
-      "layer": "L1",
-      "level": "P2",
-      "name": "包级入口说明",
-      "criterion": "包根应有 catalog.json 或 README/交付说明",
-      "applies_to": "all",
-      "decide": "no_package_entry"
-    },
-    {
-      "id": "CHK-DATA-01",
-      "layer": "L2",
-      "level": "P1",
-      "name": "数据声明与实体一致",
-      "criterion": "data 资产 metadata.json 声明的记录数/列名/空间范围/网格尺寸必须与实体一致",
-      "applies_to": "data",
-      "decide": "data_declaration_mismatch"
-    },
-    {
-      "id": "CHK-DATA-02",
-      "layer": "L3",
-      "level": "P1",
-      "name": "声明的可复算公式",
-      "criterion": "metadata.json 声明了 formula（expr + tolerance）时，必须能按声明逐行复算且偏差在容差内",
-      "applies_to": "data",
-      "decide": "formula_recompute_failed"
-    },
-    {
-      "id": "CHK-TOOL-01",
-      "layer": "L2",
-      "level": "P1",
-      "name": "工具错误契约",
-      "criterion": "实现里返回的 error 名必须都在声明（tool.json 或 readme）里出现过",
-      "applies_to": "tool",
-      "decide": "impl_error_names_not_declared"
-    },
-    {
-      "id": "CHK-RM-01",
-      "layer": "L2",
-      "level": "P1",
-      "name": "skill 类资产验证说明",
-      "criterion": "skill 资产的 validate/readme.md 必须含 Agent（harness+model）、测试任务、通过门槛三节",
-      "applies_to": "skill",
-      "decide": "skill_readme_incomplete"
-    },
-    {
-      "id": "CHK-CASE-02",
-      "layer": "L3",
-      "level": "P1",
-      "name": "声明的验收输入必须存在",
-      "criterion": "acceptance.json 等验收声明里引用的包内路径必须真实存在",
-      "applies_to": "all",
-      "decide": "acceptance_missing_paths"
-    },
-    {
-      "id": "CHK-LIC-01",
-      "layer": "L0",
-      "level": "P1",
-      "name": "license 与交付用途一致",
-      "criterion": "intent=delivery 时 governance.license 不得全部是「仅限内部/禁止再分发」类受限文本",
-      "applies_to": "all",
-      "decide": "license_restricted_on_delivery"
-    }
+    {"id": "P0-STRUCT", "level": "P0", "name": "包结构合规",
+     "criterion": "包根下的子目录只能是「资产目录（含 asset.json）」或 asset-runs/；出现其他目录即不合规",
+     "decide": "structure_violation"},
+    {"id": "P0-ENVELOPE", "level": "P0", "name": "包络合规",
+     "criterion": "任一资产的 asset.json / external_assets.json 等描述文件必须符合规范（结构、字段名、asset_id 四段格式、枚举取值）",
+     "decide": "envelope_errors"},
+    {"id": "P0-COMPLETE", "level": "P0", "name": "资产完整性",
+     "criterion": "资产声明的实体必须存在且摘要/大小一致；不得自指；不得引用包外路径（../、绝对路径、file://、指向包外的软链）",
+     "decide": "completeness_violation"},
+    {"id": "P0-VERIFY", "level": "P0", "name": "可执行验证入口与结论",
+     "criterion": "每个资产都要有可执行的验证入口（自带用例/验收脚本/验证说明）；入口执行结论必须通过（以资产自带门槛为准）",
+     "decide": "verify_entry_missing_or_failed"},
+    {"id": "P1-DOC-REF", "level": "P1", "name": "文档/命令指向不存在的文件或目录",
+     "criterion": "包内文档（README/SKILL.md/usage/说明等）里出现的包内路径必须真实存在",
+     "decide": "doc_ref_missing"},
+    {"id": "P1-VERSION", "level": "P1", "name": "版本口径一致",
+     "criterion": "asset.json 的 asset_version 与包内其他声明（用例 cases.json、acceptance、文档标注）必须一致",
+     "decide": "version_mismatch"},
+    {"id": "P1-DECL", "level": "P1", "name": "声明与实现/实体一致",
+     "criterion": "文档或包络声明为入口/实现/数据的对象必须真的存在且与实体一致（含 metadata 声明的记录数、列名、空间范围、网格尺寸、可复算公式）",
+     "decide": "declaration_mismatch"},
+    {"id": "P1-DOC-FACT", "level": "P1", "name": "文档事实/算术错误",
+     "criterion": "文档中的计数、比例、版本号等事实性表述必须与包内事实一致（如「19 项中 5 项需数据，其余 17 项自包含」实为 14）",
+     "decide": "manual"},
+    {"id": "P1-VERIFY-DOC", "level": "P1", "name": "验证说明与实际用例一致",
+     "criterion": "验证说明里显式声明的用例数量/用例编号必须与 validate/cases.json 一致（不要求逐条列出，但声明了就不能对不上）",
+     "decide": "verify_doc_mismatch"}
   ]
 }

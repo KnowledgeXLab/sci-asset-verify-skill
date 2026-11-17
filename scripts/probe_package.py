@@ -94,7 +94,10 @@ def probe_artifacts(root: Path, assets: list, metas: dict) -> dict:
             uri = str((a or {}).get('uri') or '')
             if not uri or re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', uri):
                 continue
+            from urllib.parse import unquote
             f = (d / uri)
+            if not f.is_file():
+                f = (d / unquote(uri))
             checked += 1
             if not f.is_file():
                 missing.append(f'{d.name}:{uri}')
@@ -249,6 +252,150 @@ def probe_data_declarations(assets: list, metas: dict) -> dict:
     return {'assets': dict(sorted(rows.items()))}
 
 
+def probe_structure(root: Path, assets: list) -> dict:
+    """包根子目录只能是资产目录（含 asset.json）或 asset-runs/。"""
+    bad = []
+    for d in sorted(x for x in root.iterdir() if x.is_dir()):
+        if d.name in ('asset-runs', '.git', '__pycache__') or d.name.startswith('.'):
+            continue
+        if not (d / 'asset.json').is_file():
+            bad.append(d.name)
+    return {'asset_dir_count': len(assets), 'non_asset_dirs': bad}
+
+
+def probe_envelope(root: Path) -> dict:
+    """调用仓库自带 validate_envelope.py 做包络校验，拿 error 明细（口径与机检完全一致）。"""
+    import subprocess
+    script = Path(__file__).resolve().parent / 'validate_envelope.py'
+    out = root.parent / '.probe-envelope.json'
+    try:
+        proc = subprocess.run([sys.executable, str(script), str(root), '--json-out', str(out)],
+                              capture_output=True, text=True)
+        data = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {}
+        out.unlink(missing_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return {'error': f'包络校验调用失败：{exc}', 'errors': []}
+    errs = []
+    for a in (data.get('assets') or []):
+        for e in (a.get('errors') or []):
+            errs.append({'asset': a.get('asset_dir'), 'where': e.get('where'), 'message': e.get('message')})
+    return {'errors': errs, 'summary': data.get('summary') or {}, 'rc': proc.returncode}
+
+
+def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
+    """声明引用包外路径（../、绝对、file://）与指向包外的软链。"""
+    outside, links = [], []
+    for d in assets:
+        base = d.resolve()
+        for i, a in enumerate((metas[d.name].get('spec') or {}).get('artifacts') or []):
+            uri = str((a or {}).get('uri') or '')
+            if not uri or re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', uri) and not uri.startswith('file://'):
+                continue
+            if uri.startswith('file://'):
+                outside.append(f'{d.name}:spec.artifacts[{i}].uri={uri}')
+                continue
+            target = (d / uri).resolve()
+            if base not in target.parents and target != base:
+                outside.append(f'{d.name}:spec.artifacts[{i}].uri={uri}')
+    for d in assets:
+        for p in d.rglob('*'):
+            if not p.is_symlink():
+                continue
+            try:
+                tgt = p.resolve()
+            except Exception:  # noqa: BLE001
+                continue
+            if d.resolve() not in tgt.parents and tgt != d.resolve():
+                links.append(f'{d.name}:{p.relative_to(d)}')
+    return {'outside_refs': sorted(outside), 'escaping_symlinks': sorted(links)}
+
+
+def probe_doc_refs(root: Path, assets: list) -> dict:
+    """包内文档里出现的包内路径是否存在（只看形如 a/b.ext 的相对路径 token）。"""
+    # 只认 ASCII 路径 token，避免把中文说明和路径粘连（如「119条预测与expected/x.tsv」）
+    token = re.compile(r'(?<![A-Za-z0-9_./-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.'
+                       r'(?:py|sh|json|jsonl|md|ya?ml))')   # 只看脚本/文档/契约，数据样例文件不判
+    missing = {}
+    for d in assets:
+        bad = set()
+        for f in list(d.rglob('*.md')):
+            text = f.read_text(encoding='utf-8', errors='replace')
+            for tok in token.findall(text):
+                if tok.startswith(('http', 'validate/cases')) or '<' in tok:
+                    continue
+                cands = [(f.parent / tok), (d / tok), (root / tok)]
+                if any(c.exists() for c in cands):
+                    continue
+                bad.add(tok)
+        if bad:
+            missing[d.name] = sorted(bad)[:10]
+    return {'missing': dict(sorted(missing.items()))}
+
+
+def probe_version_consistency(assets: list, metas: dict) -> dict:
+    bad = {}
+    for d in assets:
+        ver = str((metas[d.name] or {}).get('asset_version') or '')
+        if not ver:
+            continue
+        seen = set()
+        for f in list(d.rglob('cases.json')) + list(d.rglob('acceptance.json')):
+            doc = load(f) or {}
+            v = str(doc.get('asset_version') or '')
+            if v and v != ver:
+                seen.add(f'{f.relative_to(d)}={v}')
+        if seen:
+            bad[d.name] = {'declared': ver, 'others': sorted(seen)}
+    return {'mismatch': dict(sorted(bad.items()))}
+
+
+def probe_verify_docs(assets: list) -> dict:
+    """验证说明里显式声明的用例数量/编号 vs validate/cases.json。"""
+    bad = {}
+    for d in assets:
+        cases = load(d / 'validate' / 'cases.json') or {}
+        ids = [str(c.get('id') or '') for c in (cases.get('cases') or [])]
+        if not ids:
+            continue
+        readme = d / 'validate' / 'readme.md'
+        text = readme.read_text(encoding='utf-8', errors='replace') if readme.is_file() else ''
+        if not text:
+            continue
+        issues = []
+        m = re.search(r'(\d+)\s*组', text)
+        if m and int(m.group(1)) != len(ids):
+            issues.append(f'说明写 {m.group(1)} 组，实际 {len(ids)} 组')
+        mentioned = set(re.findall(r'\b[A-Za-z0-9_-]*(?:C\d{2}|case[-_]\d+|TC[-_]?\d+)[A-Za-z0-9_-]*', text))
+        ghost = sorted(x for x in mentioned if x not in ids and not any(x in i for i in ids))
+        if ghost:
+            issues.append('说明提到的用例在 cases.json 中不存在：' + ', '.join(ghost[:5]))
+        if issues:
+            bad[d.name] = issues
+    return {'mismatch': dict(sorted(bad.items()))}
+
+
+def probe_verify_entry(assets: list) -> dict:
+    """可执行验证入口：用例清单 / 验收声明 / 可执行脚本（.sh/.py）/ tests 目录。"""
+    rows = {}
+    for d in assets:
+        cases = [str(p.relative_to(d)) for p in d.rglob('cases.json')]
+        scripts = [str(p.relative_to(d)) for p in d.rglob('*.sh') if (d / p).is_file()]
+        runners = [str(p.relative_to(d)) for p in d.rglob('run*.py')]
+        tests_py = [str(p.relative_to(d)) for p in d.rglob('test_*.py')]
+        tests_dir = any(x.is_dir() and x.name in ('tests', 'test') for x in d.rglob('*'))
+        rows[d.name] = {'cases_json': sorted(cases)[:3],
+                        'acceptance_json': (d / 'acceptance.json').is_file(),
+                        'shell_scripts': sorted(scripts)[:3],
+                        'runner_py': sorted(runners)[:3],
+                        'unit_tests': sorted(tests_py)[:3], 'tests_dir': tests_dir,
+                        'validate_readme': (d / 'validate' / 'readme.md').is_file()}
+    def ok(v):
+        return bool(v['cases_json'] or v['acceptance_json'] or v['shell_scripts']
+                    or v['runner_py'] or v['unit_tests'] or v['tests_dir'])
+    return {'assets': dict(sorted(rows.items())),
+            'without_entry': sorted(k for k, v in rows.items() if not ok(v))}
+
+
 def checks_of(root: Path) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
@@ -264,6 +411,13 @@ def checks_of(root: Path) -> dict:
         'external_refs_profile': probe_external_refs(assets),
         'tool_contract_profile': probe_tool_contract(assets, metas),
         'data_declaration_profile': probe_data_declarations(assets, metas),
+        'structure_profile': probe_structure(root, assets),
+        'envelope_profile': probe_envelope(root),
+        'outside_refs_profile': probe_outside_refs(root, assets, metas),
+        'doc_refs_profile': probe_doc_refs(root, assets),
+        'version_profile': probe_version_consistency(assets, metas),
+        'verify_doc_profile': probe_verify_docs(assets),
+        'verify_entry_profile': probe_verify_entry(assets),
     }
 
 
@@ -272,99 +426,83 @@ CHECKLIST = Path(__file__).resolve().parents[1] / 'assets' / 'audit-checks.json'
 
 
 def evaluate(checks: dict, intent: str = 'delivery') -> dict:
-    """按固定检查清单把事实映射成**固定严重度**的结论（同一份包结果恒定）。"""
+    """按固定清单（P0×4 / P1×5）把事实映射成结论。严重度写死，执行者不得升降。"""
     try:
         spec = json.loads(CHECKLIST.read_text(encoding='utf-8'))
     except Exception:  # noqa: BLE001
         return {'error': '读不到 assets/audit-checks.json', 'findings': []}
     checks = dict(checks)
-    metas = {k: {'asset_type': t} for t, n in ((checks.get('package_summary') or {}).get('asset_types') or {}).items()
+    metas = {k: {'asset_type': t}
+             for t, n in ((checks.get('package_summary') or {}).get('asset_types') or {}).items()
              for k in [f'{t}#{i}' for i in range(n)]}
-    # skill 类资产的说明文档完备性（只对 skill 资产判）
-    rmp = checks.get('validate_readme_profile', {})
-    cases = checks.get('cases_profile', {}).get('assets', {})
-    skill_incomplete = sorted(
-        name for name, info in (rmp.get('assets') or {}).items()
-        if info.get('is_skill') and not (info.get('present') and info.get('has_agent_section')
-                                        and info.get('has_task_section') and info.get('has_gate_section')))
     findings = []
 
-    def add(cid, fact, detail):
+    def add(cid, detail):
         meta = next((c for c in spec['checks'] if c['id'] == cid), {})
         findings.append({'check_id': cid, 'level': meta.get('level'), 'name': meta.get('name'),
                          'status': 'fail', 'detail': detail, 'criterion': meta.get('criterion')})
 
+    # ---------- P0 ----------
+    st = checks.get('structure_profile') or {}
+    if st.get('non_asset_dirs'):
+        add('P0-STRUCT', {'non_asset_dirs': st['non_asset_dirs'],
+                          'asset_dir_count': st.get('asset_dir_count')})
+
+    env = checks.get('envelope_profile') or {}
+    if env.get('errors'):
+        add('P0-ENVELOPE', {'errors': env['errors'][:20], 'error_count': len(env['errors'])})
+
     art = checks.get('artifact_integrity') or {}
-    bad_art = {'missing': art.get('missing') or [], 'size_mismatch': art.get('size_mismatch') or [],
-               'sha_mismatch': art.get('sha_mismatch') or []}
-    if any(bad_art.values()):
-        add('CHK-ART-01', 'artifact_integrity', bad_art)
+    out_refs = checks.get('outside_refs_profile') or {}
+    complete_detail = {k: art.get(k) for k in ('missing', 'size_mismatch', 'sha_mismatch') if art.get(k)}
+    if out_refs.get('outside_refs'):
+        complete_detail['outside_refs'] = out_refs['outside_refs']
+    if out_refs.get('escaping_symlinks'):
+        complete_detail['escaping_symlinks'] = out_refs['escaping_symlinks']
+    if complete_detail:
+        add('P0-COMPLETE', complete_detail)
 
-    no_cases = (checks.get('cases_profile') or {}).get('assets_without_cases') or []
-    if no_cases:
-        add('CHK-CASE-01', 'cases_profile', {'assets_without_cases': no_cases})
+    ventry = checks.get('verify_entry_profile') or {}
+    if ventry.get('without_entry'):
+        add('P0-VERIFY', {'without_entry': ventry['without_entry']})
 
-    missing_acc = {k: v['acceptance_missing_paths'] for k, v in cases.items() if v.get('acceptance_missing_paths')}
-    if missing_acc:
-        add('CHK-CASE-02', 'cases_profile', missing_acc)
+    # ---------- P1 ----------
+    docs = (checks.get('doc_refs_profile') or {}).get('missing') or {}
+    if docs:
+        add('P1-DOC-REF', docs)
 
-    lic = (checks.get('governance_profile') or {}).get('license') or {}
-    if intent == 'delivery' and lic and all(any(k in text for k in RISKY_LICENSE) for text in lic):
-        add('CHK-LIC-01', 'governance_profile', {'license': lic, 'intent': intent})
+    ver = (checks.get('version_profile') or {}).get('mismatch') or {}
+    if ver:
+        add('P1-VERSION', ver)
 
-    ext = (checks.get('external_refs_profile') or {}).get('assets') or {}
-    bad_ext = {k: v['invalid_target_path'] for k, v in ext.items() if v.get('invalid_target_path')}
-    if bad_ext:
-        add('CHK-EXT-01', 'external_refs_profile', bad_ext)
-
-    data = (checks.get('data_declaration_profile') or {}).get('assets') or {}
-    bad_decl = {}
-    for name, info in data.items():
+    # 声明与实体/实现不符：数据声明数值不一致
+    decl = {}
+    for name, info in ((checks.get('data_declaration_profile') or {}).get('assets') or {}).items():
         issues = {k: info.get(k) for k in ('records_mismatch', 'columns_mismatch', 'bbox_mismatch', 'grid_incomplete')
                   if info.get(k)}
-        if issues:
-            bad_decl[name] = issues
-    if bad_decl:
-        add('CHK-DATA-01', 'data_declaration_profile', bad_decl)
-
-    bad_formula = {}
-    for name, info in data.items():
         dev, tol = info.get('formula_max_dev'), info.get('formula_tolerance')
         if info.get('formula_error'):
-            bad_formula[name] = {'formula_error': info['formula_error']}
+            issues['formula_error'] = info['formula_error']
         elif dev is not None and isinstance(tol, (int, float)) and dev > tol:
-            bad_formula[name] = {'max_dev': dev, 'tolerance': tol}
-    if bad_formula:
-        add('CHK-DATA-02', 'data_declaration_profile', bad_formula)
+            issues['formula_out_of_tolerance'] = {'max_dev': dev, 'tolerance': tol}
+        if issues:
+            decl[name] = issues
+    if decl:
+        add('P1-DECL', decl)
 
-    tool = (checks.get('tool_contract_profile') or {}).get('assets') or {}
-    bad_tool = {k: v['impl_error_names_not_declared'] for k, v in tool.items()
-                if v.get('impl_error_names_not_declared')}
-    if bad_tool:
-        add('CHK-TOOL-01', 'tool_contract_profile', bad_tool)
+    vdoc = (checks.get('verify_doc_profile') or {}).get('mismatch') or {}
+    if vdoc:
+        add('P1-VERIFY-DOC', vdoc)
 
-    if skill_incomplete:
-        add('CHK-RM-01', 'validate_readme_profile', {'skill_assets_incomplete': skill_incomplete})
-
-    pkg = checks.get('package_summary') or {}
-    if not pkg.get('has_catalog_json') and not pkg.get('root_markdown'):
-        add('CHK-SPEC-01', 'package_summary', {'root_files': pkg.get('root_files') or []})
-
+    # ---------- 覆盖表 ----------
     failed = {f['check_id'] for f in findings}
     dprof = (checks.get('data_declaration_profile') or {}).get('assets') or {}
     na_rules = {
-        'CHK-DATA-01': (any(v.get('has_metadata') for v in dprof.values()),
-                        '没有 data 资产声明 metadata.json，无可核对项'),
-        'CHK-DATA-02': (any((v.get('formula_max_dev') is not None) or v.get('formula_error') for v in dprof.values()),
-                        '没有 data 资产声明 formula，无可复算项'),
-        'CHK-TOOL-01': (bool((checks.get('tool_contract_profile') or {}).get('assets')),
-                        '包内没有工具类资产实现'),
-        'CHK-RM-01': (bool([k for k, v in ((checks.get('validate_readme_profile') or {}).get('assets') or {}).items()
-                            if v.get('is_skill')]), '包内没有 skill 类资产'),
-        'CHK-CASE-02': (any(v.get('has_acceptance_json') for v in ((checks.get('cases_profile') or {}).get('assets') or {}).values()),
-                        '没有任何资产提供 acceptance.json'),
-        'CHK-EXT-01': (bool((checks.get('external_refs_profile') or {}).get('assets')),
-                       '没有任何资产声明 external_assets.json'),
+        'P1-DECL': (any(v.get('has_metadata') for v in dprof.values()), '没有 data 资产声明 metadata，无可核对项'),
+        'P1-VERSION': (bool((checks.get('version_profile') or {})), '版本一致性检查不可用'),
+        'P1-VERIFY-DOC': (any(v.get('has_cases_json') for v in ((checks.get('verify_entry_profile') or {}).get('assets') or {}).values()),
+                          '没有资产提供 validate/cases.json，无口径可比'),
+        'P1-DOC-FACT': (False, '事实/算术类错误需人工判读，机器不自动判'),
     }
     coverage = []
     for c in spec['checks']:
@@ -372,20 +510,17 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
             status, reason = 'fail', ''
         elif c['id'] in na_rules and not na_rules[c['id']][0]:
             status, reason = 'na', na_rules[c['id']][1]
-        elif c.get('applies_to') not in ('all', None) and not any(
-                str((m or {}).get('asset_type')) == c['applies_to'] for m in metas.values()):
-            status, reason = 'na', f"包内没有 {c['applies_to']} 类型资产"
+        elif not (checks.get('package_summary') or {}).get('asset_count'):
+            status, reason = 'na', '包内没有资产'
         else:
             status, reason = 'pass', ''
-        coverage.append({'check_id': c['id'], 'layer': c.get('layer'), 'level': c.get('level'),
-                         'status': status, 'na_reason': reason})
-    cov_summary = {k: sum(1 for c in coverage if c['status'] == k) for k in ('pass', 'fail', 'na')}
+        coverage.append({'check_id': c['id'], 'level': c.get('level'), 'status': status, 'na_reason': reason})
+
     return {'intent': intent, 'findings': findings, 'coverage': coverage,
-            'coverage_summary': cov_summary,
+            'coverage_summary': {k: sum(1 for c in coverage if c['status'] == k) for k in ('pass', 'fail', 'na')},
             'summary': {'P0': sum(1 for f in findings if f['level'] == 'P0'),
-                        'P1': sum(1 for f in findings if f['level'] == 'P1'),
-                        'P2': sum(1 for f in findings if f['level'] == 'P2')},
-            'note': '结论只来自本清单；清单外的发现只能记 OBS（观察），不计 P0/P1/P2，也不进通过率'}
+                        'P1': sum(1 for f in findings if f['level'] == 'P1')},
+            'note': 'P0/P1 只来自本清单；P2 是建议，可由执行者自由补充（含清单外观察）'}
 
 
 def fingerprint(checks: dict) -> str:
@@ -418,7 +553,8 @@ def main(argv=None) -> int:
     print(f'探测完成：{checks["package_summary"]["asset_count"]} 个资产，指纹 {fp[:16]}')
     if args.evaluate:
         v = payload['verdict']
-        print(f"按固定清单判定（intent={v['intent']}）：P0 {v['summary']['P0']} / P1 {v['summary']['P1']} / P2 {v['summary']['P2']}")
+        print(f"按固定清单判定（intent={v['intent']}）：P0 {v['summary']['P0']} / P1 {v['summary']['P1']}"
+              '（P2 为建议级，由执行者按需补充）')
         for f in v['findings']:
             print(f"  [{f['level']}] {f['check_id']} {f['name']}")
         cs = v.get('coverage_summary') or {}
