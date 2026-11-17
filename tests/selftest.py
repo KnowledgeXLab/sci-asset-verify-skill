@@ -1277,6 +1277,29 @@ def t17_reproducible(tmp: Path) -> None:
     record("提示：P0/P1 行没写归属（也不含资产名/包级）时报告警",
            "归属" in blob2 and "未写归属" in blob2 and "P1-1 | b1" not in blob2, f"rc={proc2.returncode}")
 
+    # ⑥ P0/P1 不得拿包根一级文件的内容说事
+    root_pkg2 = d / "rootfiles"
+    (root_pkg2 / "a2").mkdir(parents=True)
+    (root_pkg2 / "readme.md").write_text("# 包说明\n", encoding="utf-8")
+    (root_pkg2 / "a2" / "asset.json").write_text("{}", encoding="utf-8")
+    run_dir3 = d / "run3"
+    run_dir3.mkdir()
+    (run_dir3 / "probe-report.json").write_text('{"verdict": {"findings": []}}', encoding="utf-8")
+    (run_dir3 / "inventory.json").write_text(json.dumps(
+        {"package": str(root_pkg2), "assets": [{"dir": "a2", "name": "a2"}]}, ensure_ascii=False),
+        encoding="utf-8")
+    (run_dir3 / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n无\n\n### P1 重要\n\n| 编号 | 归属 | 问题 |\n|---|---|---|\n"
+        "| P1-1 | 包级（readme.md） | P1-DOC-FACT 包根说明算术错误 |\n"
+        "| P1-2 | a2 | P1-DOC-REF 资产内引用缺失 |\n\n### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
+        encoding="utf-8")
+    proc3 = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir3 / "validation-report.md")], d)
+    blob3 = (proc3.stdout or "") + (proc3.stderr or "")
+    record("提示：P1 行在判包根一级文件内容时报告警（包根文件不参与判定）",
+           "包根一级文件" in blob3 and "readme.md" in blob3 and "P1-2 | a2" not in blob3,
+           f"rc={proc3.returncode}")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:

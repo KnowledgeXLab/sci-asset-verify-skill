@@ -81,6 +81,36 @@ def check_attribution(report: Path, text: str) -> list[str]:
     return warns
 
 
+def check_root_file_judgement(report: Path, text: str) -> list[str]:
+    """包根一级文件不参与判定：P0/P1 若拿包根文件的内容说事，要告警。"""
+    run_dir = report.parent
+    inv = run_dir / 'inventory.json'
+    if not inv.is_file():
+        return []
+    try:
+        doc = json.loads(inv.read_text(encoding='utf-8'))
+        root = Path(str(doc.get('package') or '')).expanduser()
+    except Exception:  # noqa: BLE001
+        return []
+    if not root.is_dir():
+        return []
+    root_files = [p.name for p in sorted(root.iterdir()) if p.is_file()]
+    if not root_files:
+        return []
+    block = section_of(text) or ''
+    warns = []
+    for p_ in ('P0', 'P1'):
+        for line in block.splitlines():
+            line = line.strip()
+            if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
+                continue
+            hit = [f for f in root_files if f in line]
+            if hit:
+                warns.append(f'{p_} 行在判包根一级文件（{", ".join(hit[:2])}）的内容：{line[:50]}…'
+                             '——包根一级文件不参与判定，请移除或降为 P2')
+    return warns
+
+
 def check_checklist_citation(report: Path, text: str) -> list[str]:
     """新式批次（run 里有 probe-report.json）里，只有 P0/P1 必须引用 check_id；P2 是建议，允许自由条目。"""
     if not (report.parent / 'probe-report.json').is_file():
@@ -156,6 +186,7 @@ def main(argv=None) -> int:
         warnings.append('缺少「证据保留口径」小节（跑 scripts/prune_evidence.py 生成）')
     warnings += check_checklist_citation(report, text)
     warnings += check_attribution(report, text)
+    warnings += check_root_file_judgement(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),
                       'levels_present': present, 'errors': errors, 'warnings': warnings,

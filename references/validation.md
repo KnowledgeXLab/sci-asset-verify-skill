@@ -32,7 +32,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 ### 不校验（明确排除）
 
 - `governance` 发布口径字段的取值（`license`/`access`/`risk_level`/`privacy`/`usage_constraints`）
-- 资产包**根目录下的一级文件**（`catalog.json`、`README`、`SHA256SUMS` 等）：有则可用，缺不判缺陷
+- 资产包**根目录下的一级文件**（`catalog.json`、`README`、`SHA256SUMS`、说明文档等）：只当"存在与否"的信息，**不读内容、不据以判 P0/P1**；唯一例外是包根出现 `asset.json` → `P0-STRUCT`
 - `spec.asset_protocol` 的字段内容
 - 既有排除项：挂载进来的外部资产副本、`asset-runs/`、`.git`、`__pycache__`
 
