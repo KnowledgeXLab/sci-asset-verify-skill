@@ -78,6 +78,20 @@ def newest(tags: list[str]) -> str:
     return max(parsed)[1] if parsed else ''
 
 
+def writable() -> tuple[bool, str]:
+    """能否写本 skill 的目录（自动更新要写工作区与 .git）。"""
+    import tempfile
+    for target in (SKILL_ROOT, SKILL_ROOT / '.git'):
+        if not target.exists():
+            continue
+        try:
+            with tempfile.NamedTemporaryFile(dir=str(target), prefix='.write-probe-', delete=True):
+                pass
+        except Exception as exc:  # noqa: BLE001
+            return False, f'{target} 不可写：{exc}'
+    return True, ''
+
+
 def dirty() -> bool:
     rc, out = git('status', '--porcelain')
     return rc == 0 and bool(out.strip())
@@ -112,11 +126,21 @@ def check() -> dict:
 
 
 def apply_update(latest: str) -> dict:
+    ok, why = writable()
+    if not ok:
+        return {'status': 'not_writable', 'action': 'skipped',
+                'reason': f'没有写权限，无法自动更新（{why}）。'
+                          '可在核验会话里放宽写权限，或由使用者手动 git pull / 重新下发最新版'}
     if dirty():
         return {'status': 'dirty_worktree', 'action': 'skipped',
                 'reason': '工作区有未提交改动，自动更新会覆盖你的修改；请先提交或 stash'}
     rc, out = git('fetch', '--tags', '--quiet', 'origin')
     if rc != 0:
+        low = out.lower()
+        if any(k in out for k in ('权限不够', 'permission denied', 'EACCES')) or 'denied' in low:
+            return {'status': 'not_writable', 'action': 'skipped',
+                    'reason': '没有写权限，无法自动更新（git fetch 被拒）。'
+                              '可放宽会话写权限，或手动 pull / 重新下发最新版'}
         return {'status': 'fetch_failed', 'action': 'skipped', 'reason': out.strip()[:300]}
     rc, out = git('checkout', '--quiet', latest)
     if rc != 0:
@@ -158,6 +182,7 @@ def main(argv=None) -> int:
 
     payload = {'tool': 'update_skill.py', 'skill_root': str(SKILL_ROOT), **result}
     label = {'up_to_date': '已是最新', 'updated': '已更新', 'behind': '有新版（未更新）',
+             'not_writable': '无写权限，跳过自动更新',
              'not_git': '非 git 安装，跳过', 'offline_or_no_remote': '离线/无 origin，跳过',
              'dirty_worktree': '工作区脏，跳过', 'disabled': '已关闭自动更新',
              'fetch_failed': '拉取失败', 'checkout_failed': '切换失败'}.get(result['status'], result['status'])
@@ -171,7 +196,7 @@ def main(argv=None) -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return 0 if result['status'] in ('up_to_date', 'updated', 'behind', 'not_git',
-                                     'offline_or_no_remote', 'disabled') else 1
+                                     'offline_or_no_remote', 'disabled', 'not_writable') else 1
 
 
 if __name__ == '__main__':

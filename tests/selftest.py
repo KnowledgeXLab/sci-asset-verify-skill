@@ -1381,6 +1381,14 @@ def t18_self_update(tmp: Path) -> None:
     record("正例：--no-update 显式跳过且不失败",
            proc.returncode == 0 and "跳过" in (proc.stdout + proc.stderr), f"rc={proc.returncode}")
 
+    # 目录只读时：明确报「无写权限」且不失败（不阻断核验）
+    git("checkout", "--quiet", "--", ".", cwd=local)
+    subprocess.run(["chmod", "-R", "a-w", str(local)], check=False)
+    proc = run([str(up), "--apply"], local)
+    record("正例：skill 目录不可写时降级为提示（无写权限、退出码 0）",
+           proc.returncode == 0 and "无写权限" in (proc.stdout + proc.stderr), f"rc={proc.returncode}")
+    subprocess.run(["chmod", "-R", "u+w", str(local)], check=False)
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:
