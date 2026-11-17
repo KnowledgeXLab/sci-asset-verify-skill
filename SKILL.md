@@ -43,6 +43,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 - `governance` 发布口径字段的取值（`license`/`access`/`risk_level`/`privacy`/`usage_constraints`）
 - 资产包**根目录下的一级文件**（`catalog.json`、`README`、`SHA256SUMS`、说明文档等）：只当"存在与否"的信息，**不读内容、不据以判 P0/P1**（其事实/算术、版本标注、格式等问题**一律不进问题清单，连 P2 也不要写**，直接丢弃）；唯一例外是包根出现 `asset.json` → `P0-STRUCT`
 - `spec.asset_protocol` 的字段内容
+- **`asset.json` 的 `lifecycle` 取值**：`draft` 是正常交付状态，不报告为问题（P0/P1/P2 都不写）
 - 既有排除项：挂载进来的外部资产副本、`asset-runs/`、`.git`、`__pycache__`
 
 ### 三条硬约束
@@ -267,6 +268,7 @@ python scripts/stamp_report.py --run <资产根目录>/asset-runs/<run_id>
 | `spec.asset_protocol` 缺 `repository_uri` / 缺四段 | 规范未强制要求该字段，校验时不检查其内容 |
 | 示例包里的**占位编号/占位单位/占位 URI** 在包 readme 已明示为示例 | 演示用途，正式资产按任务书填写即可（可在 P2 提一句，不必升 P1） |
 | 资产内部实现风格（日志格式、参数命名、是否拆函数） | 与"可用、可复现、可验收"无关 |
+| 资产 `lifecycle` 为 `draft`（或任何 lifecycle 取值） | `draft` 就是正常的交付状态，规范未要求交付前必须 validated；不判 P0/P1，也不要写进 P2 |
 | 清单「敏感级别」词表与 `governance.access` 档次不完全对应（如 access=public 无对应档，按最低档填「内部」） | 属**清单词表缺口**，由清单维护方扩展档位；填最低档是对的，不判缺陷 |
 
 ## 6. Sage A1.5 附加测试（不计入判定）

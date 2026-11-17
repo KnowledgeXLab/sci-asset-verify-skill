@@ -116,6 +116,29 @@ def check_root_file_judgement(report: Path, text: str) -> list[str]:
     return warns
 
 
+LIFECYCLE_WORDS = ('lifecycle', 'draft')
+
+
+def check_lifecycle_mention(report: Path, text: str) -> list[str]:
+    """lifecycle=draft 是正常交付状态：问题清单里出现 lifecycle/draft 一律要求移除。"""
+    if not (report.parent / 'probe-report.json').is_file():
+        return []
+    block = section_of(text) or ''
+    warns = []
+    for p_ in ('P0', 'P1', 'P2'):
+        for line in block.splitlines():
+            line = line.strip()
+            if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
+                continue
+            cells = [c.strip() for c in line.strip('|').split('|')]
+            owner_text = ' '.join(cells[1:3])
+            low = owner_text.lower()
+            if any(w in low for w in LIFECYCLE_WORDS):
+                warns.append(f'{p_} 行提到 lifecycle/draft：{line[:50]}…'
+                             '——draft 是正常交付状态，不要据它判级；请删除该表述或移除整行（不要降为 P2）')
+    return warns
+
+
 def check_checklist_citation(report: Path, text: str) -> list[str]:
     """新式批次（run 里有 probe-report.json）里，只有 P0/P1 必须引用 check_id；P2 是建议，允许自由条目。"""
     if not (report.parent / 'probe-report.json').is_file():
@@ -192,6 +215,7 @@ def main(argv=None) -> int:
     warnings += check_checklist_citation(report, text)
     warnings += check_attribution(report, text)
     warnings += check_root_file_judgement(report, text)
+    warnings += check_lifecycle_mention(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),
                       'levels_present': present, 'errors': errors, 'warnings': warnings,

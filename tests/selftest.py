@@ -1300,6 +1300,18 @@ def t17_reproducible(tmp: Path) -> None:
            "包根一级文件" in blob3 and "不要降为 P2" in blob3 and "P1-2 | a2" not in blob3,
            f"rc={proc3.returncode}")
 
+    # ⑦ lifecycle=draft 不得作为问题
+    (run_dir3 / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n无\n\n### P1 重要\n\n| 编号 | 归属 | 问题 |\n|---|---|---|\n"
+        "| P1-1 | a2 | P1-VERSION lifecycle 全部为 draft，未验证就交付 |\n\n"
+        "### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
+        encoding="utf-8")
+    proc4 = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir3 / "validation-report.md")], d)
+    blob4 = (proc4.stdout or "") + (proc4.stderr or "")
+    record("提示：问题行提到 lifecycle/draft 时告警（draft 是正常交付状态）",
+           "lifecycle/draft" in blob4 and "不要降为 P2" in blob4, f"rc={proc4.returncode}")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:

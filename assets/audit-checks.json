@@ -11,6 +11,7 @@
     "P2": "建议级：文档措辞、风格、占位信息，以及清单外观察到的其他现象"
   },
   "exclusions": [
+    "不校验 asset.json 的 lifecycle 取值——draft 是正常的交付状态，不得报告为问题（P0/P1/P2 都不许写）",
     "不校验 governance 内容（license/access/risk_level/privacy/usage_constraints 等发布口径字段的取值）",
     "不校验资产包根目录下的**一级文件**（catalog.json / README / 交付说明 / SHA256SUMS 等）",
     "不校验 spec.asset_protocol 的字段内容",
