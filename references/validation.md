@@ -12,7 +12,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 
 | 检查项 | 判据 |
 |---|---|
-| `P0-STRUCT` | 包根下的子目录只能是「资产目录（含 `asset.json`）」或 `asset-runs/` |
+| `P0-STRUCT` | 包根下的子目录只能是「资产目录（含 `asset.json`）」或 `asset-runs/`；**包根不得有 `asset.json`——资产必须作为资产包的子目录存在** |
 | `P0-ENVELOPE` | 任一资产的 `asset.json` / `external_assets.json` 等描述文件必须符合规范（结构、字段名、`asset_id` 四段、枚举取值） |
 | `P0-COMPLETE` | 声明的实体必须存在且摘要/大小一致；不得自指；不得引用包外路径（`../`、绝对路径、`file://`、指向包外的软链） |
 | `P0-VERIFY` | 每个资产都要有**可执行验证入口**（自带用例/验收脚本/测试）；入口执行结论必须通过 |

@@ -253,14 +253,15 @@ def probe_data_declarations(assets: list, metas: dict) -> dict:
 
 
 def probe_structure(root: Path, assets: list) -> dict:
-    """包根子目录只能是资产目录（含 asset.json）或 asset-runs/。"""
+    """包根子目录只能是资产目录（含 asset.json）或 asset-runs/；包根不得有 asset.json（资产只能以子目录存在）。"""
     bad = []
     for d in sorted(x for x in root.iterdir() if x.is_dir()):
         if d.name in ('asset-runs', '.git', '__pycache__') or d.name.startswith('.'):
             continue
         if not (d / 'asset.json').is_file():
             bad.append(d.name)
-    return {'asset_dir_count': len(assets), 'non_asset_dirs': bad}
+    return {'asset_dir_count': len(assets), 'non_asset_dirs': bad,
+            'root_asset_json': (root / 'asset.json').is_file()}
 
 
 def probe_envelope(root: Path) -> dict:
@@ -277,6 +278,8 @@ def probe_envelope(root: Path) -> dict:
         return {'error': f'包络校验调用失败：{exc}', 'errors': []}
     errs = []
     for a in (data.get('assets') or []):
+        if str(a.get('asset_dir') or '') in ('.', '', root.name):     # 包根文件不校验（另由 P0-STRUCT 判）
+            continue
         for e in (a.get('errors') or []):
             errs.append({'asset': a.get('asset_dir'), 'where': e.get('where'), 'message': e.get('message')})
     return {'errors': errs, 'summary': data.get('summary') or {}, 'rc': proc.returncode}
@@ -323,6 +326,8 @@ def probe_doc_refs(root: Path, assets: list) -> dict:
             for tok in token.findall(text):
                 if tok.startswith(('http', 'validate/cases')) or '<' in tok:
                     continue
+                if tok.split('/')[0] in ('out', 'output', 'outputs', 'results', 'dist', 'build', 'tmp', 'logs'):
+                    continue                       # 常见产物目录，不算"引用了不存在的包内文件"
                 cands = [(f.parent / tok), (d / tok), (root / tok)]
                 if any(c.exists() for c in cands):
                     continue
@@ -450,9 +455,14 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
 
     # ---------- P0 ----------
     st = checks.get('structure_profile') or {}
+    struct_detail = {}
     if st.get('non_asset_dirs'):
-        add('P0-STRUCT', {'non_asset_dirs': st['non_asset_dirs'],
-                          'asset_dir_count': st.get('asset_dir_count')})
+        struct_detail['non_asset_dirs'] = st['non_asset_dirs']
+        struct_detail['asset_dir_count'] = st.get('asset_dir_count')
+    if st.get('root_asset_json'):
+        struct_detail['root_asset_json'] = '包根存在 asset.json：资产必须作为资产包的子目录存在'
+    if struct_detail:
+        add('P0-STRUCT', struct_detail)
 
     env = checks.get('envelope_profile') or {}
     if env.get('errors'):

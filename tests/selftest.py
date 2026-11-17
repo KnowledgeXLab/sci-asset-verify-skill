@@ -1235,6 +1235,23 @@ def t17_reproducible(tmp: Path) -> None:
     record("正例：文档指向不存在的脚本 → P1-DOC-REF（P1 不是 P0）",
            ids3.get("P1-DOC-REF") == "P1" and "P0-DOC" not in ids3, f"ids={ids3}")
 
+    # ⑤ 包根出现 asset.json → P0-STRUCT（资产必须以子目录存在）
+    root_pkg = d / "root_asset"
+    (root_pkg / "sub1").mkdir(parents=True)
+    for name, path in (("root", root_pkg / "asset.json"), ("sub1", root_pkg / "sub1" / "asset.json")):
+        path.write_text(json.dumps({"asset_id": f"sciasset://2026ZD123456/earth/data/{name}",
+                                    "asset_type": "data", "name": name, "asset_version": "1.0.0",
+                                    "spec": {"artifacts": []}}, ensure_ascii=False), encoding="utf-8")
+    out4 = d / "root_asset.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(root_pkg), "--evaluate",
+         "--json-out", str(out4)], d)
+    rep4 = json.loads(out4.read_text(encoding="utf-8"))
+    ids4 = {f["check_id"]: f for f in rep4["verdict"]["findings"]}
+    record("正例：包根有 asset.json → P0-STRUCT，且包根不被当成资产",
+           "P0-STRUCT" in ids4 and ids4["P0-STRUCT"]["scope"] == "package"
+           and rep4["checks"]["package_summary"]["asset_dirs"] == ["sub1"],
+           f"ids={list(ids4)} asset_dirs={rep4['checks']['package_summary']['asset_dirs']}")
+
     # ④ 归属：findings 带 scope/assets；报告 P0/P1 行须写归属
     rep_att = json.loads(out3.read_text(encoding="utf-8"))["verdict"]
     f_att = next(f for f in rep_att["findings"] if f["check_id"] == "P1-DOC-REF")

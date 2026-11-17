@@ -23,8 +23,17 @@ def is_mounted_external(d: Path) -> bool:
 
 
 def is_package_asset_dir(d: Path, root: Path) -> bool:
-    """该目录是不是「本包声明的资产目录」：有 asset.json、不在临时目录里、不是挂载进来的。"""
+    """该目录是不是「本包声明的资产目录」：有 asset.json、不在临时目录里、不是挂载进来的、**不是包根本身**。
+
+    资产必须作为资产包的**子目录**存在；包根出现 asset.json 属于结构违规（由 probe_package 判 P0-STRUCT），
+    这里直接不把它当资产，避免后续校验把包根文件当资产读。
+    """
     d = Path(d)
+    try:
+        if d.resolve() == Path(root).resolve():
+            return False
+    except OSError:
+        pass
     try:
         rel = d.relative_to(Path(root))
     except ValueError:
