@@ -44,20 +44,64 @@ def section_of(text: str) -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
+PACKAGE_SCOPE_WORDS = ('包级', '整包', '顶层', '包结构', 'package')
+
+
+def check_attribution(report: Path, text: str) -> list[str]:
+    """P0/P1 每一行都要写明归属：属于哪个（哪些）资产，或明说「包级」。"""
+    run_dir = report.parent
+    if not (run_dir / 'probe-report.json').is_file():
+        return []
+    names = set()
+    inv = run_dir / 'inventory.json'
+    if inv.is_file():
+        try:
+            doc = json.loads(inv.read_text(encoding='utf-8'))
+            for a in (doc.get('assets') or []):
+                for key in ('dir', 'name', 'asset_id'):
+                    v = str(a.get(key) or '')
+                    if v:
+                        names.add(v)
+                        names.add(v.split('/')[-1])
+        except Exception:  # noqa: BLE001
+            pass
+    block = section_of(text) or ''
+    warns = []
+    for p_ in ('P0', 'P1'):
+        for line in block.splitlines():
+            line = line.strip()
+            if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
+                continue
+            if any(w in line for w in PACKAGE_SCOPE_WORDS):
+                continue
+            if any(n and n in line for n in names):
+                continue
+            warns.append(f'{p_} 行未写明归属（属于哪个资产，或「包级」）：{line[:50]}…'
+                         '——请补「归属」列，便于定位源头')
+    return warns
+
+
 def check_checklist_citation(report: Path, text: str) -> list[str]:
     """新式批次（run 里有 probe-report.json）里，只有 P0/P1 必须引用 check_id；P2 是建议，允许自由条目。"""
     if not (report.parent / 'probe-report.json').is_file():
         return []
     block = section_of(text) or ''
     warns = []
+    ids = set()
+    try:
+        checklist = Path(__file__).resolve().parents[1] / 'assets' / 'audit-checks.json'
+        spec = json.loads(checklist.read_text(encoding='utf-8'))
+        ids = {c['id'] for c in spec.get('checks') or [] if c.get('id')}
+    except Exception:  # noqa: BLE001
+        ids = set()
     for p_ in ('P0', 'P1'):          # P2 就是"建议"，不限制来源
         for line in block.splitlines():
             line = line.strip()
             if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
                 continue
-            if 'CHK-' not in line:
-                warns.append(f'{p_} 行未引用固定检查清单的 check_id：{line[:50]}…'
-                             f'（{p_} 是判定性结论，必须来自清单；纯建议请降到 P2）')
+            if not any(i in line for i in ids) if ids else 'CHK-' not in line:
+                warns.append(f'{p_} 行未引用固定检查清单的检查项 id：{line[:50]}…'
+                             f'（{p_} 是判定性结论，必须来自 audit-checks.json；纯建议请降到 P2）')
     return warns
 
 
@@ -111,6 +155,7 @@ def main(argv=None) -> int:
     if '<!-- evidence-prune:begin -->' not in text:
         warnings.append('缺少「证据保留口径」小节（跑 scripts/prune_evidence.py 生成）')
     warnings += check_checklist_citation(report, text)
+    warnings += check_attribution(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),
                       'levels_present': present, 'errors': errors, 'warnings': warnings,

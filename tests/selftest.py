@@ -1235,6 +1235,31 @@ def t17_reproducible(tmp: Path) -> None:
     record("正例：文档指向不存在的脚本 → P1-DOC-REF（P1 不是 P0）",
            ids3.get("P1-DOC-REF") == "P1" and "P0-DOC" not in ids3, f"ids={ids3}")
 
+    # ④ 归属：findings 带 scope/assets；报告 P0/P1 行须写归属
+    rep_att = json.loads(out3.read_text(encoding="utf-8"))["verdict"]
+    f_att = next(f for f in rep_att["findings"] if f["check_id"] == "P1-DOC-REF")
+    record("正例：探测结果带归属（scope=asset 且列出资产目录名）",
+           f_att.get("scope") == "asset" and "b1" in (f_att.get("assets") or []),
+           f"scope={f_att.get('scope')} assets={f_att.get('assets')}")
+
+    run_dir2 = d / "run2"
+    run_dir2.mkdir()
+    (run_dir2 / "probe-report.json").write_text(json.dumps({"verdict": {"findings": []}}, ensure_ascii=False),
+                                                encoding="utf-8")
+    (run_dir2 / "inventory.json").write_text(json.dumps(
+        {"assets": [{"dir": "b1", "name": "b1 资产"}]}, ensure_ascii=False), encoding="utf-8")
+    (run_dir2 / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n| 编号 | 归属 | 问题 |\n|---|---|---|\n"
+        "| P0-1 | 包级 | P0-STRUCT 结构不合规 |\n| P0-2 | 未写归属 | P0-VERIFY 缺入口 |\n\n"
+        "### P1 重要\n\n| 编号 | 归属 | 问题 |\n|---|---|---|\n"
+        "| P1-1 | b1 | P1-DOC-REF 引用缺失 |\n\n### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
+        encoding="utf-8")
+    proc2 = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir2 / "validation-report.md")], d)
+    blob2 = (proc2.stdout or "") + (proc2.stderr or "")
+    record("提示：P0/P1 行没写归属（也不含资产名/包级）时报告警",
+           "归属" in blob2 and "未写归属" in blob2 and "P1-1 | b1" not in blob2, f"rc={proc2.returncode}")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:

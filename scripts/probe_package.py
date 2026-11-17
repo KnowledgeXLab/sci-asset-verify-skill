@@ -439,8 +439,14 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
 
     def add(cid, detail):
         meta = next((c for c in spec['checks'] if c['id'] == cid), {})
+        # 归属：detail 的 key 通常是资产目录名；没有 key 或 key 不像资产名就是包级
+        blob = json.dumps(detail, ensure_ascii=False, default=str)
+        known = sorted((checks.get('package_summary') or {}).get('asset_dirs') or [])
+        owners = [a for a in known if a and a in blob]
+        scope = 'asset' if owners else 'package'
         findings.append({'check_id': cid, 'level': meta.get('level'), 'name': meta.get('name'),
-                         'status': 'fail', 'detail': detail, 'criterion': meta.get('criterion')})
+                         'status': 'fail', 'detail': detail, 'criterion': meta.get('criterion'),
+                         'scope': scope, 'assets': owners})
 
     # ---------- P0 ----------
     st = checks.get('structure_profile') or {}
@@ -450,7 +456,11 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
 
     env = checks.get('envelope_profile') or {}
     if env.get('errors'):
-        add('P0-ENVELOPE', {'errors': env['errors'][:20], 'error_count': len(env['errors'])})
+        by_asset = {}
+        for e in env['errors']:
+            by_asset.setdefault(str(e.get('asset') or 'unknown'), []).append(
+                f"{e.get('where')}: {e.get('message')}")
+        add('P0-ENVELOPE', by_asset)
 
     art = checks.get('artifact_integrity') or {}
     out_refs = checks.get('outside_refs_profile') or {}
