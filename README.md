@@ -8,9 +8,62 @@
 
 本 skill 将上述核验要求前置到提供方一侧：采用与接收方一致的内置标准与判定规则，执行完整核验流程，产出可直接随包提交的资产清单与验证报告，减少交付环节的返工。
 
+## 安装
+
+本 skill 是**一个目录**，装到 agent 能读到的 skills 位置即可。推荐用 git 安装（这样才能用上"开跑自动对齐最新版"）。
+
+### 1. 用 git 安装（推荐）
+
+```bash
+# DSH：装到用户级 skills 目录（也可放项目的 .dsh/skills/ 下，仅该项目生效）
+mkdir -p ~/.dsh/skills
+git clone --depth 1 https://github.com/KnowledgeXLab/sci-asset-verify-skill.git \
+    ~/.dsh/skills/sci-asset-verify-skill
+
+# 想钉在某个版本上：加 --branch
+git clone --depth 1 --branch 1.2-beta.5 https://github.com/KnowledgeXLab/sci-asset-verify-skill.git \
+    ~/.dsh/skills/sci-asset-verify-skill
+```
+
+其他 agent（Claude Code / Codex / Cursor 等）：把同一仓库 clone 到它的 skills 目录即可，技能说明在 `SKILL.md`。
+
+### 2. 验证安装
+
+```bash
+cd ~/.dsh/skills/sci-asset-verify-skill
+cat VERSION                                  # 当前版本，如 1.2-beta.5
+python3 tests/selftest.py                    # 自测：应显示「自测结果：N/N 通过」
+python3 scripts/update_skill.py --check      # 与远端最新 tag 比对
+python3 scripts/validate_envelope.py --help  # 任一脚本能跑即说明依赖就绪
+```
+
+### 3. 更新
+
+装好之后**不必再人工 pull**：每次核验开始时 `scripts/update_skill.py` 会检查远端最新 tag，
+有新版就切过去（工作区有未提交改动时拒绝更新，不覆盖本地修改）；也可以手动：
+
+```bash
+python3 scripts/update_skill.py --apply        # 切到远端最新 tag，并自动跑一次自测
+python3 scripts/update_skill.py --apply --no-update   # 本次不更新
+```
+
+### 4. 离线 / 无 git 的安装方式
+
+直接拷贝整个目录到 skills 位置也能用（依赖已随 `vendor/` 打包，无网络也能跑），
+但**自动更新不可用**——`update_skill.py` 会提示"非 git 安装，请重新下发最新版"。
+
+### 环境要求
+
+| 项 | 要求 |
+|---|---|
+| Python | ≥ 3.10（仅标准库 + 随包 `vendor/`） |
+| git | 仅"安装/自动更新"需要；离线拷贝安装可不要 |
+| 网络 | 自动更新、`--check` 需要能访问 GitHub；核验本身不需要联网 |
+| 第三方依赖 | 无（`vendor/openpyxl`、`vendor/jsonschema` 已内嵌） |
+
 ## 使用方法
 
-本 skill 无需安装。将本目录置于 agent 可读取的位置并指定使用本 skill，或将 `SKILL.md` 路径提供给 agent，由其按其中步骤执行。
+装好之后（见上节「安装」）无需额外配置，直接让 agent 使用本 skill 即可；也可把 `SKILL.md` 路径提供给 agent，由其按其中步骤执行。
 
 执行前需明确核验对象与核验范围，例如：
 
@@ -113,7 +166,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十六个脚本，共 119 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十八个脚本，共 119 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -128,7 +181,7 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十七个自检脚本（另有 3 个内部模块）
+scripts/           十八个自检脚本（另有 3 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
