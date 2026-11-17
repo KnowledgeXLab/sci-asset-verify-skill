@@ -99,15 +99,20 @@ def check_root_file_judgement(report: Path, text: str) -> list[str]:
         return []
     block = section_of(text) or ''
     warns = []
-    for p_ in ('P0', 'P1'):
+    for p_ in ('P0', 'P1', 'P2'):
         for line in block.splitlines():
             line = line.strip()
             if not line.startswith('|') or '---' in line or f'| {p_}-' not in line:
                 continue
-            hit = [f for f in root_files if f in line]
+            cells = [c.strip() for c in line.strip('|').split('|')]
+            # 只看「归属」性质的单元格（含包级/整包/顶层，或是短的资产名），避免把问题正文里的引用算进来
+            owner_text = ' '.join(
+                c for c in cells[1:3]
+                if ('包级' in c or '整包' in c or '顶层' in c or 0 < len(c) <= 40))
+            hit = [f for f in root_files if f in owner_text]
             if hit:
-                warns.append(f'{p_} 行在判包根一级文件（{", ".join(hit[:2])}）的内容：{line[:50]}…'
-                             '——包根一级文件不参与判定，请移除或降为 P2')
+                warns.append(f'{p_} 行的归属是包根一级文件（{", ".join(hit[:2])}）：{line[:50]}…'
+                             '——包根一级文件不参与判定，请直接移除该行（不要降为 P2）')
     return warns
 
 

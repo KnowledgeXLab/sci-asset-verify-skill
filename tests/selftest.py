@@ -1296,8 +1296,8 @@ def t17_reproducible(tmp: Path) -> None:
         encoding="utf-8")
     proc3 = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir3 / "validation-report.md")], d)
     blob3 = (proc3.stdout or "") + (proc3.stderr or "")
-    record("提示：P1 行在判包根一级文件内容时报告警（包根文件不参与判定）",
-           "包根一级文件" in blob3 and "readme.md" in blob3 and "P1-2 | a2" not in blob3,
+    record("提示：归属为包根一级文件时报告警，且要求「直接移除、不要降 P2」",
+           "包根一级文件" in blob3 and "不要降为 P2" in blob3 and "P1-2 | a2" not in blob3,
            f"rc={proc3.returncode}")
 
 
