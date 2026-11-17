@@ -34,7 +34,9 @@ STAGE = {'alpha': 0, 'beta': 1, 'rc': 2, None: 3}
 
 
 def parse_version(text: str):
-    m = TAG_RE.match(str(text).strip())
+    raw = str(text).strip()
+    raw = re.sub(r'-(dev|dirty|snapshot)$', '', raw)   # 开发版后缀按同号处理
+    m = TAG_RE.match(raw)
     if not m:
         return None
     major, minor, patch, stage, num = m.groups()
