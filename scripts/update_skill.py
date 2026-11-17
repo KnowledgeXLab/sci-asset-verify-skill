@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""开跑前检查远端最新 tag，按需把本 skill 更新到该 tag（让使用方不必人工 pull）。
+
+设计原则
+--------
+* **不阻断核验**：无网络、非 git 安装、工作区有未提交改动时一律降级为「提示 + 记录」，核验照常进行。
+* **可追溯**：更新结果写 `<run>/skill-update.json`；报告 front matter 里的 `skill_version`/`skill_commit`
+  由 `_version.py` 从当前磁盘版本读取，因此更新后自动反映新版本。
+* **安全**：只在工作区干净时切换；用 `git checkout <tag>` 定位到 release tag（可复现），不合并、不改写历史。
+* **可关闭**：`--no-update` 或环境变量 `ASSET_VERIFY_NO_UPDATE=1` 跳过。
+
+用法
+----
+  python scripts/update_skill.py --check                     # 只看有没有新版
+  python scripts/update_skill.py --apply --json-out F        # 有新版就切过去
+  python scripts/update_skill.py --apply --no-update         # 显式跳过（记录原因）
+
+退出码：0 已是最新/已更新/按策略跳过；1 更新失败（工作区脏、切换失败等）；2 参数或 IO 错误。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+TAG_RE = re.compile(r'^v?(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta|rc)\.?(\d+))?$')
+STAGE = {'alpha': 0, 'beta': 1, 'rc': 2, None: 3}
+
+
+def parse_version(text: str):
+    m = TAG_RE.match(str(text).strip())
+    if not m:
+        return None
+    major, minor, patch, stage, num = m.groups()
+    return (int(major), int(minor), int(patch or 0), STAGE.get(stage, 3), int(num or 0))
+
+
+def local_version() -> str:
+    f = SKILL_ROOT / 'VERSION'
+    return f.read_text(encoding='utf-8').strip() if f.is_file() else ''
+
+
+def git(*args, cwd=SKILL_ROOT) -> tuple[int, str]:
+    try:
+        p = subprocess.run(['git', *args], cwd=str(cwd), capture_output=True, text=True, timeout=30)
+        return p.returncode, (p.stdout or '') + (p.stderr or '')
+    except Exception as exc:  # noqa: BLE001
+        return 127, str(exc)
+
+
+def is_git_repo() -> bool:
+    return (SKILL_ROOT / '.git').exists() or git('rev-parse', '--git-dir')[0] == 0
+
+
+def remote_tags() -> list[str]:
+    rc, out = git('ls-remote', '--tags', 'origin')
+    if rc != 0:
+        return []
+    tags = []
+    for line in out.splitlines():
+        if 'refs/tags/' not in line or line.strip().endswith('^{}'):
+            continue
+        tags.append(line.split('refs/tags/', 1)[1].strip())
+    return tags
+
+
+def newest(tags: list[str]) -> str:
+    parsed = [(parse_version(t), t) for t in tags]
+    parsed = [(v, t) for v, t in parsed if v]
+    return max(parsed)[1] if parsed else ''
+
+
+def dirty() -> bool:
+    rc, out = git('status', '--porcelain')
+    return rc == 0 and bool(out.strip())
+
+
+def current_tag() -> str:
+    rc, out = git('describe', '--tags', '--exact-match')
+    if rc == 0 and out.strip():
+        return out.strip().splitlines()[0]
+    rc, out = git('describe', '--tags', '--abbrev=0')
+    return out.strip().splitlines()[0] if rc == 0 and out.strip() else ''
+
+
+def check() -> dict:
+    cur = local_version()
+    if not is_git_repo():
+        return {'status': 'not_git', 'current': cur,
+                'reason': '当前安装不是 git 仓库，无法自动更新（请重新下发最新版）'}
+    tags = remote_tags()
+    if not tags:
+        return {'status': 'offline_or_no_remote', 'current': cur,
+                'reason': '读不到远端 tag（离线或无 origin），跳过自动更新'}
+    latest = newest(tags)
+    tag_now = current_tag()
+    newest_local = newest([x for x in (cur, tag_now) if x])
+    if not latest:
+        return {'status': 'no_tags', 'current': cur, 'reason': '远端没有可比较的版本 tag'}
+    base = newest_local or cur
+    if parse_version(latest) and parse_version(base) and parse_version(latest) <= parse_version(base):
+        return {'status': 'up_to_date', 'current': cur, 'latest': latest}
+    return {'status': 'behind', 'current': cur, 'latest': latest}
+
+
+def apply_update(latest: str) -> dict:
+    if dirty():
+        return {'status': 'dirty_worktree', 'action': 'skipped',
+                'reason': '工作区有未提交改动，自动更新会覆盖你的修改；请先提交或 stash'}
+    rc, out = git('fetch', '--tags', '--quiet', 'origin')
+    if rc != 0:
+        return {'status': 'fetch_failed', 'action': 'skipped', 'reason': out.strip()[:300]}
+    rc, out = git('checkout', '--quiet', latest)
+    if rc != 0:
+        return {'status': 'checkout_failed', 'action': 'skipped', 'reason': out.strip()[:300]}
+    return {'status': 'updated', 'action': 'checked_out', 'to': latest,
+            'new_version': local_version()}
+
+
+def run_selftest() -> dict:
+    t = SKILL_ROOT / 'tests' / 'selftest.py'
+    if not t.is_file():
+        return {'ran': False}
+    try:
+        p = subprocess.run([sys.executable, str(t)], cwd=str(SKILL_ROOT),
+                           capture_output=True, text=True, timeout=180)
+        tail = [l for l in (p.stdout or '').splitlines() if '自测结果' in l]
+        return {'ran': True, 'rc': p.returncode, 'summary': tail[-1] if tail else ''}
+    except Exception as exc:  # noqa: BLE001
+        return {'ran': True, 'rc': -1, 'error': str(exc)}
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description='开跑前检查/更新本 skill 到远端最新 tag')
+    ap.add_argument('--check', action='store_true', help='只检查，不更新')
+    ap.add_argument('--apply', action='store_true', help='有新版本就切换过去')
+    ap.add_argument('--no-update', action='store_true', help='显式跳过自动更新')
+    ap.add_argument('--json-out')
+    args = ap.parse_args(argv)
+
+    if args.no_update or os.environ.get('ASSET_VERIFY_NO_UPDATE') == '1':
+        result = {'status': 'disabled', 'current': local_version(),
+                  'reason': '按 --no-update / ASSET_VERIFY_NO_UPDATE=1 跳过'}
+    else:
+        result = check()
+        if args.apply and result['status'] == 'behind' and not args.check:
+            result.update(apply_update(result['latest']))
+            if result.get('status') == 'updated':
+                result['selftest'] = run_selftest()
+
+    payload = {'tool': 'update_skill.py', 'skill_root': str(SKILL_ROOT), **result}
+    label = {'up_to_date': '已是最新', 'updated': '已更新', 'behind': '有新版（未更新）',
+             'not_git': '非 git 安装，跳过', 'offline_or_no_remote': '离线/无 origin，跳过',
+             'dirty_worktree': '工作区脏，跳过', 'disabled': '已关闭自动更新',
+             'fetch_failed': '拉取失败', 'checkout_failed': '切换失败'}.get(result['status'], result['status'])
+    print(f"[skill 版本] {label}：当前 {result.get('current')}"
+          + (f" → 远端 {result.get('latest')}" if result.get('latest') else '')
+          + (f"（{result['reason']}）" if result.get('reason') else ''))
+    if result.get('selftest', {}).get('ran'):
+        print(f"[skill 版本] 更新后自测：{result['selftest'].get('summary') or result['selftest'].get('rc')}")
+    if args.json_out:
+        p = Path(args.json_out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    return 0 if result['status'] in ('up_to_date', 'updated', 'behind', 'not_git',
+                                     'offline_or_no_remote', 'disabled') else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
