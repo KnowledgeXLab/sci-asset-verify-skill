@@ -221,6 +221,11 @@ python scripts/mount_external.py --copy-root <副本根> \
 - 找不到就跳过并在报告里声明：**不中断校验**，`external-mounts.json` 记 `status: incomplete` 与 `required_missing`；
   是否真的影响结果由用例执行说话——依赖它的用例跑不通就记 `blocked`/`failed`，跑通了照常 pass。
 - 自包含校验认得这条合规通道：软链指向目录外但路径等于该资产声明的 `target_path` 时只记 note，不算越界。
+ **容器内绝对路径不算越界**：若资产自身声明了容器（`spec.metadata.environment_type=docker`、`image`/`base_image`、
+或自带 `Dockerfile`/`compose.yaml`），或**同包存在声明了容器的 `environment` 资产**，则文本里的 `/opt/…`、`/data/…`
+这类路径记为 note（运行时在容器内可解析）；但 `/home/…`、`/Users/…`、`/root/…`、`/mnt/…`、`/scratch/…` 仍按越界判
+（指向宿主机，资产入库后必然失效）。没有容器证据的资产，绝对路径一律判越界。
+
 - **挂载进来的资产不算本包资产**：从包外复制进副本的目录里带 `.mounted-external.json` 标记，
   包络/自包含/资产ID/清单/Sage 判定都会跳过它们——核验对象始终是原包声明的那些资产。
 

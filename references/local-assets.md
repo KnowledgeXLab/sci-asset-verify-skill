@@ -22,3 +22,9 @@
 已有验证报告用于填表时，确认资产、版本和结果对应，直接提炼结论，来源记录到 field-evidence.json。执行新验证时，读取原始输入和预期输出，实际响应保存在当前 run 目录。
 
 所有运行产物统一保存到 `<资产根目录>/asset-runs/<run_id>/`，保留原始资产及模板。
+
+## 容器化资产的绝对路径
+**容器内绝对路径不算越界**：若资产自身声明了容器（`spec.metadata.environment_type=docker`、`image`/`base_image`、
+或自带 `Dockerfile`/`compose.yaml`），或**同包存在声明了容器的 `environment` 资产**，则文本里的 `/opt/…`、`/data/…`
+这类路径记为 note（运行时在容器内可解析）；但 `/home/…`、`/Users/…`、`/root/…`、`/mnt/…`、`/scratch/…` 仍按越界判
+（指向宿主机，资产入库后必然失效）。没有容器证据的资产，绝对路径一律判越界。

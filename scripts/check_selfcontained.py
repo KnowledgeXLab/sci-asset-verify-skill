@@ -52,6 +52,31 @@ TEXT_PATTERNS = [
     (re.compile(r'(file://[^\s"\'`,;)\]]+)'), 'file-url'),
 ]
 MAX_PER_ASSET = 200
+HOST_MARKERS = ('/home/', '/Users/', '/root/', '/mnt/', '/scratch/')   # 明显指向宿主机的路径
+CONTAINER_ENV_TYPES = ('docker', 'container', 'podman', 'k8s', 'kubernetes', 'singularity', 'apptainer')
+
+
+def container_evidence(adir: Path, asset: dict, package_assets: list) -> str:
+    """该资产是否跑在容器里（容器内绝对路径不算越界）。返回证据字符串，空串表示非容器。"""
+    spec = asset.get('spec') if isinstance(asset.get('spec'), dict) else {}
+    md = spec.get('metadata') if isinstance(spec.get('metadata'), dict) else {}
+    etype = str(md.get('environment_type') or '').lower()
+    if etype in CONTAINER_ENV_TYPES:
+        return f'本资产 metadata.environment_type={etype}（镜像 {md.get("image") or "-"}）'
+    if md.get('image') or md.get('base_image') or md.get('image_id'):
+        return f'本资产声明容器镜像：{md.get("image") or md.get("base_image") or md.get("image_id")}'
+    uris = [str((a or {}).get('uri') or '') for a in (spec.get('artifacts') or [])]
+    if any(u.endswith(('Dockerfile', 'compose.yaml', 'docker-compose.yml')) for u in uris):
+        return '本资产自带构建文件（Dockerfile/compose）'
+    for other_dir, other in package_assets:
+        if other_dir == adir:
+            continue
+        if str((other or {}).get('asset_type')) != 'environment':
+            continue
+        omd = ((other.get('spec') or {}).get('metadata') or {})
+        if str(omd.get('environment_type') or '').lower() in CONTAINER_ENV_TYPES or omd.get('image'):
+            return f'同包的运行环境资产 {other_dir.name} 声明了容器（{omd.get("image") or omd.get("environment_type")}）'
+    return ''
 
 
 def local_paths_of(asset: dict):
@@ -100,6 +125,13 @@ def main(argv=None) -> int:
     asset_dirs = sorted({c.resolve() for c in candidates})
     asset_names = {d.name: d for d in asset_dirs}
 
+    package_assets = []
+    for cand in candidates:                      # 用同一份资产清单做容器上下文判定
+        try:
+            package_assets.append((cand, json.loads((cand / 'asset.json').read_text(encoding='utf-8'))))
+        except Exception:  # noqa: BLE001
+            continue
+
     results = []
     for adir in asset_dirs:
         violations = []
@@ -109,6 +141,8 @@ def main(argv=None) -> int:
             violations.append({'kind': 'unreadable', 'where': 'asset.json',
                                'detail': f'{type(exc).__name__}: {exc}', 'hint': '修包络后重跑'})
             asset = {}
+
+        container_ctx = container_evidence(adir, asset, package_assets)
 
         # 0) 该资产声明的外部资产挂载点（软链到目录外属合规通道）
         declared_targets = set()
@@ -177,10 +211,16 @@ def main(argv=None) -> int:
                         if target is None or inside(adir, target):
                             continue
                         sev = 'note' if f.suffix.lower() in DOC_SUFFIX else 'violation'
+                        hint = _hint(target, root, asset_names, adir)
+                        if kind in ('absolute', 'file-url'):
+                            if any(marker in token for marker in HOST_MARKERS):
+                                hint = '指向宿主机绝对路径（' + token + '）；资产入库后失效'
+                            elif container_ctx:
+                                sev = 'note'
+                                hint = f'容器内路径（{container_ctx}），运行时可解析，不计越界'
                         violations.append({'kind': kind, 'severity': sev,
                                            'where': f'{rel}:{lineno}', 'value': token,
-                                           'resolves_to': str(target),
-                                           'hint': _hint(target, root, asset_names, adir)})
+                                           'resolves_to': str(target), 'hint': hint})
                         break
             if len(violations) >= MAX_PER_ASSET:
                 break
@@ -191,6 +231,7 @@ def main(argv=None) -> int:
                         'violations': violations[:MAX_PER_ASSET],
                         'violation_count': len(hard),
                         'note_count': len(violations) - len(hard),
+                        'container_context': container_ctx or None,
                         'self_contained': not hard})
 
     bad = [r for r in results if not r['self_contained']]

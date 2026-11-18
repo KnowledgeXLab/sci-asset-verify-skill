@@ -801,6 +801,45 @@ def t11_selfcontained(tmp: Path) -> None:
            f"contained={a['self_contained']} notes={a['note_count']}")
 
 
+    # 容器化资产：容器内绝对路径记 note，宿主机路径仍判越界；无容器证据则判越界
+    cont = tmp / "t11" / "cont"
+    (cont / "skill1").mkdir(parents=True, exist_ok=True)
+    (cont / "env1").mkdir(parents=True, exist_ok=True)
+    (cont / "skill1" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/skill/skill1", "asset_type": "skill",
+         "name": "skill1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+    (cont / "skill1" / "run.sh").write_text("DATA=/opt/ai-mineral/x\nBAD=/home/u/y\n", encoding="utf-8")
+    (cont / "env1" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/environment/env1", "asset_type": "environment",
+         "name": "env1", "asset_version": "1.0.0",
+         "spec": {"metadata": {"environment_type": "docker", "image": "img:1"}, "artifacts": []}},
+        ensure_ascii=False), encoding="utf-8")
+    out_c = d / "cont.json" if (d := tmp / "t11").exists() else tmp / "cont.json"
+    run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(cont), "--json-out", str(out_c)], tmp)
+    rep_c = json.loads(out_c.read_text(encoding="utf-8"))
+    skill_res = next(r for r in rep_c["results"] if r["asset_dir"] == "skill1")
+    hard = [v["value"] for v in skill_res["violations"] if v["severity"] != "note"]
+    soft = [v["value"] for v in skill_res["violations"] if v["severity"] == "note"]
+    record("正例：容器资产里 /opt 路径记 note，宿主机 /home 路径仍判越界",
+           skill_res["violation_count"] == 1 and hard == ["/home/u/y"]
+           and any("/opt/" in x for x in soft) and skill_res.get("container_context"),
+           f"hard={hard} soft={soft}")
+
+    plain2 = tmp / "t11" / "plain2"
+    (plain2 / "tool1").mkdir(parents=True, exist_ok=True)
+    (plain2 / "tool1" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/tool/tool1", "asset_type": "tool",
+         "name": "tool1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+    (plain2 / "tool1" / "run.sh").write_text("DATA=/opt/ai-mineral/x\n", encoding="utf-8")
+    out_p = tmp / "plain2.json"
+    run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(plain2), "--json-out", str(out_p)], tmp)
+    rep_p = json.loads(out_p.read_text(encoding="utf-8"))
+    record("负例：没有容器证据时 /opt 绝对路径仍判越界",
+           rep_p["results"][0]["violation_count"] == 1, f"vc={rep_p['results'][0]['violation_count']}")
+
+
 # --------------------------------------------------------------------------- T12 批次目录规范
 def t12_run_id(tmp: Path) -> None:
     print("\n[12/18] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
