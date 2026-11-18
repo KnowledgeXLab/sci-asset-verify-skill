@@ -106,6 +106,24 @@ def detect(root: Path) -> dict:
                 assets = doc
             elif isinstance(doc, dict):
                 assets = doc.get('assets') or ([doc] if 'asset_id' in doc else [])
+            # catalog.json 的 assets 也可能是**包络文件路径**数组（如 "workflow-runtime/asset.json"），
+            # 逐条按路径读进来；读不到就跳过，不能因为不是 dict 就崩。
+            resolved = []
+            for item in assets:
+                if isinstance(item, dict):
+                    resolved.append(item)
+                elif isinstance(item, str):
+                    cand = (p.parent / item) if not item.startswith('/') else Path(item)
+                    for alt in (cand, root / item):
+                        if alt.is_file():
+                            try:
+                                loaded = load_json(alt)
+                            except Exception:  # noqa: BLE001
+                                continue
+                            if isinstance(loaded, dict):
+                                resolved.append(loaded)
+                            break
+            assets = resolved
             if assets:
                 break
     if not assets:

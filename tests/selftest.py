@@ -462,6 +462,27 @@ def t6_sage(tmp: Path) -> None:
     record("正例：含大模型 API 证据的包判定为需要测试",
            need.get("needed") is True and need.get("evidence"), f"needed={need.get('needed')}")
 
+    # catalog.json 的 assets 是**包络文件路径数组**（不是对象数组）时不能崩
+    patharr = case / "patharr"
+    (patharr / "runtime").mkdir(parents=True)
+    (patharr / "runtime" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/environment/runtime",
+         "asset_type": "environment", "name": "runtime"}, ensure_ascii=False), encoding="utf-8")
+    (patharr / "sk").mkdir(parents=True)
+    (patharr / "sk" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/skill/sk", "asset_type": "skill", "name": "sk"},
+        ensure_ascii=False), encoding="utf-8")
+    (patharr / "catalog.json").write_text(json.dumps(
+        {"schema_version": "1.0.0", "assets": ["runtime/asset.json", "sk/asset.json"]}, ensure_ascii=False),
+        encoding="utf-8")
+    out = case / "need_patharr.json"
+    proc = run([str(SCRIPTS / "sage_probe.py"), "detect", str(patharr), "--json-out", str(out)], case)
+    need = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    record("正例：catalog.json 的 assets 是路径数组时不崩溃，且能识别资产类型（含 skill → 需测）",
+           proc.returncode == 0 and need.get("asset_types") == ["environment", "skill"]
+           and need.get("needed") is True,
+           f"rc={proc.returncode} types={need.get('asset_types')}")
+
     # 资产放在子目录（无根级 asset.json）+ 无 LLM 证据 → 类型被识别，但不需要测
     deep = case / "deep"
     (deep / "a" / "b").mkdir(parents=True)
@@ -1281,6 +1302,10 @@ def t17_reproducible(tmp: Path) -> None:
     out2 = d / "good.json"
     run([str(SCRIPTS / "probe_package.py"), "--package", str(good), "--evaluate", "--json-out", str(out2)], d)
     rep2 = json.loads(out2.read_text(encoding="utf-8"))["verdict"]
+    cov_good = {c["check_id"]: c for c in rep2["coverage"]}
+    record("正例：资产有 validate/cases.json 时 P1-VERIFY-DOC 判 pass（不因字段名不匹配误判 na）",
+           cov_good["P1-VERIFY-DOC"]["status"] == "pass", f"status={cov_good['P1-VERIFY-DOC']}")
+
     record("正例：合规包 P0/P1 均为 0",
            rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
            f"summary={rep2['summary']}")

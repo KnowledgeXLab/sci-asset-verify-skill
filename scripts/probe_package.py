@@ -369,7 +369,11 @@ def probe_verify_docs(assets: list) -> dict:
     """验证说明里显式声明的用例数量/编号 vs validate/cases.json。"""
     bad = {}
     for d in assets:
-        cases = load(d / 'validate' / 'cases.json') or {}
+        cases_path = d / 'validate' / 'cases.json'
+        if not cases_path.is_file():
+            found = sorted(d.rglob('cases.json'))
+            cases_path = found[0] if found else cases_path
+        cases = load(cases_path) or {}
         ids = [str(c.get('id') or '') for c in (cases.get('cases') or [])]
         if not ids:
             continue
@@ -531,8 +535,8 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     na_rules = {
         'P1-DECL': (any(v.get('has_metadata') for v in dprof.values()), '没有 data 资产声明 metadata，无可核对项'),
         'P1-VERSION': (bool((checks.get('version_profile') or {})), '版本一致性检查不可用'),
-        'P1-VERIFY-DOC': (any(v.get('has_cases_json') for v in ((checks.get('verify_entry_profile') or {}).get('assets') or {}).values()),
-                          '没有资产提供 validate/cases.json，无口径可比'),
+        'P1-VERIFY-DOC': (any(v.get('cases_json') for v in ((checks.get('verify_entry_profile') or {}).get('assets') or {}).values()),
+                          '没有资产提供 cases.json，无口径可比'),
         'P1-DOC-FACT': (False, '事实/算术类错误需人工判读，机器不自动判'),
     }
     coverage = []
