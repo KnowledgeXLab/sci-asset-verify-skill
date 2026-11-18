@@ -316,11 +316,13 @@ def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
 def probe_doc_refs(root: Path, assets: list) -> dict:
     """包内文档里出现的包内路径是否存在（只看形如 a/b.ext 的相对路径 token）。"""
     # 只认 ASCII 路径 token，避免把中文说明和路径粘连（如「119条预测与expected/x.tsv」）
+    # 只看脚本/文档/契约，数据样例文件不判。
+    # 末尾必须是非文件名边界，否则 `.tar.sha256` 会被截成 `.tar.sh`、`.shp` 会被截成 `.sh`
     token = re.compile(r'(?<![A-Za-z0-9_./-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.'
-                       r'(?:py|sh|json|jsonl|md|ya?ml))')   # 只看脚本/文档/契约，数据样例文件不判
-    missing = {}
+                       r'(?:py|sh|json|jsonl|md|ya?ml))(?![-.A-Za-z0-9])')
+    missing, case_only = {}, {}
     for d in assets:
-        bad = set()
+        bad, soft = set(), set()
         for f in list(d.rglob('*.md')):
             text = f.read_text(encoding='utf-8', errors='replace')
             for tok in token.findall(text):
@@ -331,10 +333,19 @@ def probe_doc_refs(root: Path, assets: list) -> dict:
                 cands = [(f.parent / tok), (d / tok), (root / tok)]
                 if any(c.exists() for c in cands):
                     continue
+                # 仅大小写不同的同名文件：不算"引用了不存在的文件"，单列提示
+                lower = {str(c).lower() for c in cands}
+                if any(p_.exists() and str(p_).lower() in lower
+                       for base in (f.parent, d, root) for p_ in base.rglob('*') if p_.is_file()):
+                    soft.add(tok)
+                    continue
                 bad.add(tok)
         if bad:
             missing[d.name] = sorted(bad)[:10]
-    return {'missing': dict(sorted(missing.items()))}
+        if soft:
+            case_only[d.name] = sorted(soft)[:10]
+    return {'missing': dict(sorted(missing.items())),
+            'case_only_mismatch': dict(sorted(case_only.items()))}
 
 
 def probe_version_consistency(assets: list, metas: dict) -> dict:

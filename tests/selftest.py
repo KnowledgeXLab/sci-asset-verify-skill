@@ -836,6 +836,26 @@ def t11_selfcontained(tmp: Path) -> None:
     out_p = tmp / "plain2.json"
     run([str(SCRIPTS / "check_selfcontained.py"), "--package", str(plain2), "--json-out", str(out_p)], tmp)
     rep_p = json.loads(out_p.read_text(encoding="utf-8"))
+    # 文档 token 截断：`.tar.sha256` 不得被截成 `.tar.sh`，`.shp` 不得被截成 `.sh`
+    filex = tmp / "t11" / "filex"
+    fasset = filex / "assetA"
+    (fasset / "img").mkdir(parents=True, exist_ok=True)
+    (fasset / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/environment/filex", "asset_type": "environment",
+         "name": "filex", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+    (fasset / "img" / "m-image.tar.sha256").write_text("deadbeef\n", encoding="utf-8")
+    (fasset / "img" / "deposit.shp").write_text("x\n", encoding="utf-8")
+    (fasset / "readme.md").write_text(
+        "镜像摘要见 `img/m-image.tar.sha256`，矢量见 `img/deposit.shp`，脚本见 `img/run.sh`\n", encoding="utf-8")
+    out_f = tmp / "filex.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(filex), "--evaluate",
+         "--json-out", str(out_f)], tmp)
+    miss = (json.loads(out_f.read_text(encoding="utf-8"))["checks"]
+            ["doc_refs_profile"]["missing"].get("assetA") or [])
+    record("负例（正则回归）：.tar.sha256 / .shp 不被截断成 .tar.sh / .sh，只有真的缺的 run.sh 报缺失",
+           miss == ["img/run.sh"], f"missing={miss}")
+
     record("负例：没有容器证据时 /opt 绝对路径仍判越界",
            rep_p["results"][0]["violation_count"] == 1, f"vc={rep_p['results'][0]['violation_count']}")
 
