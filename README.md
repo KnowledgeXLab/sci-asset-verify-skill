@@ -202,7 +202,21 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发版 `1.2-beta.7-dev`（未发版）：**容器内绝对路径不再误判为越界、文档路径不再被截断误判，sage 探测与覆盖表两处误判修正**——资产自身或同包 `environment` 资产声明了容器时，`/opt/…`、`/data/…` 记为 note；`/home/…`、`/Users/…`、`/root/…` 等宿主机路径仍判越界。
+### 1.2-beta.7 — 2026-11-18
+
+**四类误判修正（都来自真实包复核）**
+
+- **容器内绝对路径不再判越界**：资产自身声明容器（`environment_type=docker`、`image`、`base_image`、自带
+  `Dockerfile`/`compose.yaml`）或**同包存在声明了容器的 `environment` 资产**时，`/opt/…`、`/data/…` 记为 note；
+  `/home/…`、`/Users/…`、`/root/…` 等宿主机路径仍判越界。结果里带 `container_context` 说明豁免依据
+- **文档路径 token 不再被截断**：`image/x.tar.sha256` 曾被截成 `…tar.sh`、`a.shp` 曾被截成 `a.sh` 而误报缺失；
+  扩展名改为必须落在文件名边界上。仅大小写不同的同名文件单独记 `case_only_mismatch`，不算缺失
+- **`sage_probe.py detect` 支持 `catalog.json` 的路径数组**：`assets: ["x/asset.json", …]` 时不再
+  `AttributeError`，逐条解析出资产类型
+- **覆盖表 na 规则字段名修正**：`P1-VERIFY-DOC` 曾因读旧字段名而永远判 na（理由与事实相反），
+  现在按实际 `cases_json` 判定；`validate/cases.json` 缺失时兜底取资产内任一 `cases.json`
+
+- 自测 120 → **125 项断言**
 
 ### 1.2-beta.6 — 2026-11-17
 
