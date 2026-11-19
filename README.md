@@ -202,7 +202,21 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
-> 当前开发版 `1.2-beta.8-dev`（未发版）：**核验过程不再把凭据落盘**——隔离 DSH_HOME 只在内存解析 `*_API_KEY` 并以环境变量注入，跑完清理残留凭据；新增 `P0-SECRET` 检查（凭据文件 / 明文密钥一律阻断）。
+### 1.2-beta.8 — 2026-11-19
+
+**安全修复：核验过程不再把凭据落盘**
+
+隔离 `DSH_HOME` 原先会把 `~/.dsh/.credentials.yaml` 复制进 run 目录，`asset-runs/` 随包外发即等于交付物含明文密钥。
+
+- 隔离 `DSH_HOME` 只复制 profiles 与 node_modules 软链；**凭据在内存中解析** `*_API_KEY`
+  （`AGENT_CENTER_API_KEY` / `DEEPSEEK_API_KEY` / `INKSTONE_API_KEY` …）后**经环境变量注入子进程**
+- 新增 `scrub_secrets()`：每次运行结束（含异常分支）清理 `.credentials.yaml`、`.dsh-home-*`、
+  `codex-home` / `claude-home` 及其 `auth.json`
+- **新增检查项 `P0-SECRET`**（10 条清单里的第 5 条 P0）：包内出现凭据文件（`.credentials.yaml`、`auth.json`、
+  带密钥的 `.env`）或明文密钥（`sk-…`、`Bearer …`、`*_API_KEY=<值>`）即**阻断交付**；
+  扫描跳过 `asset-runs/`、`.asset-work/`、`node_modules/`、`vendor/`、`.tmp/`，避免插件示例文档误报
+
+- 自测 125 → **128 项断言**
 
 ### 1.2-beta.7 — 2026-11-18
 
@@ -239,7 +253,7 @@ vendor/            随包分发的 openpyxl
 
 **判定口径固定，结论可复现**
 
-- P0×4 / P1×5 写死：P0 = 包结构、包络合规、资产完整性（含引用包外/绝对路径）、可执行验证入口与结论；
+- P0×5 / P1×5 写死：P0 = 包结构、包络合规、资产完整性（含引用包外/绝对路径）、可执行验证入口与结论、不得含凭据/密钥（`P0-SECRET`）；
   P1 = 文档引用不存在、版本口径不一致、声明与实体/实现不符、文档事实或算术错误、验证说明与用例不一致
 - `scripts/probe_package.py` 出**确定性事实**（同包多次运行指纹相同）+ `--evaluate` 按清单判级；
   报告须附 `pass/fail/na` 覆盖表，`na` 必须写理由
