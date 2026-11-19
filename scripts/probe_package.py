@@ -416,6 +416,43 @@ def probe_verify_entry(assets: list) -> dict:
             'without_entry': sorted(k for k, v in rows.items() if not ok(v))}
 
 
+SECRET_NAME = re.compile(r'(\.credentials\.ya?ml$|(^|/)\.env$|(^|/)auth\.json$|secret|token|credential)', re.I)
+SECRET_VALUE = re.compile(r'(sk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{16,}|[A-Z][A-Z0-9_]*_API_KEY\s*[:=]\s*["\']?[A-Za-z0-9._-]{12,})')
+
+
+def probe_secrets(root: Path, assets: list) -> dict:
+    """包内是否有凭据文件或明文密钥（交付包不得含密钥）。"""
+    hits = []
+    for p_ in sorted(root.rglob('*')):
+        rel = p_.relative_to(root)
+        parts = set(rel.parts)
+        if ({'asset-runs', '.git', '.asset-work', 'node_modules', 'vendor', '.tmp', 'site-packages'}
+                & parts):
+            continue
+        if any(x.startswith(('.dsh-home-', 'codex-home', 'claude-home')) for x in parts):
+            continue
+        name = p_.name
+        if p_.is_dir() and name.startswith('.dsh-home-'):
+            hits.append({'path': str(rel), 'why': '隔离 home 目录（可能含凭据）'})
+            continue
+        if not p_.is_file():
+            continue
+        if SECRET_NAME.search(name) and p_.suffix.lower() in ('.yaml', '.yml', '.env', '.json', '.txt', ''):
+            hits.append({'path': str(rel), 'why': f'文件名疑似凭据：{name}'})
+            continue
+        if p_.stat().st_size > 2 * 1024 * 1024 or p_.suffix.lower() not in (
+                '.json', '.yaml', '.yml', '.env', '.txt', '.md', '.py', '.sh', '.cfg', '.ini', '.toml'):
+            continue
+        try:
+            text = p_.read_text(encoding='utf-8', errors='replace')
+        except Exception:  # noqa: BLE001
+            continue
+        m = SECRET_VALUE.search(text)
+        if m:
+            hits.append({'path': str(rel), 'why': '文件内含明文密钥样式', 'kind': m.group(0)[:12] + '…'})
+    return {'hits': hits[:50], 'count': len(hits)}
+
+
 def checks_of(root: Path) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
@@ -438,6 +475,7 @@ def checks_of(root: Path) -> dict:
         'version_profile': probe_version_consistency(assets, metas),
         'verify_doc_profile': probe_verify_docs(assets),
         'verify_entry_profile': probe_verify_entry(assets),
+        'secret_profile': probe_secrets(root, assets),
     }
 
 
@@ -496,6 +534,10 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
         complete_detail['escaping_symlinks'] = out_refs['escaping_symlinks']
     if complete_detail:
         add('P0-COMPLETE', complete_detail)
+
+    sec = checks.get('secret_profile') or {}
+    if sec.get('hits'):
+        add('P0-SECRET', {'count': sec.get('count'), 'hits': sec['hits'][:20]})
 
     ventry = checks.get('verify_entry_profile') or {}
     if ventry.get('without_entry'):

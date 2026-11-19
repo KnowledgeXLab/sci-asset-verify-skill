@@ -54,7 +54,8 @@ def dsh_home_runtime(out: Path, skill_name: str, mode: str = 'auto') -> tuple[di
 
     返回 (要注入的环境变量, 说明)。mode:
       default  → 用宿主的 ~/.dsh
-      isolated → 复制一份到 run 目录下（工作区内可写），profiles/headless + node_modules 软链 + 凭据 600 复制
+      isolated → 复制 profiles/headless + node_modules 软链到 run 目录下；**凭据绝不落盘**，
+                 只在内存里读出 *_API_KEY 并通过环境变量注入子进程
       auto     → 宿主 DSH_HOME 可写就用宿主的，否则隔离
     """
     real = Path(os.environ.get('DSH_HOME') or (Path.home() / '.dsh'))
@@ -76,13 +77,53 @@ def dsh_home_runtime(out: Path, skill_name: str, mode: str = 'auto') -> tuple[di
                 nm_dst.symlink_to(nm_src, target_is_directory=True)
             except OSError:
                 shutil.copytree(nm_src, nm_dst, dirs_exist_ok=True)
-        cred_src, cred_dst = real / '.credentials.yaml', home / '.credentials.yaml'
-        if cred_src.is_file() and not cred_dst.exists():
-            shutil.copy2(cred_src, cred_dst)
-            os.chmod(cred_dst, 0o600)
-    return ({'DSH_HOME': str(home)},
-            f'隔离 DSH_HOME={home}（工作区内可写；凭据以 600 复制到 {home}/.credentials.yaml，'
-            '删 run 目录时一并清掉）')
+    # 凭据**只读进内存、经环境变量传给子进程**，绝不在 run 目录留副本（交付包不得含密钥）
+    env = {'DSH_HOME': str(home)}
+    env.update(credential_env(real))
+    return env, (f'隔离 DSH_HOME={home}（工作区内可写）；凭据仅以环境变量注入，未落盘'
+                 f'（注入键：{", ".join(sorted(credential_env(real))) or "无"}）')
+
+
+def credential_env(real: Path) -> dict:
+    """从凭据文件内存解析 *_API_KEY，返回要注入的环境变量；文件不存在或解析不到就返回空。"""
+    f = real / '.credentials.yaml'
+    if not f.is_file():
+        return {}
+    out = {}
+    try:
+        text = f.read_text(encoding='utf-8', errors='replace')
+    except Exception:  # noqa: BLE001
+        return {}
+    for line in text.splitlines():
+        m = re.match(r'^\s*([A-Z][A-Z0-9_]*_API_KEY)\s*:\s*["\']?([^"\'\s#]+)', line)
+        if m:
+            out[m.group(1)] = m.group(2)
+    return out
+
+
+def scrub_secrets(base: Path) -> list[str]:
+    """删掉运行目录里任何凭据文件/隔离 home 目录（纵深防御，正常流程本就该没有）。"""
+    removed = []
+    if not base.is_dir():
+        return removed
+    for f in list(base.rglob('.credentials.yaml')) + list(base.rglob('*.credentials.yaml')):
+        try:
+            f.unlink()
+            removed.append(str(f))
+        except OSError:
+            pass
+    for pattern in ('.dsh-home-*', 'codex-home', 'claude-home'):
+        for d in list(base.rglob(pattern)):
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+                removed.append(str(d))
+    # 兜底：任何残留的 agent 凭据文件
+    for name in ('auth.json', 'credentials.json'):
+        for f in base.rglob(name):
+            if f.is_file() and any(x in str(f) for x in ('codex-home', 'claude-home', '.dsh-home')):
+                f.unlink(missing_ok=True)
+                removed.append(str(f))
+    return removed
 
 
 SAGE_PATCH = """# Sage 后端补丁：注册端砚 provider 并把默认模型切到 Sage-A1.5（harness 不变）
@@ -362,6 +403,7 @@ def main(argv=None) -> int:
         return 3
     (out.parent / f'agent-{skill.name}-stdout.txt').write_text(proc.stdout or '', encoding='utf-8')
     (out.parent / f'agent-{skill.name}-stderr.txt').write_text(proc.stderr or '', encoding='utf-8')
+    scrubbed = scrub_secrets(out.parent)
 
     # 宿主 DSH_HOME 写不进去（沙箱拒绝）时，隔离一份再试一次；第一次现场留在 attempt-01 前缀文件里
     retried_isolated = False
@@ -421,6 +463,7 @@ def main(argv=None) -> int:
                       'substituted_harness': substituted or None,
                       'backend': args.backend, 'provider': provider, 'model': model or '(harness 默认)',
                       'cmd_head': cmd[:8], 'dsh_home': dsh_note, 'agent_rc': proc.returncode,
+                      'secrets_scrubbed': scrubbed,
                       'gate_cmd': gate_cmd, 'gate_rc': gate_proc.returncode,
                       'gate_stdout': (gate_proc.stdout or '')[-1500:],
                       'gate_stderr': (gate_proc.stderr or '')[-1500:],

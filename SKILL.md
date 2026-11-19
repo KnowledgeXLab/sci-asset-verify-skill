@@ -36,6 +36,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 | `P0-STRUCT` | 包根下的子目录只能是「资产目录（含 `asset.json`）」或 `asset-runs/`；**包根不得有 `asset.json`——资产必须作为资产包的子目录存在** |
 | `P0-ENVELOPE` | 任一资产的 `asset.json` / `external_assets.json` 等描述文件必须符合规范（结构、字段名、`asset_id` 四段、枚举取值） |
 | `P0-COMPLETE` | 声明的实体必须存在且摘要/大小一致；不得自指；不得引用包外路径（`../`、绝对路径、`file://`、指向包外的软链） |
+| `P0-SECRET` | 包内不得出现凭据文件（`.credentials.yaml`、`auth.json`、带密钥的 `.env`）或明文密钥（`sk-…`、`Bearer …`、`*_API_KEY=<值>`）；核验产物里的临时凭据副本同样不允许 |
 | `P0-VERIFY` | 每个资产都要有**可执行验证入口**（自带用例/验收脚本/测试）；入口执行结论必须通过 |
 
 > **P0 只以资产自带用例/门槛的结论为准**；核验方补建用例发现的问题最高算 P1。
@@ -194,7 +195,7 @@ python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装�
 跑完自动用 readme 声明的门槛脚本判 **agent 产物**（`--artifact <产物目录>`），证据落 `agent-<资产>-report.json`。
 
 **沙箱提示**：nested dsh 要写 `$DSH_HOME/profiles/*/cordis.yml`，被核验沙箱（workspace-write）挡住时用
-`--dsh-home isolated`（自动复制一份 profiles 到 run 目录、node_modules 软链、凭据以 600 复制）；
+`--dsh-home isolated`（复制 profiles 到 run 目录、node_modules 软链；**凭据绝不落盘**——只在内存里解析 `*_API_KEY` 并经环境变量注入子进程，跑完还会清理任何残留凭据）；
 默认 `auto` 会先探宿主可写性，失败且命中沙箱关键词时自动隔离重试一次，首次现场留 `agent-<资产>-attempt-01-sandbox-*.txt`。
 
 ## 2.5 外部资产挂载（依赖外部资产的用例必须先做）
@@ -300,7 +301,7 @@ python scripts/sage_probe.py detect <资产根目录> --json-out <run>/sage-need
 
 它按「有无 skill 资产」+ 包内证据（`LLM_*`/`OPENAI_*` 环境模板、`chat/completions` 调用、model-backed 适配器、Sage 后端开关、asset.json 的模型依赖）判定；只有既无 skill 资产又无这些证据时才记 `not_applicable_no_llm_asset`。
 
-需要测时先解析配置，优先级 **CLI > 环境变量 `SAGE_BASE_URL` / `SAGE_MODEL` / `SAGE_API_KEY` > 宿主机的 DSH 配置**（`~/.dsh/profiles/*/cordis.patch.yml` 里 models 含 Sage 的 provider，密钥从环境变量或 `~/.dsh/.credentials.yaml` 只读解析）：
+需要测时先解析配置，优先级 **CLI > 环境变量 `SAGE_BASE_URL` / `SAGE_MODEL` / `SAGE_API_KEY` > 宿主机的 DSH 配置**（`~/.dsh/profiles/*/cordis.patch.yml` 里 models 含 Sage 的 provider；密钥只从环境变量读，必要时从 `~/.dsh/.credentials.yaml` **内存解析**后注入环境变量，不写任何文件）：
 
 ```
 python scripts/sage_probe.py config --probe --json-out <run>/sage-config.json

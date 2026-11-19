@@ -1306,6 +1306,37 @@ def t17_reproducible(tmp: Path) -> None:
     record("正例：资产有 validate/cases.json 时 P1-VERIFY-DOC 判 pass（不因字段名不匹配误判 na）",
            cov_good["P1-VERIFY-DOC"]["status"] == "pass", f"status={cov_good['P1-VERIFY-DOC']}")
 
+    # 凭据/密钥：文件名与内容两种形态都判 P0-SECRET
+    sec_pkg = d / "sec"
+    (sec_pkg / "c1").mkdir(parents=True)
+    (sec_pkg / "c1" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/data/c1", "asset_type": "data",
+         "name": "c1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+    (sec_pkg / "c1" / ".credentials.yaml").write_text(
+        "INKSTONE_API_KEY: sk-live-abcdefghijklmnop123456\n", encoding="utf-8")
+    out_s1 = d / "sec1.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--evaluate",
+         "--json-out", str(out_s1)], d)
+    ids_s1 = {f["check_id"]: f["level"] for f in json.loads(out_s1.read_text(encoding="utf-8"))["verdict"]["findings"]}
+    record("负例：包内出现 .credentials.yaml → P0-SECRET（阻断）", ids_s1.get("P0-SECRET") == "P0", f"ids={ids_s1}")
+
+    (sec_pkg / "c1" / ".credentials.yaml").unlink()
+    (sec_pkg / "c1" / "run.py").write_text('K = "sk-live-abcdefghijklmnop123456"\n', encoding="utf-8")
+    out_s2 = d / "sec2.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--evaluate",
+         "--json-out", str(out_s2)], d)
+    ids_s2 = {f["check_id"]: f["level"] for f in json.loads(out_s2.read_text(encoding="utf-8"))["verdict"]["findings"]}
+    record("负例：正文里硬编码 sk- 密钥 → P0-SECRET", ids_s2.get("P0-SECRET") == "P0", f"ids={ids_s2}")
+
+    (sec_pkg / "c1" / "run.py").unlink()
+    (sec_pkg / "c1" / "readme.md").write_text("用环境变量 INKSTONE_API_KEY 注入，不落盘\n", encoding="utf-8")
+    out_s3 = d / "sec3.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--evaluate",
+         "--json-out", str(out_s3)], d)
+    ids_s3 = {f["check_id"] for f in json.loads(out_s3.read_text(encoding="utf-8"))["verdict"]["findings"]}
+    record("正例：只提环境变量名、无密钥值时不误报 P0-SECRET", "P0-SECRET" not in ids_s3, f"ids={ids_s3}")
+
     record("正例：合规包 P0/P1 均为 0",
            rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
            f"summary={rep2['summary']}")

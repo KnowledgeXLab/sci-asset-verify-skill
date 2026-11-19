@@ -1,6 +1,6 @@
 {
   "schema_version": "3.0.0",
-  "note": "固定检查清单（P0 判定性 / P1 判定性）。P0/P1 结论只能引用这里的 check_id；P2 是建议，不限制来源。",
+  "note": "固定检查清单（P0 判定性 / P1 判定性）。P0/P1 结论只能引用这里的 check_id（含 P0-SECRET：交付包含密钥一律阻断）；P2 是建议，不限制来源。",
   "intent_options": [
     "delivery",
     "review"
@@ -48,6 +48,14 @@
       "name": "可执行验证入口与结论",
       "criterion": "每个资产都要有可执行的验证入口（自带用例/验收脚本/验证说明）；入口执行结论必须通过（以资产自带门槛为准）",
       "decide": "verify_entry_missing_or_failed"
+    },
+    {
+      "id": "P0-SECRET",
+      "level": "P0",
+      "name": "不得包含凭据/密钥",
+      "criterion": "资产包内不得出现凭据文件（`.credentials.yaml`、`.env` 带密钥、`*token*`/`*secret*` 文件）或明文密钥（`sk-…`、`Bearer …`、`*_API_KEY=<值>`）；核验产物里的临时凭据副本同样不允许",
+      "applies_to": "all",
+      "decide": "secrets_found"
     },
     {
       "id": "P1-DOC-REF",
