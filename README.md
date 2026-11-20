@@ -202,6 +202,22 @@ vendor/            随包分发的 openpyxl
 
 ## 版本记录
 
+### 1.2-beta.9 — 2026-11-20
+
+**Sage 配置未就绪不再「只记未测」，改为阻断**
+
+- 新增检查项 **`P0-SAGE`**（清单现为 **P0×6 + P1×5 = 11 条**）：需要 Sage 附加测试的资产
+  （包内含 skill/agent 类资产即需要）若因环境变量/连通性等配置原因没跑通，且用户给不出可用配置 → 判 **P0**，
+  须先完成配置（**API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery）获取**）才能交付，不得以「未测」结案
+- `probe_package.py` 新增 `--run-dir`：读 `sage-need.json` / `sage-config.json` / `sage-a1.5-report.json`，
+  区分 `config_missing`（没配）/ `config_invalid`（配了但连不上、401/403）/ `not_run`（根本没用 Sage 跑）
+- 索取配置的文案写清：只要在**环境变量**里设置 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`，
+  不要把明文密钥贴进对话、写进文件或带进交付包
+- `SKILL.md` 第 5 步固定带 `--run-dir` 跑判定；`check_report.py` 加守卫——需要 Sage 却没带 `--run-dir`
+  （缺 `sage_profile`）或未跑通却没有 `P0-SAGE`，报告结构检查直接告警
+
+- 自测 128 → **132 项断言**
+
 ### 1.2-beta.8 — 2026-11-19
 
 **安全修复：核验过程不再把凭据落盘**

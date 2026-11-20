@@ -58,6 +58,14 @@
       "decide": "secrets_found"
     },
     {
+      "id": "P0-SAGE",
+      "level": "P0",
+      "name": "Sage 附加测试未能执行",
+      "criterion": "需要 Sage 附加测试的资产（包内含 skill/agent 类资产即需要），若因环境变量/连通性等配置原因未能跑通 Sage，且用户未给出可用配置，则判 P0——必须先完成配置（API URL 与 API KEY 可在端砚平台获取）再交付，不得以「未测」「跳过」结案",
+      "applies_to": "all",
+      "decide": "sage_not_ready"
+    },
+    {
       "id": "P1-DOC-REF",
       "level": "P1",
       "name": "文档/命令指向不存在的文件或目录",
@@ -91,14 +99,6 @@
       "name": "验证说明与实际用例一致",
       "criterion": "验证说明里显式声明的用例数量/用例编号必须与 validate/cases.json 一致（不要求逐条列出，但声明了就不能对不上）",
       "decide": "verify_doc_mismatch"
-    },
-    {
-      "id": "P0-SAGE",
-      "level": "P0",
-      "name": "Sage 附加测试未能执行",
-      "criterion": "需要 Sage 附加测试的资产（包内含 skill/agent 类资产即需要），若因环境变量/连通性等配置原因未能跑通 Sage，且用户未给出可用配置，则判 P0——必须先完成配置（API URL 与 API KEY 可在端砚平台获取）再交付，不得以「未测」「跳过」结案",
-      "applies_to": "all",
-      "decide": "sage_not_ready"
     }
   ]
 }
