@@ -89,7 +89,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/18] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/19] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -214,7 +214,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/18] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/19] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -301,7 +301,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/18] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/19] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -345,7 +345,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/18] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/19] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -399,7 +399,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/18] prune_evidence.py — 只留报告类证据")
+    print("\n[5/19] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -439,7 +439,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/18] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/19] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -532,7 +532,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/18] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/19] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -572,7 +572,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/18] external_refs.py — 每个资产目录下的外部资产引用校验与「资产关联」列")
+    print("\n[8/19] external_refs.py — 每个资产目录下的外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
 
@@ -635,7 +635,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/18] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/19] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -711,7 +711,7 @@ def t9_version_stamp(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T10 报告分级
 def t10_report_levels(tmp: Path) -> None:
-    print("\n[10/18] check_report.py — 问题清单 P0/P1/P2 分级")
+    print("\n[10/19] check_report.py — 问题清单 P0/P1/P2 分级")
     d = tmp / "t10"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -749,7 +749,7 @@ def t10_report_levels(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T11 资产自包含
 def t11_selfcontained(tmp: Path) -> None:
-    print("\n[11/18] check_selfcontained.py — 资产只能引用自己目录内的文件")
+    print("\n[11/19] check_selfcontained.py — 资产只能引用自己目录内的文件")
     d = tmp / "t11"
     pkg = d / "pkg"
     good = pkg / "asset-a"
@@ -883,7 +883,7 @@ def t11_selfcontained(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T12 批次目录规范
 def t12_run_id(tmp: Path) -> None:
-    print("\n[12/18] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
+    print("\n[12/19] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
     d = tmp / "t12"
     pkg = d / "pkg"
     pkg.mkdir(parents=True)
@@ -922,7 +922,7 @@ def t12_run_id(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T13 外部资产挂载
 def t13_mount_external(tmp: Path) -> None:
-    print("\n[13/18] mount_external.py — 先同包解析，包外复制进副本，再按 target_path 建软链")
+    print("\n[13/19] mount_external.py — 先同包解析，包外复制进副本，再按 target_path 建软链")
     d = tmp / "t13"
     copy_root = d / ".asset-work" / "run-x"
 
@@ -1002,7 +1002,7 @@ def t13_mount_external(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T14 挂载副本不参与校验
 def t14_mounted_not_checked(tmp: Path) -> None:
-    print("\n[14/18] 挂载进来的外部资产不能被当成包内资产（_layout 标记）")
+    print("\n[14/19] 挂载进来的外部资产不能被当成包内资产（_layout 标记）")
     d = tmp / "t14"
     pkg = d / "pkg"
     for slug, aid, typ in (("asset-a", "sciasset://2026ZD123456/earth/tool/asset-a", "tool"),
@@ -1060,7 +1060,7 @@ def t14_mounted_not_checked(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T15 skill 测试说明
 def t15_skill_spec(tmp: Path) -> None:
-    print("\n[15/18] check_skill_spec.py — skill 必须上 agent：md 里写清 harness/model/任务/门槛")
+    print("\n[15/19] check_skill_spec.py — skill 必须上 agent：md 里写清 harness/model/任务/门槛")
     d = tmp / "t15"
     pkg = d / "pkg"
 
@@ -1173,7 +1173,7 @@ def t15_skill_spec(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T16 skill 独立 CLI 验收
 def t16_skill_agent_cli(tmp: Path) -> None:
-    print("\n[16/18] run_skill_agent.py — skill 验收走独立 CLI 进程（不在会话内跑）")
+    print("\n[16/19] run_skill_agent.py — skill 验收走独立 CLI 进程（不在会话内跑）")
     d = tmp / "t16"
     skill = d / "pkg" / "skill-a"
     (skill / "validate" / "cases" / "C01").mkdir(parents=True)
@@ -1256,7 +1256,7 @@ def t16_skill_agent_cli(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T17 可复现性
 def t17_reproducible(tmp: Path) -> None:
-    print("\n[17/18] probe_package.py — 事实恒定 + P0×4/P1×5 固定判级")
+    print("\n[17/19] probe_package.py — 事实恒定 + P0×4/P1×5 固定判级")
     d = tmp / "t17"
 
     # ① 结构不合规 + 资产不完整 + 无验证入口
@@ -1485,7 +1485,7 @@ def t17_reproducible(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T18 skill 自更新
 def t18_self_update(tmp: Path) -> None:
-    print("\n[18/18] update_skill.py — 开跑前对齐远端最新 tag（失败不阻断）")
+    print("\n[18/19] update_skill.py — 开跑前对齐远端最新 tag（失败不阻断）")
     import shutil as _sh
     if not _sh.which("git"):
         record("跳过：无 git", True, "git 不可用")
@@ -1560,6 +1560,218 @@ def t18_self_update(tmp: Path) -> None:
     subprocess.run(["chmod", "-R", "u+w", str(local)], check=False)
 
 
+def _harbor_task(base: Path, name: str = "task-a", *, slug: str | None = None, env: str = "dir",
+                 solve: bool = True, tests: bool = True, instr: str | None = "do the thing",
+                 toml_body: str | None = None, os_name: str | None = None) -> Path:
+    """构造最小 harbor 任务目录（目录名 name，task.toml 里的 [task].name 用 slug）。
+    env: dir=environment/ 目录 / image=仅 docker_image 声明。"""
+    t = base / name
+    short = slug or name
+    (t / "solution").mkdir(parents=True, exist_ok=True)
+    (t / "tests").mkdir(parents=True, exist_ok=True)
+    toml = toml_body if toml_body is not None else (
+        f'schema_version = "1.4"\n\n[task]\nname = "acme/{short}"\n\n[environment]\n'
+        + (f'os = "{os_name}"\n' if os_name else '')
+        + ('docker_image = "python:3.12-slim"\n' if env == "image" else 'cpus = 1\n'))
+    (t / "task.toml").write_text(toml, encoding="utf-8")
+    if env == "dir" and toml_body is None:
+        (t / "environment").mkdir(exist_ok=True)
+        (t / "environment" / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    if instr is not None:
+        (t / "instruction.md").write_text(instr, encoding="utf-8")
+    if solve:
+        (t / "solution" / "solve.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    if tests:
+        (t / "tests" / "test.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    return t
+
+
+def _harbor_asset_json(t: Path, typ: str = "task") -> None:
+    (t / "asset.json").write_text(json.dumps({
+        "asset_id": f"sciasset://2026ZD123456/acme/{typ}/{t.name}", "asset_type": typ,
+        "name": t.name, "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "task.toml", "media_type": "text/prs.toml"}]}},
+        ensure_ascii=False), encoding="utf-8")
+
+
+def _probe(pkg: Path, out: Path, tmp: Path) -> dict:
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(pkg), "--evaluate",
+         "--json-out", str(out)], tmp)
+    return json.loads(out.read_text(encoding="utf-8"))["verdict"]
+
+
+def t19_harbor(tmp: Path) -> None:
+    print("\n[19/19] harbor 任务包 — 形态识别、静态检查、reward 解析、blocked 语义")
+    sys.path.insert(0, str(SCRIPTS))
+    from _harbor import probe_harbor, static_issues, compute_task_digest
+    from harbor_run import parse_job_reward
+
+    d = tmp / "t18"
+
+    # ---- 正例单任务包：必需文件齐 → 静态 P0 全过，P0-HARB-RUN 是执行占位 na
+    pkg = d / "ok"
+    t = _harbor_task(pkg, "my-task")
+    _harbor_asset_json(t)
+    v = _probe(pkg, d / "ok.json", d)
+    ids = [f["check_id"] for f in v["findings"]]
+    cov = {c["check_id"]: c for c in v["coverage"]}
+    record("正例：必需文件齐全的 harbor 任务不产生 P0/P1 检查发现",
+           "P0-HARB-STRUCT" not in ids and "P1-HARB-DATASET" not in ids and "P1-HARB-ENVELOPE" not in ids,
+           f"ids={ids}")
+    record("正例：P0-HARB-STRUCT pass；P0-HARB-RUN na 且理由指向 harbor_run.py 执行",
+           cov["P0-HARB-STRUCT"]["status"] == "pass"
+           and cov["P0-HARB-RUN"]["status"] == "na" and "harbor_run.py" in cov["P0-HARB-RUN"]["na_reason"],
+           f"cov={cov['P0-HARB-STRUCT']},{cov['P0-HARB-RUN']}")
+    prof = probe_harbor(pkg, [t])
+    record("正例：形态识别为 task，schema_version/task_name 解析正确",
+           prof["assets"]["my-task"]["form"] == "task"
+           and prof["assets"]["my-task"]["task"]["task_name"] == "acme/my-task",
+           f"profile={json.dumps(prof, ensure_ascii=False)[:200]}")
+
+    # ---- 负例矩阵：缺文件逐项判 P0 P0-HARB-STRUCT
+    def missing_case(name: str, **kw) -> None:
+        p = d / name
+        t2 = _harbor_task(p, "t", **kw)
+        _harbor_asset_json(t2)
+        v2 = _probe(p, d / f"{name}.json", d)
+        f2 = next((f for f in v2["findings"] if f["check_id"] == "P0-HARB-STRUCT"), None)
+        record(f"负例：{name} 判 P0 P0-HARB-STRUCT",
+               f2 is not None and f2["level"] == "P0", f"findings={v2['findings']}")
+
+    missing_case("no-tests", tests=False)
+    missing_case("no-solution", solve=False)
+    missing_case("empty-instruction", instr="")
+    missing_case("bad-toml", toml_body='schema_version = "1.4"\n[task\nname = "x"\n')
+    p = d / "no-env"
+    t3 = _harbor_task(p, "t", env="none")
+    _harbor_asset_json(t3)
+    v3 = _probe(p, d / "no-env.json", d)
+    f3 = next((f for f in v3["findings"] if f["check_id"] == "P0-HARB-STRUCT"), None)
+    record("负例：environment/ 与 docker_image 双缺判 P0", f3 is not None and f3["level"] == "P0",
+           f"findings={v3['findings']}")
+
+    # ---- 显式 dataset：dataset.toml 与 asset.json 在数据集目录上，任务为其子目录
+    p = d / "ds"
+    set_dir = p / "set"
+    _harbor_task(set_dir, "task1")
+    _harbor_task(set_dir, "task2")
+    (set_dir / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/acme/task/set", "asset_type": "task",
+        "name": "set", "asset_version": "1.0.0",
+        "spec": {"artifacts": [{"uri": "dataset.toml", "media_type": "text/prs.toml"}]}},
+        ensure_ascii=False), encoding="utf-8")
+    (set_dir / "dataset.toml").write_text(
+        'schema_version = "1.0"\n\n[dataset]\nname = "acme/set"\n\n'
+        '[[tasks]]\nname = "acme/task1"\ndigest = "sha256:' + "0" * 64 + '"\n\n'
+        '[[tasks]]\nname = "acme/task3"\ndigest = "sha256:' + "1" * 64 + '"\n', encoding="utf-8")
+    v4 = _probe(p, d / "ds.json", d)
+    f4 = next((f for f in v4["findings"] if f["check_id"] == "P1-HARB-DATASET"), None)
+    record("负例：dataset.toml 指向缺失任务判 P1 P1-HARB-DATASET",
+           f4 is not None and f4["level"] == "P1" and "task3" in json.dumps(f4["detail"], ensure_ascii=False),
+           f"findings={v4['findings']}")
+
+    # ---- 隐式 dataset：一个资产目录下多个任务目录、无 dataset.toml → P2
+    p = d / "implicit"
+    set_dir = p / "set"
+    _harbor_task(set_dir, "task1")
+    _harbor_task(set_dir, "task2")
+    (set_dir / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/acme/task/set", "asset_type": "task",
+        "name": "set", "asset_version": "1.0.0", "spec": {"artifacts": []}},
+        ensure_ascii=False), encoding="utf-8")
+    v5 = _probe(p, d / "implicit.json", d)
+    ids5 = [f["check_id"] for f in v5["findings"]]
+    topics5 = [str(n.get("topic")) for n in (v5.get("notes") or [])]
+    record("负例：隐式数据集（无 dataset.toml）只作 P2 建议，不进判定",
+           any("隐式数据集" in t for t in topics5) and "P1-HARB-DATASET" not in ids5
+           and not any(i.startswith("P0-HARB") for i in ids5), f"notes={topics5} ids={ids5}")
+
+    # ---- 未登记的 harbor 任务 → P1-HARB-ENVELOPE（包络缺口）
+    p = d / "unreg"
+    _harbor_task(p, "loose-task")
+    v6 = _probe(p, d / "unreg.json", d)
+    f6 = next((f for f in v6["findings"] if f["check_id"] == "P1-HARB-ENVELOPE"), None)
+    record("负例：harbor 任务不在任何 asset.json 条目下判 P1 P1-HARB-ENVELOPE",
+           f6 is not None and f6["level"] == "P1", f"findings={v6['findings']}")
+
+    # ---- asset_type 声明不是 task → P1-HARB-ENVELOPE
+    p = d / "wrongtype"
+    t7 = _harbor_task(p, "tw")
+    _harbor_asset_json(t7, typ="tool")
+    v7 = _probe(p, d / "wrongtype.json", d)
+    f7 = next((f for f in v7["findings"] if f["check_id"] == "P1-HARB-ENVELOPE"), None)
+    record("负例：asset.json 声明 asset_type=tool 与 harbor 实体不符判 P1",
+           f7 is not None and "declared_asset_type_not_task" in json.dumps(f7["detail"]),
+           f"findings={v7['findings']}")
+
+    # ---- digest 复算（只作事实，不稳定判）
+    dig = compute_task_digest(t)
+    record("正例：任务目录内容摘要可复算且格式为 sha256:<64hex>",
+           bool(re.match(r"^sha256:[a-f0-9]{64}$", dig)), f"digest={dig[:20]}…")
+
+    # ---- reward 解析：三种真实输出形态
+    job = d / "job1"
+    trial = job / "oracle" / "task__abc"
+    trial.mkdir(parents=True)
+    (trial / "result.json").write_text(json.dumps(
+        {"task_name": "acme/t", "verifier_result": {"rewards": {"reward": 1.0}}}), encoding="utf-8")
+    r1 = parse_job_reward(job / "oracle")
+    record("正例：trial result.json 的 verifier_result.rewards 解析出 reward=1.0",
+           r1["reward"] == 1.0 and "result.json" in str(r1["source"]), f"got={r1}")
+    job2 = d / "job2" / "nop"
+    job2.mkdir(parents=True)
+    (job2 / "results.jsonl").write_text('{"verified_reward": 0}\n', encoding="utf-8")
+    r2 = parse_job_reward(job2)
+    record("正例：results.jsonl 的 verified_reward 解析出 0.0（前向兼容）",
+           r2["reward"] == 0.0, f"got={r2}")
+    job3 = d / "job3" / "oracle"
+    (job3 / "trialx" / "verifier").mkdir(parents=True)
+    (job3 / "trialx" / "verifier" / "reward.txt").write_text("0\n", encoding="utf-8")
+    r3 = parse_job_reward(job3)
+    record("正例：verifier/reward.txt 兜底解析", r3["reward"] == 0.0, f"got={r3}")
+    r4 = parse_job_reward(d / "job-none")
+    record("负例：job 目录不存在时 reward=None 不抛异常", r4["reward"] is None, f"got={r4}")
+
+    # ---- harbor_run.py：无任务 → na 退出 0；任务存在但环境不备 → blocked 退出 3
+    p = d / "notask"
+    p.mkdir(parents=True)
+    run_dir = p / "asset-runs" / "run-20261117-000000"
+    run_dir.mkdir(parents=True)
+    proc = run([str(SCRIPTS / "harbor_run.py"), "--package", str(p), "--skip-lint"], d)
+    rep = json.loads((run_dir / "harbor-run-report.json").read_text(encoding="utf-8"))
+    record("正例：包内无 harbor 任务时 verdict=not_applicable 且退出 0",
+           proc.returncode == 0 and rep["verdict"] == "not_applicable_no_harbor_tasks",
+           f"rc={proc.returncode} verdict={rep['verdict']}")
+
+    p = d / "blocked"
+    t8 = _harbor_task(p, "t")
+    _harbor_asset_json(t8)
+    run_dir = p / "asset-runs" / "run-20261117-000001"
+    run_dir.mkdir(parents=True)
+    proc = run([str(SCRIPTS / "harbor_run.py"), "--package", str(p), "--skip-lint"], d,
+               env_extra={"PATH": "/usr/bin:/bin", "ACI_ASSET_VERIFY_AUTO_INSTALL": "0"})
+    rep = json.loads((run_dir / "harbor-run-report.json").read_text(encoding="utf-8"))
+    blocked_reasons = {b["status"] for b in rep.get("blocked_tasks", [])}
+    record("正例：docker/harbor 不备时全部任务记 blocked（不是 na、不是 fail）且退出 3",
+           proc.returncode == 3 and rep["verdict"] == "blocked" and len(rep["blocked_tasks"]) == 1
+           and blocked_reasons <= {"blocked_docker", "blocked_missing_harbor"},
+           f"rc={proc.returncode} verdict={rep['verdict']} blocked={blocked_reasons}")
+
+    # ---- case-minimums：task 全量 + 负例要求
+    mins = json.loads((SKILL / "assets" / "case-minimums.json").read_text(encoding="utf-8"))
+    record("正例：case-minimums 给 task 规定 nop 负例（negative_expected=1）",
+           (mins["require_kinds"].get("task") or {}).get("negative_expected") == 1
+           and "全量" in mins["by_type"]["task"]["why"], f"task={mins['by_type']['task']}")
+
+    # ---- audit-checks：harbor 检查项已入清单且级别正确
+    ac = json.loads((SKILL / "assets" / "audit-checks.json").read_text(encoding="utf-8"))
+    lv = {c["id"]: c["level"] for c in ac["checks"] if "HARB" in c["id"]}
+    record("正例：清单含 5 条 harbor 检查（P0-HARB-STRUCT/RUN、P1-HARB-DATASET/ENVELOPE/LINT）",
+           lv == {"P0-HARB-STRUCT": "P0", "P0-HARB-RUN": "P0",
+                  "P1-HARB-DATASET": "P1", "P1-HARB-ENVELOPE": "P1", "P1-HARB-LINT": "P1"},
+           f"levels={lv}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -1568,7 +1780,7 @@ def main() -> int:
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
                t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id, t13_mount_external, t14_mounted_not_checked,
-               t15_skill_spec, t16_skill_agent_cli, t17_reproducible, t18_self_update):
+               t15_skill_spec, t16_skill_agent_cli, t17_reproducible, t18_self_update, t19_harbor):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001

@@ -11,7 +11,7 @@
     "tool": { "min_cases": 3, "min_executed": 2, "why": "至少覆盖：一次成功业务调用、一次非法输入（预期错误）、一次结果比对" },
     "model": { "min_cases": 2, "min_executed": 2, "why": "至少覆盖：给定输入推理、边界或错误输入" },
     "skill": { "min_cases": 2, "min_executed": 1, "why": "至少覆盖：端到端链路 + 产物完整性" },
-    "task": { "min_cases": 2, "min_executed": 1, "why": "至少覆盖：按任务定义跑输入→预期输出，及约束条件" },
+    "task": { "min_cases": 1, "min_executed": 1, "why": "harbor 任务包全量执行：每个 task 一条用例，须 oracle reward=1 且 nop reward=0；执行不了的 task 记 blocked 并写明原因，不计入通过率分母且显式列出，不允许抽样" },
     "environment": { "min_cases": 1, "min_executed": 1, "why": "依赖导入与最小调用" },
     "trajectory": { "min_cases": 1, "min_executed": 1, "why": "结构可解析 + 引用一致" },
     "benchmark": { "min_cases": 2, "min_executed": 2, "why": "评测入口可执行 + 比较器对已知相等/不等判定正确" }
@@ -20,6 +20,7 @@
     "tool": { "negative_expected": 1, "why": "必须含一组预期错误用例（非法参数/拒绝执行），否则无法证明错误语义" },
     "model": { "negative_expected": 1, "why": "必须含一组边界或错误输入" },
     "skill": { "negative_expected": 0 },
-    "benchmark": { "negative_expected": 1, "why": "比较器必须对不相等的输入判为不通过" }
+    "benchmark": { "negative_expected": 1, "why": "比较器必须对不相等的输入判为不通过" },
+    "task": { "negative_expected": 1, "why": "harbor 任务的 nop trial 就是负例：不注入 solution 时 verifier 必须判 0，全绿测试证明不了判分能力" }
   }
 }

@@ -494,11 +494,46 @@ def probe_sage(run_dir: Path) -> dict:
             'hint': SAGE_HINT if (needed and not ran_ok) else ''}
 
 
+def probe_harbor_run(run_dir: Path) -> dict:
+    """harbor_run.py 的执行结果（oracle/nop 双 trial、lint 发现、blocked）。"""
+    f = run_dir / 'harbor-run-report.json'
+    if not f.is_file():
+        return {'executed': False}
+    try:
+        doc = json.loads(f.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        return {'executed': False, 'error': 'harbor-run-report.json 不可解析'}
+    tasks = doc.get('tasks') or doc.get('results') or []
+    failed, blocked, passed = [], [], []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        verdict = str(t.get('verdict') or t.get('status') or '').lower()
+        name = t.get('task') or t.get('asset') or t.get('name') or '?'
+        if verdict in ('pass', 'passed', 'ok'):
+            passed.append(name)
+        elif verdict.startswith('blocked'):
+            blocked.append({'task': name, 'why': t.get('reason') or verdict})
+        else:
+            failed.append({'task': name, 'oracle': t.get('oracle_reward'), 'nop': t.get('nop_reward'),
+                           'why': t.get('reason') or verdict})
+    lint = doc.get('lint') or {}
+    return {'executed': True, 'summary': doc.get('summary') or {},
+            'passed': passed, 'failed': failed, 'blocked': blocked,
+            'lint_correctness': lint.get('correctness') or [],
+            'lint_reproducibility': lint.get('reproducibility') or [],
+            'lint_note': lint.get('note')}
+
+
 def checks_of(root: Path, run_dir: Path | None = None) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
     for d in assets:
         metas[d.name] = load(d / 'asset.json') or {}
+    harbor_prof = (probe_harbor(root, assets) if probe_harbor
+                   else {'assets': {}, 'unregistered_task_dirs': []})
+    for name, e in (harbor_prof.get('assets') or {}).items():
+        e['declared_asset_type'] = (metas.get(name) or {}).get('asset_type')
     return {
         'package_summary': probe_package(root, assets),
         'governance_profile': probe_governance(metas),
@@ -517,9 +552,17 @@ def checks_of(root: Path, run_dir: Path | None = None) -> dict:
         'verify_doc_profile': probe_verify_docs(assets),
         'verify_entry_profile': probe_verify_entry(assets),
         'secret_profile': probe_secrets(root, assets),
+        'harbor_profile': harbor_prof,
+        'harbor_run_profile': probe_harbor_run(run_dir) if run_dir else {},
         'sage_profile': probe_sage(run_dir) if run_dir else {},
     }
 
+
+try:                      # harbor 任务包（terminal-bench-science 格式）探测模块
+    from _harbor import probe_harbor, static_issues
+except Exception:  # noqa: BLE001
+    probe_harbor = None
+    static_issues = None
 
 RISKY_LICENSE = ('仅限内部', '仅限项目内部', '禁止再分发', '禁止修改', '不得再分发', 'internal only', 'no redistribution')
 CHECKLIST = Path(__file__).resolve().parents[1] / 'assets' / 'audit-checks.json'
@@ -536,6 +579,7 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
              for t, n in ((checks.get('package_summary') or {}).get('asset_types') or {}).items()
              for k in [f'{t}#{i}' for i in range(n)]}
     findings = []
+    notes = []          # P2 级建议：由清单外观察产生，不参与 P0/P1 判定
 
     def add(cid, detail):
         meta = next((c for c in spec['checks'] if c['id'] == cid), {})
@@ -576,6 +620,51 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
         complete_detail['escaping_symlinks'] = out_refs['escaping_symlinks']
     if complete_detail:
         add('P0-COMPLETE', complete_detail)
+
+    harbor = checks.get('harbor_profile') or {}
+    harbor_assets = harbor.get('assets') or {}
+    harbor_run = checks.get('harbor_run_profile') or {}
+    harbor_present = bool(harbor_assets or harbor.get('unregistered_task_dirs'))
+    if static_issues and harbor_present:
+        iss = static_issues(harbor)
+        if iss.get('missing_files'):
+            add('P0-HARB-STRUCT', {'missing_files': iss['missing_files']})
+        dataset_mismatch = iss.get('dataset_mismatch') or {}
+        if dataset_mismatch:
+            add('P1-HARB-DATASET', {'dataset_mismatch': dataset_mismatch})
+        envelope = {}
+        if iss.get('unregistered_task_dirs'):
+            envelope['unregistered_task_dirs'] = iss['unregistered_task_dirs']
+        wrong_type = {n: str(e.get('declared_asset_type')) for n, e in harbor_assets.items()
+                      if e.get('declared_asset_type') != 'task'}
+        if wrong_type:
+            envelope['declared_asset_type_not_task'] = wrong_type
+        if envelope:
+            add('P1-HARB-ENVELOPE', envelope)
+        # P2 级建议：不进清单，作为建议输出
+        if iss.get('implicit_no_manifest'):
+            notes.append({'level': 'P2', 'topic': '隐式数据集缺 dataset.toml',
+                          'detail': iss['implicit_no_manifest']})
+        hints = {}
+        for n, e in harbor_assets.items():
+            tasks = ([e['task']] if e.get('task') else []) \
+                + list(((e.get('dataset') or {}).get('local_tasks') or {}).values()) \
+                + list((e.get('tasks') or {}).values())
+            got = sorted({h for t2 in tasks for h in (t2.get('verifier_llm_hints') or [])})
+            if got:
+                hints[n] = got
+        if hints:
+            notes.append({'level': 'P2', 'topic': 'verifier 依赖外部模型打分（reward 可能非确定）',
+                          'detail': hints})
+    if harbor_run.get('executed'):
+        if harbor_run.get('failed'):
+            add('P0-HARB-RUN', {'failed': harbor_run['failed'],
+                                'blocked': harbor_run.get('blocked') or []})
+        if harbor_run.get('lint_correctness'):
+            add('P1-HARB-LINT', {'findings': harbor_run['lint_correctness']})
+        if harbor_run.get('lint_reproducibility'):
+            notes.append({'level': 'P2', 'topic': 'harbor lint 可复现性建议',
+                          'detail': harbor_run['lint_reproducibility']})
 
     sage = checks.get('sage_profile') or {}
     if sage.get('needed') and not sage.get('ran_ok'):
@@ -622,7 +711,19 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     # ---------- 覆盖表 ----------
     failed = {f['check_id'] for f in findings}
     dprof = (checks.get('data_declaration_profile') or {}).get('assets') or {}
+    if not harbor_present:
+        harb_run = (False, '包内没有 harbor 任务/数据集资产')
+    elif harbor_run.get('executed'):
+        harb_run = (True, '')
+    else:
+        harb_run = (False, 'oracle/nop 由 harbor_run.py 执行判定：本次未执行（需 docker + harbor CLI）')
     na_rules = {
+        'P0-HARB-RUN': harb_run,
+        'P0-HARB-STRUCT': (harbor_present, '包内没有 harbor 任务/数据集资产'),
+        'P1-HARB-DATASET': (any(e.get('form') == 'dataset_explicit' for e in harbor_assets.values()),
+                            '包内没有显式 dataset.toml 数据集'),
+        'P1-HARB-ENVELOPE': (harbor_present, '包内没有 harbor 任务/数据集资产'),
+        'P1-HARB-LINT': (bool(harbor_run.get('executed')), 'harbor lint 未采集（需 harbor CLI，由 harbor_run.py 执行）'),
         'P0-SAGE': (bool((checks.get('sage_profile') or {}).get('needed')),
                     '本包不需要 Sage 附加测试（无 skill/agent 类资产或未判定为需要）'),
         'P1-DECL': (any(v.get('has_metadata') for v in dprof.values()), '没有 data 资产声明 metadata，无可核对项'),
@@ -643,7 +744,7 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
             status, reason = 'pass', ''
         coverage.append({'check_id': c['id'], 'level': c.get('level'), 'status': status, 'na_reason': reason})
 
-    return {'intent': intent, 'findings': findings, 'coverage': coverage,
+    return {'intent': intent, 'findings': findings, 'notes': notes, 'coverage': coverage,
             'coverage_summary': {k: sum(1 for c in coverage if c['status'] == k) for k in ('pass', 'fail', 'na')},
             'summary': {'P0': sum(1 for f in findings if f['level'] == 'P0'),
                         'P1': sum(1 for f in findings if f['level'] == 'P1')},

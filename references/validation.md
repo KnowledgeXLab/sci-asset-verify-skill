@@ -248,3 +248,15 @@ python scripts/prune_evidence.py --run <asset-runs>/<run_id>
 ```
 
 对照写法：通用后端与 Sage 的用例数、通过数、失败用例并列一行即可；**不要**把两边结果混算成一个通过率。
+
+## harbor 任务包的用例口径（task@harbor）
+
+harbor 任务包（含 `task.toml` / `dataset.toml`）不套用通用用例协议：
+
+* **一个 task = 一条用例**，用例名取 `[task].name`；用例内容是**两条 trial**：`-a oracle`（期望 reward=1）与 `-a nop`（期望 reward=0）。
+  两条都符合 → `pass`；任一不符 → `fail`（**P0 `P0-HARB-RUN`**，附两个 reward 与证据路径）
+* **全量执行**：dataset 里每个任务都跑，不许抽样；通过率分母 = 包内任务总数。跑不了的任务记 `blocked` 并写明原因，
+  **不计入分母且在报告显式列出**——blocked 既不是 na（检查适用，是环境干不了），也不是 fail（没有证据判资产有罪）
+* **comparison.json**：每任务一行 `oracle_reward` / `nop_reward` / 判定 / 耗时 / 镜像 digest；reward 只从 job 输出解析
+* **覆盖度**：按 `case-minimums.json` 的 task 行（每任务含 nop 负例，`negative_expected=1` 天然满足）；低于「任务全数执行」即写「覆盖不足」
+* **Sage 不适用**：oracle/nop 是确定性伪 agent，不依赖模型；verifier 内部用 LLM 打分只在 P2 提示 reward 可能非确定

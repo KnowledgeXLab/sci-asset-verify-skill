@@ -1,6 +1,6 @@
 {
   "schema_version": "3.0.0",
-  "note": "固定检查清单（P0 判定性 / P1 判定性）。P0/P1 结论只能引用这里的 check_id（含 P0-SECRET：交付包含密钥一律阻断）；P2 是建议，不限制来源。",
+  "note": "固定检查清单（P0 判定性 / P1 判定性）。P0/P1 结论只能引用这里的 check_id（含 P0-SECRET：交付包含密钥一律阻断）；P2 是建议，不限制来源。 harbor 相关的 P2 建议（隐式数据集缺 manifest、verifier 依赖 LLM 打分、lint 可复现性）不进清单，由探测作为建议输出。",
   "intent_options": [
     "delivery",
     "review"
@@ -66,6 +66,22 @@
       "decide": "sage_not_ready"
     },
     {
+      "id": "P0-HARB-STRUCT",
+      "level": "P0",
+      "name": "harbor 任务必需文件完整",
+      "criterion": "每个 harbor 任务：task.toml 可解析、instruction.md 存在且非空、environment/（或 [environment].docker_image）、solution/solve.sh(.bat)、tests/test.sh(.bat) 全部存在",
+      "applies_to": "task",
+      "decide": "harbor_missing_files"
+    },
+    {
+      "id": "P0-HARB-RUN",
+      "level": "P0",
+      "name": "harbor oracle/nop 双 trial 通过",
+      "criterion": "每个任务全量执行两条 trial：oracle（注入 solution）reward=1 且 nop（不注入）reward=0；任一不符即 P0。执行由 harbor_run.py 完成（需 docker + harbor CLI）；环境不具备时记 blocked 并在覆盖表写明，不算通过",
+      "applies_to": "task",
+      "decide": "harbor_trial_failed"
+    },
+    {
       "id": "P1-DOC-REF",
       "level": "P1",
       "name": "文档/命令指向不存在的文件或目录",
@@ -99,6 +115,30 @@
       "name": "验证说明与实际用例一致",
       "criterion": "验证说明里显式声明的用例数量/用例编号必须与 validate/cases.json 一致（不要求逐条列出，但声明了就不能对不上）",
       "decide": "verify_doc_mismatch"
+    },
+    {
+      "id": "P1-HARB-DATASET",
+      "level": "P1",
+      "name": "harbor dataset.toml 与任务目录一致",
+      "criterion": "显式数据集：dataset.toml 声明的任务与本地任务目录双向一致（指向缺失、未声明多出、digest 格式非法均为不一致）",
+      "applies_to": "task",
+      "decide": "harbor_dataset_mismatch"
+    },
+    {
+      "id": "P1-HARB-ENVELOPE",
+      "level": "P1",
+      "name": "harbor 包络条目一致",
+      "criterion": "harbor 任务/数据集必须在 asset.json 有条目且 asset_type=task；包内出现不在任何资产条目下的 task.toml 视为缺登记",
+      "applies_to": "task",
+      "decide": "harbor_envelope_mismatch"
+    },
+    {
+      "id": "P1-HARB-LINT",
+      "level": "P1",
+      "name": "harbor lint 正确性发现",
+      "criterion": "`harbor lint` 的正确性类规则（invalid-task-config / invalid-task-files / shared-verifier / agent-image-test-leak / overlapping-artifacts / artifact-log-overlap 等）发现即不一致；由 harbor_run.py 在执行阶段采集",
+      "applies_to": "task",
+      "decide": "harbor_lint_correctness"
     }
   ]
 }

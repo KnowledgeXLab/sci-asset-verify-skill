@@ -179,7 +179,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十八个脚本，共 132 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 153 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -194,13 +194,17 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十八个自检脚本（另有 3 个内部模块）
+scripts/           二十个自检脚本（另有 4 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+> **Harbor 任务包支持**（合并 PR #1）：识别 task / 显式 dataset / 隐式 dataset 三种形态；静态检查入固定清单
+> （`P0-HARB-STRUCT` 必需文件、`P0-HARB-RUN` oracle/nop 双 trial、`P1-HARB-DATASET`/`P1-HARB-ENVELOPE`/`P1-HARB-LINT`）；
+> 执行走官方 CLI 全量 oracle+nop（`scripts/harbor_run.py`），跑不了记 blocked（不算 na 不算 fail）；task@harbor 不触发 Sage。
 
 ### 1.2-beta.9 — 2026-11-20
 
