@@ -81,6 +81,34 @@ def check_attribution(report: Path, text: str) -> list[str]:
     return warns
 
 
+def check_sage_run_dir(report: Path) -> list[str]:
+    """有 sage-need.json 却没带 --run-dir 跑探测时，P0-SAGE 会被漏判。"""
+    run_dir = report.parent
+    need_f = run_dir / 'sage-need.json'
+    probe_f = run_dir / 'probe-report.json'
+    if not need_f.is_file():
+        return []
+    try:
+        needed = bool(json.loads(need_f.read_text(encoding='utf-8')).get('needed'))
+    except Exception:  # noqa: BLE001
+        return []
+    if not needed:
+        return []
+    if not probe_f.is_file():
+        return ['本批需要 Sage 附加测试，但缺少 probe-report.json —— 请带 --run-dir 重跑 probe_package.py']
+    try:
+        prof = (json.loads(probe_f.read_text(encoding='utf-8')).get('checks') or {}).get('sage_profile')
+    except Exception:  # noqa: BLE001
+        prof = None
+    if not prof:
+        return ['本批需要 Sage 附加测试，但 probe-report.json 里没有 sage_profile'
+                ' —— 说明探测没带 --run-dir，P0-SAGE 会漏判，请重跑']
+    if not prof.get('ran_ok') and 'P0-SAGE' not in probe_f.read_text(encoding='utf-8'):
+        return ['Sage 未跑通，但结论里没有 P0-SAGE —— 请按 SKILL.md 第 6 步索取配置后重判，'
+                '仍失败须判 P0 阻断']
+    return []
+
+
 def check_root_file_judgement(report: Path, text: str) -> list[str]:
     """包根一级文件不参与判定：P0/P1 若拿包根文件的内容说事，要告警。"""
     run_dir = report.parent
@@ -215,6 +243,7 @@ def main(argv=None) -> int:
     warnings += check_checklist_citation(report, text)
     warnings += check_attribution(report, text)
     warnings += check_root_file_judgement(report, text)
+    warnings += check_sage_run_dir(report)
     warnings += check_lifecycle_mention(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),

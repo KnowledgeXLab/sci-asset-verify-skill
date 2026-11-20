@@ -1465,6 +1465,20 @@ def t17_reproducible(tmp: Path) -> None:
         encoding="utf-8")
     proc4 = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir3 / "validation-report.md")], d)
     blob4 = (proc4.stdout or "") + (proc4.stderr or "")
+    # 有 sage-need 却没带 --run-dir → 告警（P0-SAGE 会漏判）
+    run_dir4 = d / "run4"
+    run_dir4.mkdir()
+    (run_dir4 / "sage-need.json").write_text('{"needed": true}', encoding="utf-8")
+    (run_dir4 / "probe-report.json").write_text('{"checks": {}, "verdict": {"findings": []}}', encoding="utf-8")
+    (run_dir4 / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n无\n\n### P1 重要\n\n无\n\n### P2 建议\n\n无\n\n"
+        "## 5. 证据保留口径\n\nx\n", encoding="utf-8")
+    proc4b = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir4 / "validation-report.md")], d)
+    blob4b = (proc4b.stdout or "") + (proc4b.stderr or "")
+    record("提示：需要 Sage 但探测没带 --run-dir（缺 sage_profile）时报告警",
+           "sage_profile" in blob4b and "--run-dir" in blob4b, f"rc={proc4b.returncode}")
+
     record("提示：问题行提到 lifecycle/draft 时告警（draft 是正常交付状态）",
            "lifecycle/draft" in blob4 and "不要降为 P2" in blob4, f"rc={proc4.returncode}")
 
