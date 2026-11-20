@@ -325,13 +325,25 @@ def probe_doc_refs(root: Path, assets: list) -> dict:
         bad, soft = set(), set()
         for f in list(d.rglob('*.md')):
             text = f.read_text(encoding='utf-8', errors='replace')
+            # markdown 链接只认目标，不认链接文字：`[a/b.md](c/d.md)` → 只看 c/d.md
+            text = re.sub(r'\[([^\]]*)\]\(([^)]*)\)', r' \2 ', text)
             for tok in token.findall(text):
                 if tok.startswith(('http', 'validate/cases')) or '<' in tok:
                     continue
-                if tok.split('/')[0] in ('out', 'output', 'outputs', 'results', 'dist', 'build', 'tmp', 'logs'):
+                if tok.split('/')[0] in ('out', 'output', 'outputs', 'results', 'dist', 'build', 'tmp', 'logs',
+                                         'experiments', 'runs', 'artifacts', 'cache'):
                     continue                       # 常见产物目录，不算"引用了不存在的包内文件"
                 cands = [(f.parent / tok), (d / tok), (root / tok)]
                 if any(c.exists() for c in cands):
+                    continue
+                # 文档常以"包内子仓库"为基准（如 payload/source/）：若包内存在以该 token 结尾的唯一文件，
+                # 视为路径存在（只是基准未写明），不判"引用了不存在的文件"
+                tail = '/'.join(tok.split('/')[-2:]) if tok.count('/') >= 2 else tok
+                hits = [q for q in d.rglob('*') if q.is_file() and str(q).endswith('/' + tok)]
+                if not hits and tail != tok:
+                    hits = [q for q in d.rglob('*') if q.is_file() and str(q).endswith('/' + tail)]
+                if len(hits) == 1:
+                    soft.add(tok)
                     continue
                 # 仅大小写不同的同名文件：不算"引用了不存在的文件"，单列提示
                 lower = {str(c).lower() for c in cands}
@@ -343,7 +355,7 @@ def probe_doc_refs(root: Path, assets: list) -> dict:
         if bad:
             missing[d.name] = sorted(bad)[:10]
         if soft:
-            case_only[d.name] = sorted(soft)[:10]
+            case_only[d.name] = sorted(soft)[:10]      # 大小写不同 / 包内后缀唯一命中：均视为存在
     return {'missing': dict(sorted(missing.items())),
             'case_only_mismatch': dict(sorted(case_only.items()))}
 
@@ -417,7 +429,13 @@ def probe_verify_entry(assets: list) -> dict:
 
 
 SECRET_NAME = re.compile(r'(\.credentials\.ya?ml$|(^|/)\.env$|(^|/)auth\.json$|secret|token|credential)', re.I)
-SECRET_VALUE = re.compile(r'(sk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{16,}|[A-Z][A-Z0-9_]*_API_KEY\s*[:=]\s*["\']?[A-Za-z0-9._-]{12,})')
+# 密钥样式：必须落在词边界上、同一行内、且值不像"变量名/URL"这类普通标识符。
+# 典型误报：`task-01-without-knowledge` 里的 `sk-01-without…`、`LLM_API_KEY=`（空值）跨行吃到下一行变量名。
+SECRET_VALUE = re.compile(
+    r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'                       # OpenAI 风格，前面不能是字母（排除 task-01-…）
+    r'|(?<![A-Za-z0-9])Bearer[ \t]+[A-Za-z0-9._-]{20,}'             # Bearer token
+    r'|[A-Z][A-Z0-9_]*_API_KEY[ \t]*[:=][ \t]*["\']?'
+    r'(?![A-Z0-9_]{4,}(?![a-z0-9])[\s"\']|\s|$)["\']?([A-Za-z0-9][A-Za-z0-9._-]{15,})')  # 同行非空值
 
 
 def probe_secrets(root: Path, assets: list) -> dict:

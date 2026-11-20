@@ -1337,6 +1337,46 @@ def t17_reproducible(tmp: Path) -> None:
     ids_s3 = {f["check_id"] for f in json.loads(out_s3.read_text(encoding="utf-8"))["verdict"]["findings"]}
     record("正例：只提环境变量名、无密钥值时不误报 P0-SECRET", "P0-SECRET" not in ids_s3, f"ids={ids_s3}")
 
+    # 误报回归（真实包反馈）：
+    # ① `task-01-without-knowledge` 里的 `sk-01-without-…` 不是密钥
+    (sec_pkg / "c1" / "run.py").write_text(
+        'print("--output reports/task-01-without-knowledge.html")\n', encoding="utf-8")
+    out_s4 = d / "sec4.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--evaluate",
+         "--json-out", str(out_s4)], d)
+    ids_s4 = {f["check_id"] for f in json.loads(out_s4.read_text(encoding="utf-8"))["verdict"]["findings"]}
+    record("负例（误报回归）：文档里的 task-01-without-knowledge 不被当成 sk- 密钥",
+           "P0-SECRET" not in ids_s4, f"ids={ids_s4}")
+
+    # ② `LLM_API_KEY=`（空值）跨行不匹配下一行变量名
+    (sec_pkg / "c1" / "run.py").unlink()
+    (sec_pkg / "c1" / "container_check.sh").write_text(
+        'LLM_API_KEY=\nMESSAGE_UPDATE_URL=http://x\n', encoding="utf-8")
+    out_s5 = d / "sec5.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--evaluate",
+         "--json-out", str(out_s5)], d)
+    ids_s5 = {f["check_id"] for f in json.loads(out_s5.read_text(encoding="utf-8"))["verdict"]["findings"]}
+    record("负例（误报回归）：空值 LLM_API_KEY= 跨行不吃下一行 MESSAGE_UPDATE_URL",
+           "P0-SECRET" not in ids_s5, f"ids={ids_s5}")
+    (sec_pkg / "c1" / "container_check.sh").unlink()
+
+    # ③ 文档以包内子仓库为基准：payload/source/RUN/x.py 存在即不判缺失；真缺失照报
+    dr = d / "docref"
+    (dr / "a1" / "payload" / "source" / "RUN").mkdir(parents=True)
+    (dr / "a1" / "asset.json").write_text(json.dumps(
+        {"asset_id": "sciasset://2026ZD123456/earth/tool/a1", "asset_type": "tool",
+         "name": "a1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+    (dr / "a1" / "payload" / "source" / "RUN" / "run_agent.py").write_text("x\n", encoding="utf-8")
+    (dr / "a1" / "readme.md").write_text(
+        "入口 `RUN/run_agent.py`；链接 [说明](payload/source/RUN/run_agent.py)；入口 `RUN/ghost.py`\n",
+        encoding="utf-8")
+    out_d = d / "docref.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(dr), "--json-out", str(out_d)], d)
+    miss_d = json.loads(out_d.read_text(encoding="utf-8"))["checks"]["doc_refs_profile"]["missing"].get("a1") or []
+    record("负例（误报回归）：以子仓库为基准的路径与链接文字不误报，真缺失的 ghost.py 仍报",
+           miss_d == ["RUN/ghost.py"], f"missing={miss_d}")
+
     # Sage 附加测试：配置缺失/未跑通 → P0-SAGE；跑通 → 无
     sage_run = d / "sage_run"
     sage_run.mkdir()
