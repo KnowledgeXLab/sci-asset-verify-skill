@@ -325,6 +325,10 @@ def probe(base_url: str, api_key: str | None, model: str) -> dict:
     return out
 
 
+SAGE_SOURCE_HINT = ('API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery，discovery-api.intern-ai.org.cn）获取；'
+                    '请直接在本机环境变量里设置，不要把明文密钥贴进对话。')
+
+
 def user_request_block(missing: list[str]) -> str:
     want = {
         'base_url': 'SAGE_BASE_URL   —— Sage A1.5 的 OpenAI 兼容地址（形如 http://<Sage 服务>/v1）',
@@ -334,12 +338,14 @@ def user_request_block(missing: list[str]) -> str:
     lines = ['', '=' * 72,
              '【需要用户提供 Sage A1.5 配置】系统里没有找到可用的 Sage 配置，以下项目缺失：']
     lines += ['  - ' + want[m] for m in missing]
+    lines += ['', SAGE_SOURCE_HINT]
     lines += ['',
-              '提供方式（任选其一，密钥只放环境变量，不要写进文件或交付包）：',
-              '  export SAGE_BASE_URL=...  SAGE_MODEL=...  SAGE_API_KEY=...',
-              '  或直接告诉我这三个值，我在当前会话里注入后再跑。',
-              '配置到位后，Sage 结果会写进报告的「Sage A1.5 兼容性测试」小节与 sage-a1.5-report.json，',
-              '**只作为附加信息，不参与该资产合格与否的判定**。',
+              '提供方式（密钥只放环境变量，不要写进文件、不要贴进对话、更不要带进交付包）：',
+              '  export SAGE_BASE_URL=... SAGE_MODEL=... SAGE_API_KEY=...   # 然后告诉我"已配置"，我直接重跑',
+              '  或者告知已配置在哪个 profile/凭据文件里，我只从环境变量读取，不做任何落盘。',
+              '',
+              '若始终无法提供可用配置，本次核验会按 P0（P0-SAGE）阻断交付：',
+              '必须先完成 Sage 配置、确保 Sage 能被调用，才能作为有效交付。',
               '=' * 72]
     return '\n'.join(lines)
 

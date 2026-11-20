@@ -453,7 +453,48 @@ def probe_secrets(root: Path, assets: list) -> dict:
     return {'hits': hits[:50], 'count': len(hits)}
 
 
-def checks_of(root: Path) -> dict:
+SAGE_HINT = ('Sage 配置未就绪：请在运行环境设置 SAGE_BASE_URL / SAGE_MODEL / SAGE_API_KEY 后重跑；'
+             'API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery）获取。'
+             '未完成配置前不得以「未测」结案。')
+
+
+def probe_sage(run_dir: Path) -> dict:
+    """Sage 附加测试的就绪状态（需不需要测、配置是否齐、是否跑通）。"""
+    def load(name):
+        f = run_dir / name
+        if not f.is_file():
+            return {}
+        try:
+            return json.loads(f.read_text(encoding='utf-8'))
+        except Exception:  # noqa: BLE001
+            return {}
+
+    need = load('sage-need.json')
+    cfg = load('sage-config.json')
+    rep = load('sage-a1.5-report.json')
+    needed = bool(need.get('needed'))
+    report_status = rep.get('status')
+    runs = rep.get('runs') or []
+    failed_runs = [r for r in runs if not (r.get('ok') if 'ok' in r else r.get('passed', True))]
+    ran_ok = report_status == 'completed' and not failed_runs
+    error_kind = ''
+    blob = json.dumps(rep, ensure_ascii=False).lower() if rep else ''
+    if needed and not ran_ok:
+        if cfg.get('status') == 'missing_config' or cfg.get('missing'):
+            error_kind = 'config_missing'
+        elif cfg.get('probe_ok') is False or report_status in ('blocked_missing_config', 'blocked_unreachable', 'blocked'):
+            error_kind = 'config_invalid'
+        elif any(k in blob for k in ('401', '403', 'unauthorized', 'invalid api key', 'connect', 'timeout', 'refused')):
+            error_kind = 'config_invalid'
+        else:
+            error_kind = 'not_run'
+    return {'needed': needed, 'config_status': cfg.get('status'), 'missing': cfg.get('missing') or [],
+            'probe_ok': cfg.get('probe_ok'), 'report_status': report_status,
+            'failed_runs': len(failed_runs), 'ran_ok': ran_ok, 'error_kind': error_kind,
+            'hint': SAGE_HINT if (needed and not ran_ok) else ''}
+
+
+def checks_of(root: Path, run_dir: Path | None = None) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
     for d in assets:
@@ -476,6 +517,7 @@ def checks_of(root: Path) -> dict:
         'verify_doc_profile': probe_verify_docs(assets),
         'verify_entry_profile': probe_verify_entry(assets),
         'secret_profile': probe_secrets(root, assets),
+        'sage_profile': probe_sage(run_dir) if run_dir else {},
     }
 
 
@@ -535,6 +577,12 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     if complete_detail:
         add('P0-COMPLETE', complete_detail)
 
+    sage = checks.get('sage_profile') or {}
+    if sage.get('needed') and not sage.get('ran_ok'):
+        add('P0-SAGE', {'error_kind': sage.get('error_kind'), 'config_status': sage.get('config_status'),
+                        'missing': sage.get('missing'), 'report_status': sage.get('report_status'),
+                        'hint': sage.get('hint')})
+
     sec = checks.get('secret_profile') or {}
     if sec.get('hits'):
         add('P0-SECRET', {'count': sec.get('count'), 'hits': sec['hits'][:20]})
@@ -575,6 +623,8 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     failed = {f['check_id'] for f in findings}
     dprof = (checks.get('data_declaration_profile') or {}).get('assets') or {}
     na_rules = {
+        'P0-SAGE': (bool((checks.get('sage_profile') or {}).get('needed')),
+                    '本包不需要 Sage 附加测试（无 skill/agent 类资产或未判定为需要）'),
         'P1-DECL': (any(v.get('has_metadata') for v in dprof.values()), '没有 data 资产声明 metadata，无可核对项'),
         'P1-VERSION': (bool((checks.get('version_profile') or {})), '版本一致性检查不可用'),
         'P1-VERIFY-DOC': (any(v.get('cases_json') for v in ((checks.get('verify_entry_profile') or {}).get('assets') or {}).values()),
@@ -610,6 +660,7 @@ def main(argv=None) -> int:
     ap.add_argument('--json-out')
     ap.add_argument('--print-hash', action='store_true', help='只打印事实指纹（用于验证可复现性）')
     ap.add_argument('--evaluate', action='store_true', help='按 assets/audit-checks.json 输出固定严重度的结论')
+    ap.add_argument('--run-dir', help='本次核验的 run 目录：从中读 sage-need/sage-config/sage 报告，判 P0-SAGE')
     ap.add_argument('--intent', choices=['delivery', 'review'], default='delivery',
                     help='交付用途：delivery=对外交付（默认）/ review=内部评审')
     args = ap.parse_args(argv)
@@ -618,7 +669,11 @@ def main(argv=None) -> int:
     if not root.is_dir():
         print(f'包不存在：{root}', file=sys.stderr)
         return 2
-    checks = checks_of(root)
+    run_dir = Path(args.run_dir).expanduser().resolve() if args.run_dir else None
+    if run_dir is not None and not run_dir.is_dir():
+        print(f'run 目录不存在：{run_dir}', file=sys.stderr)
+        return 2
+    checks = checks_of(root, run_dir)
     fp = fingerprint(checks)
     if args.print_hash:
         print(fp)

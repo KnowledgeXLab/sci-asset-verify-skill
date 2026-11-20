@@ -1337,6 +1337,47 @@ def t17_reproducible(tmp: Path) -> None:
     ids_s3 = {f["check_id"] for f in json.loads(out_s3.read_text(encoding="utf-8"))["verdict"]["findings"]}
     record("正例：只提环境变量名、无密钥值时不误报 P0-SECRET", "P0-SECRET" not in ids_s3, f"ids={ids_s3}")
 
+    # Sage 附加测试：配置缺失/未跑通 → P0-SAGE；跑通 → 无
+    sage_run = d / "sage_run"
+    sage_run.mkdir()
+    (sage_run / "sage-need.json").write_text(json.dumps({"needed": True, "reasons": ["skill 资产"]},
+                                                        ensure_ascii=False), encoding="utf-8")
+    (sage_run / "sage-config.json").write_text(json.dumps(
+        {"status": "missing_config", "missing": ["model", "api_key"], "api_key_present": False},
+        ensure_ascii=False), encoding="utf-8")
+    out_g1 = d / "sage1.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--run-dir", str(sage_run),
+         "--evaluate", "--json-out", str(out_g1)], d)
+    f_g1 = [f for f in json.loads(out_g1.read_text(encoding="utf-8"))["verdict"]["findings"]
+            if f["check_id"] == "P0-SAGE"]
+    record("负例：Sage 需要测但配置缺失 → P0-SAGE，并带端砚平台指引",
+           bool(f_g1) and f_g1[0]["level"] == "P0" and "端砚平台" in f_g1[0]["detail"]["hint"],
+           f"detail={f_g1[0]['detail'] if f_g1 else None}")
+
+    (sage_run / "sage-config.json").write_text(json.dumps(
+        {"status": "configured", "api_key_present": True, "probe_ok": True}, ensure_ascii=False),
+        encoding="utf-8")
+    (sage_run / "sage-a1.5-report.json").write_text(json.dumps(
+        {"status": "completed", "runs": [{"asset": "c1", "ok": True}]}, ensure_ascii=False),
+        encoding="utf-8")
+    out_g2 = d / "sage2.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--run-dir", str(sage_run),
+         "--evaluate", "--json-out", str(out_g2)], d)
+    rep_g2 = json.loads(out_g2.read_text(encoding="utf-8"))
+    ids_g2 = {f["check_id"] for f in rep_g2["verdict"]["findings"]}
+    cov_g2 = {c["check_id"]: c["status"] for c in rep_g2["verdict"]["coverage"]}
+    record("正例：Sage 已跑通时不判 P0-SAGE，覆盖表记 pass",
+           "P0-SAGE" not in ids_g2 and cov_g2["P0-SAGE"] == "pass", f"ids={ids_g2}")
+
+    (sage_run / "sage-need.json").write_text(json.dumps({"needed": False}, ensure_ascii=False), encoding="utf-8")
+    out_g3 = d / "sage3.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(sec_pkg), "--run-dir", str(sage_run),
+         "--evaluate", "--json-out", str(out_g3)], d)
+    cov_g3 = {c["check_id"]: c for c in json.loads(out_g3.read_text(encoding="utf-8"))["verdict"]["coverage"]}
+    record("正例：不需要 Sage 的包把 P0-SAGE 标 na 并写理由",
+           cov_g3["P0-SAGE"]["status"] == "na" and cov_g3["P0-SAGE"]["na_reason"],
+           f"status={cov_g3['P0-SAGE']['status']}")
+
     record("正例：合规包 P0/P1 均为 0",
            rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
            f"summary={rep2['summary']}")

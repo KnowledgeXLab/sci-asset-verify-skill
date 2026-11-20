@@ -308,12 +308,21 @@ python scripts/sage_probe.py config --probe --json-out <run>/sage-config.json
 ```
 
 - **退出码 0**：配置可用。用资产包自带的正确性 harness 把后端换成 Sage 跑一遍（例如包内 `run_correctness.py --backend-name sage-a1.5 --llm-base-url <SAGE_BASE_URL> --llm-model <SAGE_MODEL> --llm-api-key-env SAGE_API_KEY`），输出放 `<run>/validation-run/correctness-sage/`，再把结果写进 `sage-a1.5-report.json` 与报告小节。
-- **退出码 3（配置缺失）**：脚本会打印"需要用户提供"的清单。此时**立刻把这段反馈给用户并等其提供**——不要静默跳过，也不要把通用后端或别的模型的结果代填为 Sage 结果。用户暂时给不了，就在 `sage-a1.5-report.json` 记 `blocked_missing_config`、缺项列进 `state.json` 的 `blocked_items`，报告里写明"未测试"。
+- **退出码 3（配置缺失）/ 退出码 4（配置存在但连通性失败）**：脚本会打印"需要用户提供"的清单。此时**立刻按下面三步走**，不要静默跳过，也不要把别的模型结果代填为 Sage：
+  1. **向用户索取配置**：要 `SAGE_BASE_URL`（API URL）、`SAGE_MODEL`（一般 `Sage-A1.5`）、`SAGE_API_KEY`。
+     索取时明确告诉用户：**API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery，`discovery-api.intern-ai.org.cn`）获取**；
+     并请用户在**运行环境里设置环境变量**（或告知已配置在哪个 profile），**不要把明文密钥贴到对话里**。
+  2. 用户给出后 `export` 再重跑 `sage_probe.py config --probe`；仍失败就再确认一次（地址/模型名/密钥是否同一环境）。
+  3. **用户仍给不出可用配置 → 判 P0（`P0-SAGE`）**：`probe_package.py --run-dir <run>` 会据 `sage-need.json` +
+     `sage-config.json`（+ Sage 报告）自动判 `P0-SAGE`，报告须写明"需先完成 Sage 配置（API URL / API KEY 取自端砚平台）
+     才能交付"，**不得以「未测」「跳过」结案**。
 - **退出码 4**：配置齐全但探测失败（地址/模型名/密钥无效），同样反馈用户。
 - 包内没有可切换后端的 harness 时记 `not_supported_by_package`，说明原命令，不自行实现一刀切对接。
 
 密钥只走环境变量，不写进任何文件、不写进交付包；报告与 JSON 里只记地址、模型名与"是否配置"，不记密钥值。
 
-完成条件：`sage-need.json` 存在；`needed=false`，或 `needed=true` 且 `sage-a1.5-report.json` 有明确状态（`completed` / `blocked_missing_config` / `not_supported_by_package`）；报告含「Sage A1.5 兼容性测试」小节并声明该项不计入判定。
+完成条件：`sage-need.json` 存在；`needed=false`，或 `needed=true` 且 **Sage 真的跑通**（`sage-a1.5-report.json` 状态 `completed`）；
+若因配置原因没跑通，必须已向用户索取并失败 → 判 `P0-SAGE`（阻断交付），而不是记成 `blocked_missing_config` 就算完。
+报告含「Sage A1.5 兼容性测试」小节，并声明该项本身不计入通过率。
 
 报告与覆盖表写完后跑 `scripts/prune_evidence.py`（见第 4 步），把「证据保留口径」注入报告；没有这一步就说明中间产出还留在 run 目录里，交付前必须补上。要重新打包交付资产包时，先 prune 再压缩，`evidence-prune.json` 与 `validation-report.md` 一起进包。
