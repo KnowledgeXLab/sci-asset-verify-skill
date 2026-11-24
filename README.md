@@ -179,7 +179,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 157 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部十九个脚本，共 157 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -194,7 +194,7 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           二十个自检脚本（另有 4 个内部模块）
+scripts/           十九个自检脚本（另有 4 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
@@ -205,6 +205,21 @@ vendor/            随包分发的 openpyxl
 > **Harbor 任务包支持**（合并 PR #1）：识别 task / 显式 dataset / 隐式 dataset 三种形态；静态检查入固定清单
 > （`P0-HARB-STRUCT` 必需文件、`P0-HARB-RUN` oracle/nop 双 trial、`P1-HARB-DATASET`/`P1-HARB-ENVELOPE`/`P1-HARB-LINT`）；
 > 执行走官方 CLI 全量 oracle+nop（`scripts/harbor_run.py`），跑不了记 blocked（不算 na 不算 fail）；task@harbor 不触发 Sage。
+
+### 1.2-beta.10 — 2026-11-24
+
+**Harbor 任务包校验（合并 PR #1）+ 四项误判修正**
+
+- 新增 harbor / terminal-bench-science 格式支持：`scripts/_harbor.py`（形态识别、必需文件、任务 digest）、
+  `scripts/harbor_run.py`（官方 CLI 跑 oracle+nop 双 trial，reward 结构化解析，环境不备记 blocked）
+- 清单扩到 **P0×8 + P1×8 = 16 条**：`P0-HARB-STRUCT`/`P0-HARB-RUN`、`P1-HARB-DATASET`/`P1-HARB-ENVELOPE`/`P1-HARB-LINT`；
+  原 PR 的 P2 项改为建议输出（清单不保留 P2 项）
+- **修正 `P0-ENVELOPE` 假阴性**：探测按 `assets[]` 读而校验脚本输出 `results[]`，导致包络缺必填项也判 pass
+- **修正 `P0-SECRET` 两处误报**：`task-01-without-knowledge` 被当成 `sk-` 密钥；`LLM_API_KEY=`（空值）跨行吃到下一行变量名
+- **放宽 `P1-DOC-REF`**：剥掉 markdown 链接文字只认目标；token 在包内后缀唯一命中即视为存在；补产物目录与 skill 自带脚本路径
+- `SKILL.md` 新增 2.6 节、`references/validation.md` 新增 harbor 用例口径；`case-minimums.json` 的 task 行改全量语义
+
+- 自测 132 → **157 项断言**
 
 ### 1.2-beta.9 — 2026-11-20
 
