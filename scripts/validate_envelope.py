@@ -224,8 +224,9 @@ def _declared_families(fmt):
         if key in FORMAT_FAMILY:
             out.add(FORMAT_FAMILY[key])
         else:
+            # 只在**词边界**上做包含匹配：避免 "ATIF" 命中 "tif"、"geotifflike" 命中 "tiff" 这类子串误判
             for token, fam in FORMAT_FAMILY.items():
-                if token in key:
+                if re.search(rf'(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])', key):
                     out.add(fam)
                     break
     return out

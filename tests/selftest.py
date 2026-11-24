@@ -1435,6 +1435,16 @@ def t17_reproducible(tmp: Path) -> None:
            and bool(rep_e["checks"]["envelope_profile"]["errors"]),
            f"errors={len(rep_e['checks']['envelope_profile']['errors'])}")
 
+    # 格式声明归一化：ATIF 不能被当成 tif（子串误判），geotiff 仍要识别
+    sys.path.insert(0, str(SCRIPTS))
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("_ve", SCRIPTS / "validate_envelope.py")
+    _ve = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_ve)
+    fam_atif = _ve._declared_families("ATIF")
+    fam_gt = _ve._declared_families("geotiff")
+    record("负例（误判回归）：metadata.format=ATIF 不被识别成 raster:tiff，geotiff 仍识别为 raster:tiff",
+           fam_atif == set() and fam_gt == {"raster:tiff"}, f"ATIF={fam_atif} geotiff={fam_gt}")
+
     record("正例：合规包 P0/P1 均为 0",
            rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
            f"summary={rep2['summary']}")
