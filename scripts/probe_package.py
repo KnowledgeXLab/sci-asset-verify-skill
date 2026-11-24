@@ -276,12 +276,18 @@ def probe_envelope(root: Path) -> dict:
         out.unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001
         return {'error': f'包络校验调用失败：{exc}', 'errors': []}
+    # validate_envelope.py 的输出结构是 results[]（每条含 file/asset_id/errors[{path,message}]）；
+    # 早期版本用 assets[]，这里两种都认，避免"summary 说有错、errors 却为空"的假阴性。
+    entries = data.get('results') or data.get('assets') or []
     errs = []
-    for a in (data.get('assets') or []):
-        if str(a.get('asset_dir') or '') in ('.', '', root.name):     # 包根文件不校验（另由 P0-STRUCT 判）
-            continue
+    for a in entries:
+        name = a.get('asset_dir') or a.get('dir') or a.get('file') or ''
+        if Path(str(name)).name in ('', root.name) and str(name) in ('.', '', root.name):
+            continue                                                   # 包根文件不校验（另由 P0-STRUCT 判）
+        label = Path(str(name)).parent.name if str(name).endswith('.json') else str(name) or '?'
         for e in (a.get('errors') or []):
-            errs.append({'asset': a.get('asset_dir'), 'where': e.get('where'), 'message': e.get('message')})
+            errs.append({'asset': label, 'where': e.get('where') or e.get('path'),
+                         'message': e.get('message')})
     return {'errors': errs, 'summary': data.get('summary') or {}, 'rc': proc.returncode}
 
 
@@ -333,7 +339,8 @@ def probe_doc_refs(root: Path, assets: list) -> dict:
                 if tok.split('/')[0] in ('out', 'output', 'outputs', 'results', 'dist', 'build', 'tmp', 'logs',
                                          'experiments', 'runs', 'artifacts', 'cache'):
                     continue                       # 常见产物目录，不算"引用了不存在的包内文件"
-                cands = [(f.parent / tok), (d / tok), (root / tok)]
+                # 第 4 个候选：skill 自身仓库（文档常引用 skill 提供的脚本/清单，如 scripts/harbor_run.py）
+                cands = [(f.parent / tok), (d / tok), (root / tok), (SKILL_DIR / tok)]
                 if any(c.exists() for c in cands):
                     continue
                 # 文档常以"包内子仓库"为基准（如 payload/source/）：若包内存在以该 token 结尾的唯一文件，
@@ -583,6 +590,7 @@ except Exception:  # noqa: BLE001
     static_issues = None
 
 RISKY_LICENSE = ('仅限内部', '仅限项目内部', '禁止再分发', '禁止修改', '不得再分发', 'internal only', 'no redistribution')
+SKILL_DIR = Path(__file__).resolve().parents[1]   # skill 仓库根（文档引用 skill 自带脚本时按它解析）
 CHECKLIST = Path(__file__).resolve().parents[1] / 'assets' / 'audit-checks.json'
 
 

@@ -1294,11 +1294,11 @@ def t17_reproducible(tmp: Path) -> None:
     (good / "b1" / "payload.csv").write_text("x,y\n0,0\n", encoding="utf-8")
     (good / "b1" / "validate" / "cases.json").write_text(
         json.dumps({"cases": [{"id": "C01"}]}, ensure_ascii=False), encoding="utf-8")
-    (good / "b1" / "asset.json").write_text(json.dumps({
-        "asset_id": "sciasset://2026ZD123456/earth/data/b1", "asset_type": "data",
-        "name": "b1", "asset_version": "1.0.0",
-        "spec": {"artifacts": [{"uri": "payload.csv", "media_type": "text/csv"}]}},
-        ensure_ascii=False), encoding="utf-8")
+    env_good = minimal_envelope()
+    env_good["asset_id"] = "sciasset://2026ZD123456/earth/data/b1"
+    env_good["name"] = "b1"
+    env_good["spec"]["artifacts"] = [{"uri": "payload.csv", "media_type": "text/csv"}]
+    (good / "b1" / "asset.json").write_text(json.dumps(env_good, ensure_ascii=False), encoding="utf-8")
     out2 = d / "good.json"
     run([str(SCRIPTS / "probe_package.py"), "--package", str(good), "--evaluate", "--json-out", str(out2)], d)
     rep2 = json.loads(out2.read_text(encoding="utf-8"))["verdict"]
@@ -1417,6 +1417,23 @@ def t17_reproducible(tmp: Path) -> None:
     record("正例：不需要 Sage 的包把 P0-SAGE 标 na 并写理由",
            cov_g3["P0-SAGE"]["status"] == "na" and cov_g3["P0-SAGE"]["na_reason"],
            f"status={cov_g3['P0-SAGE']['status']}")
+
+    # 包络错误必须真的被判出来（防"summary 说有错、errors 为空"的假阴性）
+    bad_env = d / "badenv"
+    (bad_env / "e1").mkdir(parents=True)
+    (bad_env / "e1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD123456/earth/data/e1",
+        "asset_type": "data", "name": "e1", "asset_version": "1.0.0",
+        "spec": {"artifacts": []}}, ensure_ascii=False), encoding="utf-8")
+    out_e = d / "badenv.json"
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(bad_env), "--evaluate",
+         "--json-out", str(out_e)], d)
+    rep_e = json.loads(out_e.read_text(encoding="utf-8"))
+    ids_e = {f["check_id"]: f for f in rep_e["verdict"]["findings"]}
+    record("负例：包络缺字段（provenance/task_classes）判 P0-ENVELOPE 且带字段路径",
+           "P0-ENVELOPE" in ids_e and "P0" == ids_e["P0-ENVELOPE"]["level"]
+           and bool(rep_e["checks"]["envelope_profile"]["errors"]),
+           f"errors={len(rep_e['checks']['envelope_profile']['errors'])}")
 
     record("正例：合规包 P0/P1 均为 0",
            rep2["summary"]["P0"] == 0 and rep2["summary"]["P1"] == 0,
