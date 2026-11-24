@@ -206,7 +206,7 @@ vendor/            随包分发的 openpyxl
 > （`P0-HARB-STRUCT` 必需文件、`P0-HARB-RUN` oracle/nop 双 trial、`P1-HARB-DATASET`/`P1-HARB-ENVELOPE`/`P1-HARB-LINT`）；
 > 执行走官方 CLI 全量 oracle+nop（`scripts/harbor_run.py`），跑不了记 blocked（不算 na 不算 fail）；task@harbor 不触发 Sage。
 
-### 1.2-beta.10 — 2026-11-24
+### 1.3-beta.1 — 2026-11-24
 
 **Harbor 任务包校验（合并 PR #1）+ 四项误判修正**
 
