@@ -1876,6 +1876,27 @@ def t20_verify_entry(tmp: Path) -> None:
     proc3 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(tmp / "nope"), "--emit-prompt"], tmp)
     record("负例：包不存在时退出码 1", proc3.returncode == 1, f"rc={proc3.returncode}")
 
+    # 合同必须写明"不得带历史上下文"
+    if contract is not None:
+        text = contract.read_text(encoding="utf-8")
+        record("正例：合同含「执行环境」硬要求（新会话/新进程、不得引用历史判断）",
+               "不得带历史上下文" in text and "全新子智能体" in text and "只以本批次落盘的机检事实为准" in text,
+               "合同缺执行环境约束")
+
+    # 报告引用跨会话记忆必须告警
+    run_h = tmp / "t20" / "hist"
+    run_h.mkdir(parents=True, exist_ok=True)
+    (run_h / "inventory.json").write_text('{"assets": [{"dir": "a1", "name": "a1"}]}', encoding="utf-8")
+    (run_h / "validation-report.md").write_text(
+        "---\nskill_version: x\ngenerated_at: y\n---\n\n# 报告\n\n## 4. 问题清单\n\n"
+        "### P0 阻断\n\n无\n\n### P1 重要\n\n| 编号 | 归属 | 问题 |\n|---|---|---|\n"
+        "| P1-1 | a1 | 上次判过这个包是 P1 |\n\n### P2 建议\n\n无\n\n## 5. 证据保留口径\n\nx\n",
+        encoding="utf-8")
+    proc_h = run([str(SCRIPTS / "check_report.py"), "--report", str(run_h / "validation-report.md")], tmp)
+    blob_h = (proc_h.stdout or "") + (proc_h.stderr or "")
+    record("负例：报告以「上次判过」为判定依据时告警（历史污染）",
+           "跨会话" in blob_h and "上次判" in blob_h, f"rc={proc_h.returncode}")
+
 
 # --------------------------------------------------------------------------- main
 def main() -> int:

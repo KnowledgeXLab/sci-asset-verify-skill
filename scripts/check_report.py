@@ -167,6 +167,25 @@ def check_lifecycle_mention(report: Path, text: str) -> list[str]:
     return warns
 
 
+FOREIGN_CONTEXT = ('上次判', '上一批', '与上一批相比', '历史结论', '我记得', '此前认为', '之前判定',
+                   '以前核验过', '之前那批', '上次核验', '上次跑')
+
+
+def check_foreign_context(report: Path, text: str) -> list[str]:
+    """报告不得以跨会话/跨批次的记忆作为判定依据（历史污染）。"""
+    block = section_of(text) or text
+    warns = []
+    for line in block.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        hit = [w for w in FOREIGN_CONTEXT if w in line]
+        if hit:
+            warns.append(f'报告引用了跨会话/跨批次记忆（{hit[0]}）：{line[:50]}…'
+                         '——判定只能以本批次落盘的机检事实为准')
+    return warns
+
+
 def check_checklist_citation(report: Path, text: str) -> list[str]:
     """新式批次（run 里有 probe-report.json）里，只有 P0/P1 必须引用 check_id；P2 是建议，允许自由条目。"""
     if not (report.parent / 'probe-report.json').is_file():
@@ -241,6 +260,7 @@ def main(argv=None) -> int:
     if '<!-- evidence-prune:begin -->' not in text:
         warnings.append('缺少「证据保留口径」小节（跑 scripts/prune_evidence.py 生成）')
     warnings += check_checklist_citation(report, text)
+    warnings += check_foreign_context(report, text)
     warnings += check_attribution(report, text)
     warnings += check_root_file_judgement(report, text)
     warnings += check_sage_run_dir(report)

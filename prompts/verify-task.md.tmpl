@@ -8,6 +8,21 @@
 - skill 版本：{skill_version}（提交 {skill_commit}）
 - 交付用途：`{intent}`
 
+## 执行环境（硬要求：不得带历史上下文）
+
+本次核验必须在**没有历史上下文的环境**里执行：
+
+- 优先：新会话 / 独立进程（`scripts/run_skill_agent.py` 用的就是独立进程 + headless profile）；
+  支持子智能体的 harness 用**全新子智能体**（spawn），不要用继承父会话的 fork 形式；
+- 不得把此前对其它资产包、其它版本的判断、印象、结论带进本次判定；
+- 判定**只以本批次落盘的机检事实为准**：`probe-report.json`、`envelope-report.json`、
+  `selfcontained-report.json`、`cases.json`、`harbor-run-report.json`、`sage-config.json`；
+- 报告里不得出现"上次判过""与上一批相比""我记得/此前认为"这类跨会话、跨批次的依据
+  （`check_report.py` 会告警）。
+
+如果执行环境已经带了历史上下文（例如在同一会话里已经聊过这个包），
+**先把事实与判定重跑成落盘 JSON，再只依据这些 JSON 写结论**，不要用记忆补写任何一条 P0/P1。
+
 ## 第一步（不可跳过）
 
 ```bash
