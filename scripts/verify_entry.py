@@ -120,15 +120,21 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
             print(f"harness {name} 未安装（找过 {preset.get('bins')}）；可用 --harness 指定已装的",
                   file=sys.stderr)
             return 2
-        argv = rsa.build_argv({"name": name, "preset": preset, "bin": exe}, prompt, "")
+        argv = rsa.build_argv({"name": name, "preset": preset, "bin": exe}, prompt, "",
+                              {"skill_dir": str(SKILL_DIR), "package": str(package),
+                               "run": str(run), "contract": str(contract)})
     else:
         argv = shlex.split(stub)
 
     outdir = run / "isolated-agent"
     outdir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    injected = sorted(rsa.credential_env(Path.home() / ".dsh"))
-    env.update(rsa.credential_env(Path.home() / ".dsh"))       # 凭据只进环境变量，不落盘
+    creds = rsa.credential_env(Path.home() / ".dsh")
+    env.update(creds)                                          # 凭据只进环境变量，不落盘
+    harness_env, harness_env_sources = rsa.resolve_harness_env(preset.get("env_map"))
+    env.update(harness_env)                                    # harness 需要的变量按注册表解析
+    injected = sorted(creds)
+    resolved = sorted(harness_env_sources)
     dsh_note = ""
     if name == "dsh" and not stub:
         extra, dsh_note = rsa.dsh_home_runtime(outdir, "verify", dsh_home)
@@ -137,6 +143,8 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     (outdir / "cmd.json").write_text(json.dumps(
         {"tool": "verify_entry.py", "mode": "isolated", "harness": name, "argv": argv,
          "cwd": str(run), "contract": str(contract), "injected_env_keys": injected,
+         "harness_env_keys": resolved,
+         "harness_env_sources": harness_env_sources,
          "dsh_home": dsh_note, "timeout_sec": timeout}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "note": "常见 agent harness 的一次性调用方式。argv 里 {bin} 为可执行文件、{prompt} 为任务文本、{model} 为模型；sage 段描述怎么把后端换成 Sage（kind=env 注入环境变量 / kind=patch 写配置补丁 / kind=unsupported 明确不支持）。用户环境不在本表内时，用 run_skill_agent.py --harness-cmd 就地固化。",
+  "note": "常见 agent harness 的一次性调用方式。argv 里 {bin} 为可执行文件、{prompt} 为任务文本、{model} 为模型；sage 段描述怎么把后端换成 Sage（kind=env 注入环境变量 / kind=patch 写配置补丁 / kind=unsupported 明确不支持）。用户环境不在本表内时，用 run_skill_agent.py --harness-cmd 就地固化。 env_map：声明该 harness 需要的环境变量及其解析顺序（env: 环境变量 / bashrc: ~/.bashrc 的 export / codex-auth: ~/.codex/auth.json / cred: ~/.dsh/.credentials.yaml 的 *_API_KEY）。",
   "preference": [
     "dsh",
     "codex",
@@ -55,6 +55,13 @@
           "OPENAI_BASE_URL": "{base_url}",
           "OPENAI_API_KEY": "{api_key}"
         }
+      },
+      "env_map": {
+        "OPENAI_API_KEY": [
+          "env:OPENAI_API_KEY",
+          "codex-auth:OPENAI_API_KEY",
+          "cred:DEEPSEEK_API_KEY"
+        ]
       }
     },
     "claude": {
@@ -67,13 +74,17 @@
         "-p",
         "{prompt}",
         "--permission-mode",
-        "acceptEdits"
+        "bypassPermissions",
+        "--add-dir",
+        "{skill_dir}",
+        "--add-dir",
+        "{package}"
       ],
       "model_flag": [
         "--model",
         "{model}"
       ],
-      "notes": "claude -p 打印模式；acceptEdits 允许改文件",
+      "notes": "claude -p 打印模式。非交互场景必须 bypassPermissions（否则 Bash/Read 全部要审批），并用 --add-dir 把 skill 目录与资产包目录加入允许范围；两者由 {skill_dir}/{package} 占位符注入。",
       "sage": {
         "kind": "env",
         "env": {
@@ -81,6 +92,16 @@
           "ANTHROPIC_AUTH_TOKEN": "{api_key}",
           "ANTHROPIC_MODEL": "{model}"
         }
+      },
+      "env_map": {
+        "ANTHROPIC_BASE_URL": [
+          "env:ANTHROPIC_BASE_URL",
+          "bashrc:ANTHROPIC_BASE_URL"
+        ],
+        "ANTHROPIC_AUTH_TOKEN": [
+          "env:ANTHROPIC_AUTH_TOKEN",
+          "bashrc:ANTHROPIC_AUTH_TOKEN"
+        ]
       }
     },
     "cursor": {

@@ -101,6 +101,89 @@ def credential_env(real: Path) -> dict:
     return out
 
 
+def resolve_harness_env(env_map: dict) -> tuple[dict, dict]:
+    """按注册表的 env_map 解析 harness 需要的环境变量。
+
+    解析顺序前缀：
+      env:NAME        → 当前进程环境变量
+      bashrc:NAME     → ~/.bashrc 里的 `export NAME=...`
+      codex-auth:NAME → ~/.codex/auth.json 里的字段
+      cred:NAME       → ~/.dsh/.credentials.yaml 的 *_API_KEY
+    返回 (值字典, 来源字典)；只记录来源，不打印也不落盘任何值。
+    """
+    import re
+
+    def bashrc_exports() -> dict:
+        """~/.bashrc 的全部 `export NAME=值`（只进内存，用于补全派生写法）。"""
+        f = Path.home() / ".bashrc"
+        if not f.is_file():
+            return {}
+        out = {}
+        pat = re.compile(r"^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = pat.match(line)
+            if m and not m.group(2).startswith("$("):     # 跳过 $(命令) 形式的动态值
+                out[m.group(1)] = m.group(2).strip().strip("'\"")
+        return out
+
+    def from_bashrc(name: str) -> str:
+        return bashrc_exports().get(name, "")
+
+    def from_codex_auth(name: str) -> str:
+        f = Path.home() / ".codex" / "auth.json"
+        if not f.is_file():
+            return ""
+        try:
+            return str((json.loads(f.read_text(encoding="utf-8")) or {}).get(name) or "")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    creds = credential_env(Path(os.environ.get("DSH_HOME") or (Path.home() / ".dsh")))
+    def expand(raw: str, scope: dict) -> str:
+        """展开 ${VAR}、${VAR%suffix}、${VAR#prefix}、$VAR（最多 3 轮，够 bashrc 这种派生写法）。"""
+        import re as _re
+        out = raw
+        for _ in range(3):
+            def rep(m):
+                name, op, pat = m.group(1), m.group(2), m.group(3)
+                base = scope.get(name) or os.environ.get(name) or ""
+                if op == "%" and pat and base.endswith(pat):
+                    return base[: -len(pat)]
+                if op == "#" and pat and base.startswith(pat):
+                    return base[len(pat):]
+                return base
+            new = _re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:([%#])([^}]*))?\}", rep, out)
+            new = _re.sub(r"(?<!\$)\$([A-Za-z_][A-Za-z0-9_]*)", lambda m: scope.get(m.group(1)) or os.environ.get(m.group(1), ""), new)
+            if new == out:
+                break
+            out = new
+        return out
+
+    values, sources = {}, {}
+    for name, order in (env_map or {}).items():
+        for cand in order or []:
+            kind, _, arg = str(cand).partition(":")
+            val = ""
+            if kind == "env":
+                val = os.environ.get(arg or name, "")
+            elif kind == "bashrc":
+                val = from_bashrc(arg or name)
+            elif kind == "codex-auth":
+                val = from_codex_auth(arg or name)
+            elif kind == "cred":
+                val = creds.get(arg or name, "")
+            if val:
+                scope = dict(bashrc_exports())
+                scope.update(os.environ)
+                scope.update(values)
+                val = expand(val, scope)
+                if val:
+                    values[name] = val
+                    sources[name] = kind + ":" + (arg or name)
+                    break
+    return values, sources
+
+
 def scrub_secrets(base: Path) -> list[str]:
     """删掉运行目录里任何凭据文件/隔离 home 目录（纵深防御，正常流程本就该没有）。"""
     removed = []
@@ -263,10 +346,12 @@ def build_prompt(spec: dict, skill: Path, out: Path) -> str:
             '3. 完成后用一句话回报产物绝对路径。')
 
 
-def build_argv(harness: dict, prompt: str, model: str) -> list:
+def build_argv(harness: dict, prompt: str, model: str, extra: dict | None = None) -> list:
     preset = harness['preset']
     argv = [harness['bin'] if a == '{bin}' else a for a in (preset.get('argv') or ['{prompt}'])]
     argv = [prompt if a == '{prompt}' else a for a in argv]
+    for k, v in (extra or {}).items():                 # {skill_dir} / {package} 等占位符
+        argv = [v if a == '{' + k + '}' else a for a in argv]
     if model and preset.get('model_flag'):
         flag = [model if a == '{model}' else a for a in preset['model_flag']]
         argv += flag

@@ -28,6 +28,8 @@ python3 scripts/verify_entry.py --package <包根> --init
   `assets/harness-registry.json`，默认首选；`--dry-run` 只看会启动什么命令），主进程只收
   `P0/P1 数量 / 覆盖摘要 / 报告路径 / 日志路径`；凭据只经环境变量注入，跑完清理残留。
   这一步是"历史会话不影响判定"的物理隔离手段，可在不支持子智能体的 harness 上同样使用。
+  各 harness 的参数与凭证来自 `assets/harness-registry.json`（`argv` 里的 `{skill_dir}`/`{package}` 占位符 +
+  `env_map` 声明凭证来源）；本机实测 dsh / codex / claude 三者都能跑通同一份合同。
 
 ### 0.1 开跑先对齐版本（自动更新到远端最新 tag）
 

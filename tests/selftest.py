@@ -1908,6 +1908,25 @@ def t20_verify_entry(tmp: Path) -> None:
            and (logs / "stdout.txt").is_file(),
            f"rc={proc_i.returncode}")
 
+    # harness 占位符与环境变量解析（不依赖真实 harness）
+    sys.path.insert(0, str(SCRIPTS))
+    import run_skill_agent as _rsa
+    _desc = {"name": "claude", "bin": "/usr/bin/claude",
+             "preset": {"argv": ["{bin}", "-p", "{prompt}", "--add-dir", "{skill_dir}",
+                                 "--add-dir", "{package}"], "model_flag": ["--model", "{model}"]}}
+    _argv = _rsa.build_argv(_desc, "PROMPT", "", {"skill_dir": "/S", "package": "/P"})
+    record("正例：harness argv 支持 {skill_dir}/{package} 占位符替换",
+           _argv == ["/usr/bin/claude", "-p", "PROMPT", "--add-dir", "/S", "--add-dir", "/P"],
+           f"argv={_argv}")
+
+    _vals, _srcs = _rsa.resolve_harness_env({"DEMO_KEY": ["env:DEMO_KEY_SRC"]})
+    os.environ["DEMO_KEY_SRC"] = "value-from-env"
+    _vals, _srcs = _rsa.resolve_harness_env({"DEMO_KEY": ["env:DEMO_KEY_SRC"]})
+    os.environ.pop("DEMO_KEY_SRC", None)
+    record("正例：env_map 按 env: 前缀解析并记录来源（不泄露值）",
+           _vals.get("DEMO_KEY") == "value-from-env" and _srcs.get("DEMO_KEY") == "env:DEMO_KEY_SRC",
+           f"vals={list(_vals)} srcs={_srcs}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)
