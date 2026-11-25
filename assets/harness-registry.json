@@ -162,18 +162,17 @@
       "argv": [
         "{bin}",
         "run",
-        "--model",
-        "{model}",
         "--title",
         "资产包核验",
         "--auto",
+        "{model}",
         "{prompt}"
       ],
       "model_flag": [
         "--model",
         "{model}"
       ],
-      "notes": "opencode run 一次性执行（非交互）。**必须显式 --title**：否则 opencode 会用配置里的默认模型生成会话标题，若该 provider 不可达（本机自定义网关即如此）就会整批挂住。另需 --auto 自动放行权限；模型固定用内置免费 opencode/deepseek-v4.1-flash-free，避免依赖自定义 provider。",
+      "notes": "opencode run（非交互）。必须 --title（否则用默认模型生成标题，provider 不可达时卡死）与 --auto（否则等审批挂住）；子进程需同步 PWD。模型默认用 ~/.config/opencode/opencode.json 的 model，需要指定时传 {model}（为空则自动去掉该参数）。凭证按 env_map 注入 OPENAI_API_KEY。",
       "sage": {
         "kind": "env",
         "env": {
@@ -181,7 +180,14 @@
           "OPENAI_API_KEY": "{api_key}"
         }
       },
-      "default_model": "opencode/deepseek-v4.1-flash-free"
+      "env_map": {
+        "OPENAI_API_KEY": [
+          "env:OPENAI_API_KEY",
+          "bashrc:OPENAI_API_KEY",
+          "codex-auth:OPENAI_API_KEY",
+          "cred:DEEPSEEK_API_KEY"
+        ]
+      }
     },
     "aider": {
       "display": "Aider",

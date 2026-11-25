@@ -365,6 +365,17 @@ def build_argv(harness: dict, prompt: str, model: str, extra: dict | None = None
             argv = [model if a == '{model}' else a for a in argv]
         elif preset.get('model_flag'):
             argv += [model if a == '{model}' else a for a in preset['model_flag']]
+    else:
+        # 没指定模型：把 {model} 连同它前面的 flag 一起去掉，交给 harness 用自身默认模型
+        flags = set((preset.get('model_flag') or [])[:1]) or {'--model', '-m'}
+        cleaned = []
+        for a in argv:
+            if a == '{model}':
+                if cleaned and cleaned[-1] in flags:
+                    cleaned.pop()
+                continue
+            cleaned.append(a)
+        argv = cleaned
     return argv
 
 

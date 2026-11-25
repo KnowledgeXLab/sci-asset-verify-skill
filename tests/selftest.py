@@ -1940,6 +1940,16 @@ def t20_verify_entry(tmp: Path) -> None:
     _cur = " ".join(_reg["cursor"]["argv"])
     _oc = " ".join(_reg["opencode"]["argv"])
     _oc_argv = _reg["opencode"]["argv"]
+    record("正例：opencode 预设声明 OPENAI_API_KEY 的 env_map 解析链",
+           (_reg["opencode"].get("env_map") or {}).get("OPENAI_API_KEY", [])[:2] ==
+           ["env:OPENAI_API_KEY", "bashrc:OPENAI_API_KEY"],
+           f"env_map={_reg['opencode'].get('env_map')}")
+    _no_model = _rsa.build_argv({"bin": "/usr/bin/oc",
+                                 "preset": {"argv": ["{bin}", "run", "--auto", "{model}", "{prompt}"]}},
+                                "P", "")
+    record("正例：未指定模型时自动去掉 --model 参数（交给 harness 用自身默认模型）",
+           _no_model == ["/usr/bin/oc", "run", "--auto", "P"], f"argv={_no_model}")
+
     record("正例：opencode 预设含 --title（否则会用默认模型生成标题、provider 不可达时卡死）",
            "--title" in _oc_argv, f"argv={_oc_argv}")
 

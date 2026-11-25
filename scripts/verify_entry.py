@@ -182,8 +182,8 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     (outdir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
                                          encoding="utf-8")
 
-    # 常见环境问题的明确提示（不是资产问题，也不是 skill 问题）
-    err = (proc.stderr or "")
+    # 常见环境问题的明确提示（只在真的失败时给，避免 agent 正常输出里的普通字样触发）
+    err = (proc.stderr or "") if (proc.returncode != 0 or not (run / "validation-report.md").is_file()) else ""
     hints = []
     if any(k in err for k in ("Authentication required", "agent login", "CURSOR_API_KEY")):
         hints.append("harness 未鉴权：先执行 `agent login`，或 export CURSOR_API_KEY 后重试")

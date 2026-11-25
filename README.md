@@ -105,7 +105,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | `dsh` | `--profile headless --permission-mode workspace-write` | `~/.dsh/.credentials.yaml` 的 `*_API_KEY`（仅环境变量） |
 | `codex` | `exec --skip-git-repo-check -s workspace-write` | `env:OPENAI_API_KEY` → `~/.codex/auth.json` → `cred:DEEPSEEK_API_KEY` |
 | `claude` | `-p --permission-mode bypassPermissions --add-dir <skill> --add-dir <包>` | `env:ANTHROPIC_AUTH_TOKEN` → `~/.bashrc` 的 export（含 `${VAR%…}` 派生） |
-| `opencode` | `run --model <内置免费模型> --title <固定标题> --auto` | 内置模型无需鉴权；自定义 provider 走 `opencode auth login` |
+| `opencode` | `run --title <固定标题> --auto`（模型用 opencode 配置默认） | `env:OPENAI_API_KEY` → `~/.bashrc` → `~/.codex/auth.json` → dsh 凭据 |
 | `cursor` | `agent -p --force --output-format text` | `env:CURSOR_API_KEY` → `~/.bashrc`；或先 `agent login` |
 
 实测状态（2026-11-25，本机）：
@@ -113,7 +113,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | harness | 状态 | 说明 |
 |---|---|---|
 | `dsh` / `codex` / `claude` | ✅ 整包核验跑通 | 都有 `P0 0 / P1 0` 报告与完整证据 |
-| `opencode` | ⚠️ 通道已修对，模型不稳 | `--title`/`--auto`/`PWD` 三个坑已修；内置免费模型多次出现"空轮"（rc=0 但无工具调用），全量核验未跑通 |
+| `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`、harbor 双 trial 与 Sage 2/2 均完成；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步），凭证走 `OPENAI_API_KEY`，模型用 opencode 配置里的默认模型 |
 | `cursor` | ⛔ 未鉴权 | CLI 已装（2026.11.22），缺 `CURSOR_API_KEY` 或 `agent login` |
 
 > 非交互场景下 claude 必须 `bypassPermissions` + `--add-dir`，否则所有命令都要审批；opencode 必须 `--auto`，否则非 TTY 下会等审批挂住；
@@ -225,7 +225,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 170 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 172 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
