@@ -87,7 +87,16 @@ python3 scripts/verify_entry.py --package <包根> --emit-prompt   # 只看合�
 报告门禁与交付要求。执行者照它执行即可，结论由脚本门禁校验（`probe_package.py --evaluate`、
 `check_coverage.py`、`check_report.py`），不靠模型自觉，也不要求 harness 支持子智能体。
 
-支持子智能体的 harness 可以把这份合同原文喂给子智能体（主会话上下文更干净），但这只是可选项。
+要**隔离历史上下文**（不让之前的会话/判断影响本次结论）：
+
+```bash
+python3 scripts/verify_entry.py --package <包根> --isolated        # 全新进程按合同执行
+python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只看会启动什么
+```
+
+`--isolated` 复用 `assets/harness-registry.json` 里的 harness（默认首选 dsh；`--harness` 可指定），
+在独立进程中执行合同，主进程只输出 `P0/P1 数量、覆盖摘要、报告与日志路径`；凭据只经环境变量注入，
+跑完清理残留凭据。支持子智能体的 harness 也可以直接把合同喂给全新子智能体——效果等价。
 
 ## 使用方法
 
@@ -194,7 +203,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 164 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 166 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py

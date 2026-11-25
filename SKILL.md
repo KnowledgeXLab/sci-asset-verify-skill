@@ -24,8 +24,10 @@ python3 scripts/verify_entry.py --package <包根> --init
 - 结论由脚本门禁校验（`probe_package.py --evaluate`、`check_coverage.py`、`check_report.py`），
   不依赖模型自觉；
 - 只想看要做什么、不落盘：`python3 scripts/verify_entry.py --package <包根> --emit-prompt`；
-- 支持子智能体的 harness 可以把这份合同原文作为子智能体的输入（可选优化，不是必需）；
-  不支持子智能体的 harness 就在主会话按合同逐条跑，**结论口径完全一致**。
+- **要隔离历史上下文**：加 `--isolated`——它在**全新进程**里按合同执行（harness 取自
+  `assets/harness-registry.json`，默认首选；`--dry-run` 只看会启动什么命令），主进程只收
+  `P0/P1 数量 / 覆盖摘要 / 报告路径 / 日志路径`；凭据只经环境变量注入，跑完清理残留。
+  这一步是"历史会话不影响判定"的物理隔离手段，可在不支持子智能体的 harness 上同样使用。
 
 ### 0.1 开跑先对齐版本（自动更新到远端最新 tag）
 

@@ -1883,6 +1883,31 @@ def t20_verify_entry(tmp: Path) -> None:
                "不得带历史上下文" in text and "全新子智能体" in text and "只以本批次落盘的机检事实为准" in text,
                "合同缺执行环境约束")
 
+    # isolated：dry-run 打印启动命令且不执行；stub 跑通后主进程只收摘要
+    proc_d = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--isolated", "--dry-run"], tmp)
+    out_d = proc_d.stdout or ""
+    dirs_d = sorted(pkg.glob("asset-runs/run-*"))
+    cmd_json = dirs_d[-1] / "isolated-agent" / "cmd.json" if dirs_d else None
+    record("正例：--isolated --dry-run 打印将启动的 harness 命令，且 cmd.json 不含密钥",
+           proc_d.returncode == 0 and "将执行" in out_d and "verify-task.md" in out_d
+           and cmd_json is not None and cmd_json.is_file()
+           and "sk-" not in cmd_json.read_text(encoding="utf-8")      # 只记键名，不记密钥值
+           and "injected_env_keys" in cmd_json.read_text(encoding="utf-8"),
+           f"rc={proc_d.returncode}")
+
+    stub = "python3 -c \"import json,pathlib,sys;r=pathlib.Path.cwd();(r/'probe-report.json').write_text(json.dumps({'verdict':{'summary':{'P0':0,'P1':0},'coverage_summary':{'pass':11,'na':5}}}));(r/'validation-report.md').write_text('# ok');print('stub done')\""
+    proc_i = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--isolated",
+                  "--timeout", "60"], tmp, env_extra={"VERIFY_ENTRY_STUB_CMD": stub})
+    out_i = proc_i.stdout or ""
+    dirs_i = sorted(pkg.glob("asset-runs/run-*"))
+    logs = dirs_i[-1] / "isolated-agent" if dirs_i else None
+    summ = logs / "summary.json" if logs else None
+    record("正例：--isolated 在独立进程跑完，主进程只输出摘要（P0/P1、报告、日志路径）",
+           proc_i.returncode == 0 and "判定：P0 0 / P1 0" in out_i and "报告：" in out_i
+           and summ is not None and summ.is_file()
+           and (logs / "stdout.txt").is_file(),
+           f"rc={proc_i.returncode}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)
