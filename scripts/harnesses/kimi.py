@@ -7,6 +7,7 @@ ADAPTER = HarnessAdapter(
     bins=("kimi",),
     argv=("{bin}", "-p", "{prompt}"),
     order=6,
+    priority=2,
     model_flag=("-m", "{model}"),
     sage={"kind": "env", "env": {"OPENAI_BASE_URL": "{base_url}", "OPENAI_API_KEY": "{api_key}"}},
     note="kimi -p 单次非交互执行（注意：-p 与 --auto 互斥，不能一起用）。"

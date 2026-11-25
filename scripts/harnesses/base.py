@@ -24,7 +24,8 @@ class HarnessAdapter:
     display: str
     bins: tuple[str, ...]
     argv: tuple[str, ...]
-    order: int = 100
+    order: int = 100            # 同优先级内的顺序
+    priority: int = 3           # 1=实际核验最可靠 … 4=仅登记；auto 选择按 (priority, order)
     headless: bool = True
     not_headless_reason: str = ""
     model_flag: tuple[str, ...] = ()
@@ -84,9 +85,15 @@ class HarnessAdapter:
         return {}
 
     # ---- 展示 ----
+    @property
+    def auto_eligible(self) -> bool:
+        """能否被 `--harness auto` 自动选中：装好、支持无头、且不是"已知不可用"。"""
+        return bool(self.headless and self.resolve_bin() and not str(self.verified).startswith("blocked"))
+
     def describe(self) -> dict:
         exe = self.resolve_bin()
         return {"name": self.name, "display": self.display, "bins": list(self.bins),
+                "priority": self.priority, "auto_eligible": self.auto_eligible,
                 "installed": bool(exe), "bin": exe, "headless": self.headless,
                 "not_headless_reason": self.not_headless_reason,
                 "argv": " ".join(self.argv), "sage": self.sage, "note": self.note,

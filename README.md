@@ -129,6 +129,18 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | `qwen` | `qwen -p <prompt> --approval-mode yolo` | 走 `~/.qwen/settings.json` 与其登录态 |
 | `zcode` | `zcode-cli --prompt <prompt>`（`--mode` 默认 yolo） | 走 `~/.zcode` 登录态（`zcode-cli login`） |
 
+优先级（`--harness auto` 按 `(priority, order)` 选，**已知不可用的不参与**）：
+
+| 优先级 | 含义 | harness |
+|---|---|---|
+| **P1** | 整包核验跑通 | `dsh` → `codex` → `claude` → `opencode` |
+| **P2** | 最小包跑通（较慢） | `kimi` → `qwen` |
+| **P3** | 可调用但不稳定 | `zcode` |
+| **P4** | 仅登记 / 未鉴权 | `cursor`（`verified=blocked`，auto 不会选它） |
+
+优先级写在每个适配器的 `priority=` 字段（`scripts/harnesses/*.py`），调一行即可改变排序；
+`python3 scripts/run_skill_agent.py --list-harnesses` 会打印 `P1/P2… + auto✓/auto✗ + 实测结论`。
+
 实测状态（2026-11-25，本机）：
 
 | harness | 状态 | 说明 |
@@ -249,7 +261,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 176 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 178 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py

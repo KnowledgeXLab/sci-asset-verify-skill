@@ -14,7 +14,8 @@ ADAPTERS: tuple[HarnessAdapter, ...] = (
 )
 
 REGISTRY: dict[str, HarnessAdapter] = {a.name: a for a in ADAPTERS}
-ORDER: list[str] = [a.name for a in sorted(ADAPTERS, key=lambda a: a.order)]
+# auto 选择与列表展示都按 (priority, order) 排：1=整包跑通、2=最小包跑通、3=可调用但不稳定、4=仅登记/未鉴权
+ORDER: list[str] = [a.name for a in sorted(ADAPTERS, key=lambda a: (a.priority, a.order))]
 
 
 def get(name: str) -> HarnessAdapter | None:
@@ -22,8 +23,20 @@ def get(name: str) -> HarnessAdapter | None:
 
 
 def available() -> list[HarnessAdapter]:
-    """已安装且支持无头执行的适配器，按 order 排序。"""
+    """可被 auto 选中的适配器：装好、支持无头、且不是已知不可用；按优先级排序。"""
+    return [REGISTRY[n] for n in ORDER if REGISTRY[n].auto_eligible]
+
+
+def installed() -> list[HarnessAdapter]:
+    """本机装了且支持无头的全部适配器（含 auto 不会选的，如未鉴权的）。"""
     return [REGISTRY[n] for n in ORDER if REGISTRY[n].resolve_bin() and REGISTRY[n].headless]
+
+
+def priority_table() -> list[dict]:
+    """优先级一览：给 README/CLI 展示用。"""
+    return [{"name": a.name, "priority": a.priority, "verified": a.verified,
+             "auto_eligible": a.auto_eligible, "installed": bool(a.resolve_bin())}
+            for a in (REGISTRY[n] for n in ORDER)]
 
 
 def describe_all() -> list[dict]:
@@ -47,6 +60,6 @@ def legacy_registry() -> dict:
         harnesses[name] = {
             "display": a.display, "bins": list(a.bins), "argv": list(a.argv),
             "model_flag": list(a.model_flag) or None, "notes": a.note, "sage": a.sage,
-            "headless": a.headless,
+            "headless": a.headless, "priority": a.priority, "verified": a.verified,
         }
     return {"schema_version": "2.0.0", "preference": list(ORDER), "harnesses": harnesses}

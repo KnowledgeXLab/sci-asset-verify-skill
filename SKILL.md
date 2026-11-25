@@ -211,7 +211,9 @@ python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装�
 3. 一个都没装 → 报错并让你就地固化：`--harness-cmd "<本地命令模板，用 {prompt} 占位>"`；
 4. 适配器之外的 harness 先就地分析：`--show-help <名字>` 或直接跑 `<bin> --help`，确认一次性调用的子命令与自动化开关，
    再用 `--harness-cmd` 固化（**用户环境千变万化，适配器只是加速，不是限制**）；
-5. 新增 harness = 在 `scripts/harnesses/` 加一个文件（`HarnessAdapter` 实例）并在 `__init__.py` 追加一行，
+5. 每个适配器带 `priority`（1=整包跑通、2=最小包跑通、3=可调用但不稳定、4=仅登记/未鉴权），
+   `--harness auto` 按 `(priority, order)` 选，且**跳过 `verified=blocked` 的**（如未鉴权的 cursor）；
+6. 新增 harness = 在 `scripts/harnesses/` 加一个文件（`HarnessAdapter` 实例）并在 `__init__.py` 追加一行，
    **不要**改调用方逻辑；桌面应用等确实没有 headless CLI 的，标 `headless=False` 并写清原因（ZCode 有 `zcode-cli --prompt`，故按 CLI 支持）。
 
 **provider / 模型**：默认**用 harness 自己配置的默认 provider 与模型**，脚本不覆盖。

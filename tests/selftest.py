@@ -1965,6 +1965,17 @@ def t20_verify_entry(tmp: Path) -> None:
     record("正例：zcode 适配器指向 zcode-cli 并用 --prompt（zcode 本体是桌面 GUI，不能无头）",
            _reg["zcode"]["headless"] is True and "zcode-cli" in _REG["zcode"].bins
            and "--prompt" in _reg["zcode"]["argv"], f"bins={_REG['zcode'].bins}")
+    # 优先级：ORDER 按 (priority, order) 排序；auto 只选非 blocked 的
+    _prio = [(n, _REG[n].priority) for n in _ORDER]
+    record("正例：ORDER 按优先级排序（P1 全在 P2 之前，P4 在最后）",
+           [p for _, p in _prio] == sorted(p for _, p in _prio)
+           and _prio[0][1] == 1 and _prio[-1] == ("cursor", 4), f"{_prio}")
+    from harnesses import available
+    _auto = [a.name for a in available()]
+    record("正例：auto 候选排除已知不可用的 harness（blocked 的 cursor 不在其中）",
+           "cursor" not in _auto and _auto and _auto[0] in ("dsh", "codex", "claude", "opencode"),
+           f"auto={_auto}")
+
     record("正例：登录 shell 包装用 bash -ic（.bashrc 对非交互 shell 会提前 return）",
            _REG["kimi"].wrap(["kimi", "-p", "x"])[:2] == [shutil.which("bash"), "-ic"],
            f"wrap={_REG['kimi'].wrap(['kimi','-p','x'])[:2]}")

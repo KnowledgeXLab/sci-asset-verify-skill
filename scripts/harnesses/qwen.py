@@ -7,6 +7,7 @@ ADAPTER = HarnessAdapter(
     bins=("qwen",),
     argv=("{bin}", "-p", "{prompt}", "--approval-mode", "yolo"),
     order=7,
+    priority=2,
     model_flag=("-m", "{model}"),
     sage={"kind": "env", "env": {"OPENAI_BASE_URL": "{base_url}", "OPENAI_API_KEY": "{api_key}"}},
     note="qwen -p 单次非交互执行（Gemini CLI 同源）；--approval-mode yolo 让工具调用自动放行。"

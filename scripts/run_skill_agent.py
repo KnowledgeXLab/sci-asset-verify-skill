@@ -324,6 +324,8 @@ def resolve_harness(spec: dict, registry: dict, wanted: str = 'auto') -> dict:
             continue
         if preset.get('headless') is False:        # 桌面应用等：明确不支持无头调用
             continue
+        if wanted in ("auto", "", None) and str(preset.get('verified') or '').startswith("blocked"):
+            continue                                # 已知不可用（如未鉴权）不参与 auto 选择
         for b in preset.get('bins') or []:
             exe = shutil.which(b)
             if exe:
@@ -338,11 +340,16 @@ def resolve_harness(spec: dict, registry: dict, wanted: str = 'auto') -> dict:
 
 
 def list_harnesses(registry: dict) -> int:
-    print(f'预设 harness（{len(registry.get("harnesses") or {})} 个）：')
+    print(f'预设 harness（{len(registry.get("harnesses") or {})} 个，按优先级排列）：')
+    print('  优先级 1=整包核验跑通 2=最小包跑通 3=可调用但不稳定 4=仅登记/未鉴权')
     for name, preset in (registry.get('harnesses') or {}).items():
         found = next((shutil.which(b) for b in preset.get('bins') or [] if shutil.which(b)), None)
         mark = f'✓ {found}' if found else '✗ 未安装'
-        print(f'  {name:9s} {preset.get("display", ""):26s} {mark}')
+        pr = preset.get('priority', 9)
+        ver = preset.get('verified') or '-'
+        auto = 'auto✓' if (found and preset.get('headless') is not False
+                           and not str(ver).startswith('blocked')) else 'auto✗'
+        print(f'  P{pr} {name:9s} {preset.get("display", ""):26s} {mark:34s} {auto}  {ver}')
         print(f'            argv: {" ".join(preset.get("argv") or [])}')
     print('未列出的 harness 可用 --harness-cmd "<命令模板>" 就地固化（模板里用 {prompt} 占位）。')
     return 0

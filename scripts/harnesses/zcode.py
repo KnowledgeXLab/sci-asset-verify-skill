@@ -12,6 +12,7 @@ ADAPTER = HarnessAdapter(
     bins=("zcode-cli",),
     argv=("{bin}", "--prompt", "{prompt}"),
     order=8,
+    priority=3,
     model_flag=("--model", "{model}"),
     sage={"kind": "env", "env": {"OPENAI_BASE_URL": "{base_url}", "OPENAI_API_KEY": "{api_key}"}},
     note="zcode-cli --prompt 单次执行；--prompt 下权限模式默认 yolo（自动放行）。"

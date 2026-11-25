@@ -8,6 +8,7 @@ ADAPTER = HarnessAdapter(
     argv=("{bin}", "-p", "{prompt}", "--permission-mode", "bypassPermissions",
           "--add-dir", "{skill_dir}", "--add-dir", "{package}"),
     order=3,
+    priority=1,
     model_flag=("--model", "{model}"),
     sage={"kind": "env", "env": {"ANTHROPIC_BASE_URL": "{base_url}", "ANTHROPIC_AUTH_TOKEN": "{api_key}"}},
     note="claude -p 打印模式。非交互必须 bypassPermissions，并用 --add-dir 把 skill 与资产包目录加进允许范围；"
