@@ -97,6 +97,17 @@ def dirty() -> bool:
     return rc == 0 and bool(out.strip())
 
 
+def current_branch() -> str:
+    rc, out = git('rev-parse', '--abbrev-ref', 'HEAD')
+    return out.strip() if rc == 0 else ''
+
+
+def is_dev_checkout() -> bool:
+    """开发分支（非 main/master/detached）不参与自动切换版本，避免把开发工作区切走。"""
+    br = current_branch()
+    return bool(br) and br not in ('main', 'master', 'HEAD')
+
+
 def current_tag() -> str:
     rc, out = git('describe', '--tags', '--exact-match')
     if rc == 0 and out.strip():
@@ -110,6 +121,9 @@ def check() -> dict:
     if not is_git_repo():
         return {'status': 'not_git', 'current': cur,
                 'reason': '当前安装不是 git 仓库，无法自动更新（请重新下发最新版）'}
+    if is_dev_checkout():
+        return {'status': 'dev_branch', 'current': cur,
+                'reason': f'当前在开发分支 {current_branch()}，不自动切换发布版本（部署目录才需要自动更新）'}
     tags = remote_tags()
     if not tags:
         return {'status': 'offline_or_no_remote', 'current': cur,
@@ -183,6 +197,7 @@ def main(argv=None) -> int:
     payload = {'tool': 'update_skill.py', 'skill_root': str(SKILL_ROOT), **result}
     label = {'up_to_date': '已是最新', 'updated': '已更新', 'behind': '有新版（未更新）',
              'not_writable': '无写权限，跳过自动更新',
+             'dev_branch': '开发分支，跳过自动更新',
              'not_git': '非 git 安装，跳过', 'offline_or_no_remote': '离线/无 origin，跳过',
              'dirty_worktree': '工作区脏，跳过', 'disabled': '已关闭自动更新',
              'fetch_failed': '拉取失败', 'checkout_failed': '切换失败'}.get(result['status'], result['status'])
@@ -196,7 +211,8 @@ def main(argv=None) -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return 0 if result['status'] in ('up_to_date', 'updated', 'behind', 'not_git',
-                                     'offline_or_no_remote', 'disabled', 'not_writable') else 1
+                                     'offline_or_no_remote', 'disabled', 'not_writable',
+                                     'dev_branch') else 1
 
 
 if __name__ == '__main__':

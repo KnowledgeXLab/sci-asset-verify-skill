@@ -74,6 +74,24 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 | 网络 | 自动更新、`--check` 需要能访问 GitHub；核验本身不需要联网 |
 | 第三方依赖 | 无（`vendor/openpyxl`、`vendor/jsonschema` 已内嵌） |
 
+## 开发与部署分离
+
+本仓库有两条使用面，**不要混用**：
+
+| 位置 | 用途 | 版本要求 |
+|---|---|---|
+| `<工作区>/sci-asset-verify-skill`（本仓库） | **开发**：只在这里改代码 | 开发分支 `dev`，`VERSION` 带 `-dev` 后缀 |
+| `<工作区>/.dsh/skills/sci-asset-verify-skill` | **部署**：其他会话/其他用户实际跑的那份 | 只放**已发布 tag**（`git clone --branch <tag>`），由 `scripts/update_skill.py` 自动跟进 |
+
+流程：
+
+1. 开发只在 `dev` 分支（`git switch dev`）进行，`main` 保持与最近一次发布一致；
+2. 发版：`VERSION` 去掉 `-dev` → 合并到 `main` → 打 tag → 推送；
+3. 部署目录 `git fetch --tags && git checkout <新 tag>`（或直接跑 `scripts/update_skill.py --apply`）。
+
+`update_skill.py` 在**开发分支上会自动跳过**（输出 `开发分支，跳过自动更新`），避免把开发工作区切到发布 tag；
+只有部署目录（detached HEAD 或 main）才会真的切换版本。
+
 ## 跨 harness 使用（不假设对方的 agent 框架）
 
 核验流程不依赖任何特定 harness。任何 agent（DSH / Claude Code / Codex / Cursor / 其它）都从同一条命令开始：
@@ -225,7 +243,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 172 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 173 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py

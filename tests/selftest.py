@@ -1626,6 +1626,14 @@ def t18_self_update(tmp: Path) -> None:
            and (local / "VERSION").read_text(encoding="utf-8").endswith("local edit\n"),
            f"rc={proc.returncode}")
 
+    # 开发分支：不做自动切版本（避免把开发工作区 checkout 到发布 tag）
+    git("checkout", "-q", "-b", "dev-test", cwd=local)
+    proc = run([str(up), "--apply"], local)
+    record("正例：开发分支上 --apply 跳过（提示 dev_branch，不动工作区）",
+           proc.returncode == 0 and "开发分支" in (proc.stdout + proc.stderr),
+           f"rc={proc.returncode}")
+    git("checkout", "-q", "--detach", cwd=local)
+
     proc = run([str(up), "--no-update"], local)
     record("正例：--no-update 显式跳过且不失败",
            proc.returncode == 0 and "跳过" in (proc.stdout + proc.stderr), f"rc={proc.returncode}")
