@@ -137,7 +137,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步） |
 | `kimi` | ✅ 最小包跑通 | `-p` 与 `--auto` 互斥已修；报告 `P0 0 / P1 0` |
 | `qwen` | ✅ 最小包跑通 | 报告 `P0 0 / P1 0`；速度较慢（最小包约 15 分钟/批） |
-| `zcode` | ⚠️ CLI 通道可用（慢） | 用 `zcode-cli --prompt`（`zcode` 本体是桌面 GUI）；冒烟通过，整包已跑到 probe/coverage/check-report 阶段，建议 `--timeout ≥ 1800` |
+| `zcode` | ⚠️ CLI 可调用，整包未稳定完成 | 用 `zcode-cli --prompt`（`zcode` 本体是桌面 GUI）。冒烟通过；整包两次尝试：一次跑到 12 个产物（probe/coverage/check-report/harbor）但 14 分钟未出报告，一次在 probe 后停住 → 慢且不稳定，建议 `--timeout ≥ 1800` 并观察 |
 | `cursor` | ⛔ 未鉴权 | CLI 已装（2026.11.22），缺 `CURSOR_API_KEY` 或 `agent login` |
 
 > 非交互场景下 claude 必须 `bypassPermissions` + `--add-dir`，否则所有命令都要审批；opencode 必须 `--auto`，否则非 TTY 下会等审批挂住；
