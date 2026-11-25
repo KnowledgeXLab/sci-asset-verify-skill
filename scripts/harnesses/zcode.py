@@ -1,21 +1,21 @@
-"""ZCode 适配器。
+"""ZCode CLI 适配器（z.ai 的 GLM 编码 agent）。
 
-ZCode（z.ai 的 GLM 编码 agent）目前是 **Electron 桌面应用**，`zcode` 可执行文件只启动 GUI，
-没有可用的非交互 CLI。按适配器约定显式声明 headless=False，调用方必须报错而不是硬跑 GUI。
+注意区分两个可执行文件：
+* ``zcode``     —— Electron 桌面应用，只启动 GUI，**不能**无头调用；
+* ``zcode-cli`` —— 终端版，支持 ``--prompt`` 单次执行（``--prompt`` 下 ``--mode`` 默认 yolo）。
 """
 from .base import HarnessAdapter
 
 ADAPTER = HarnessAdapter(
     name="zcode",
-    display="ZCode（桌面应用）",
-    bins=("zcode",),
-    argv=("{bin}", "{prompt}"),
+    display="ZCode CLI",
+    bins=("zcode-cli",),
+    argv=("{bin}", "--prompt", "{prompt}"),
     order=8,
-    headless=False,
-    not_headless_reason="ZCode 是 Electron 桌面应用（/opt/ZCode/zcode 只启动 GUI），没有非交互 CLI；"
-                        "无法用于 --isolated 或子智能体自动核验。如后续版本提供 headless 子命令，"
-                        "只需改本文件的 argv 并把 headless 置回 True。",
-    sage={"kind": "unsupported", "why": "无 headless CLI，无法注入 Sage 后端"},
-    note="仅登记用途，暂不可自动调用。",
-    verified="blocked:桌面应用，无 headless CLI",
+    model_flag=("--model", "{model}"),
+    sage={"kind": "env", "env": {"OPENAI_BASE_URL": "{base_url}", "OPENAI_API_KEY": "{api_key}"}},
+    note="zcode-cli --prompt 单次执行；--prompt 下权限模式默认 yolo（自动放行）。"
+         "模型与登录态走宿主 ~/.zcode 配置（`zcode-cli login`）。"
+         "注意别用 `zcode`（桌面 GUI，无 headless）。",
+    verified="ok",
 )

@@ -204,7 +204,7 @@ python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run
 python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装了哪些"
 ```
 
-**harness 选择**（适配器在 `scripts/harnesses/`，一个 harness 一个文件，内置 dsh / codex / claude / opencode / cursor / kimi / qwen / zcode：
+**harness 选择**（适配器在 `scripts/harnesses/`，一个 harness 一个文件，内置 dsh / codex / claude / opencode / cursor / kimi / qwen / zcode（注意 zcode 用 `zcode-cli`，`zcode` 是桌面 GUI）：
 
 1. 首选 `validate/readme.md` 建议的 harness（按名字/显示名匹配预设，要有本机可执行文件）；
 2. 建议的没装 → 按预设顺序挑一个**已安装**的，证据里写明「建议 X、实际用 Y、为什么」；
@@ -212,7 +212,7 @@ python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装�
 4. 适配器之外的 harness 先就地分析：`--show-help <名字>` 或直接跑 `<bin> --help`，确认一次性调用的子命令与自动化开关，
    再用 `--harness-cmd` 固化（**用户环境千变万化，适配器只是加速，不是限制**）；
 5. 新增 harness = 在 `scripts/harnesses/` 加一个文件（`HarnessAdapter` 实例）并在 `__init__.py` 追加一行，
-   **不要**改调用方逻辑；桌面应用等无 headless CLI 的（如 ZCode）标 `headless=False` 并写清原因。
+   **不要**改调用方逻辑；桌面应用等确实没有 headless CLI 的，标 `headless=False` 并写清原因（ZCode 有 `zcode-cli --prompt`，故按 CLI 支持）。
 
 **provider / 模型**：默认**用 harness 自己配置的默认 provider 与模型**，脚本不覆盖。
 **Sage 测试**：沿用同一 harness，只换后端 —— `--backend sage` 时从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`

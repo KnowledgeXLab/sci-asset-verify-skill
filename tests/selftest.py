@@ -1962,8 +1962,9 @@ def t20_verify_entry(tmp: Path) -> None:
            "--title" in _oc_argv, f"argv={_oc_argv}")
     record("正例：kimi 适配器不含 --auto（kimi 的 -p 与 --auto 互斥）",
            "--auto" not in " ".join(_reg["kimi"]["argv"]), f"argv={_reg['kimi']['argv']}")
-    record("正例：zcode 标记为不可无头执行并给出原因",
-           _reg["zcode"]["headless"] is False, "zcode 应 headless=False")
+    record("正例：zcode 适配器指向 zcode-cli 并用 --prompt（zcode 本体是桌面 GUI，不能无头）",
+           _reg["zcode"]["headless"] is True and "zcode-cli" in _REG["zcode"].bins
+           and "--prompt" in _reg["zcode"]["argv"], f"bins={_REG['zcode'].bins}")
     record("正例：登录 shell 包装用 bash -ic（.bashrc 对非交互 shell 会提前 return）",
            _REG["kimi"].wrap(["kimi", "-p", "x"])[:2] == [shutil.which("bash"), "-ic"],
            f"wrap={_REG['kimi'].wrap(['kimi','-p','x'])[:2]}")
