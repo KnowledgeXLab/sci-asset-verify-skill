@@ -16,7 +16,7 @@
   python3 scripts/verify_entry.py --package <包根> --isolated          # 在独立进程/新上下文里执行
   python3 scripts/verify_entry.py --package <包根> --isolated --dry-run  # 只看会启动什么命令
 
-`--isolated` 用 harness 注册表（assets/harness-registry.json）在**全新进程**里跑合同，
+`--isolated` 用适配器包（scripts/harnesses/）在**全新进程**里跑合同，
 主进程只收摘要——历史会话物理上进不去。凭据只经环境变量注入，不落盘；跑完会清理残留凭据。
 
 退出码：0 成功 / 1 资产包不存在或隔离执行失败 / 2 参数错误。
@@ -85,9 +85,12 @@ def render(package: Path, run: Path, intent: str) -> str:
 
 
 def _load_runner():
-    """复用 run_skill_agent.py 的 harness 解析 / 隔离 DSH_HOME / 凭据注入 / 清理逻辑。"""
+    """复用 run_skill_agent.py 的隔离 DSH_HOME / 清理逻辑；harness 由适配器包提供。"""
     sys.path.insert(0, str(SKILL_DIR / "scripts"))
     import run_skill_agent as rsa  # noqa: WPS433
+    from harnesses import get as get_adapter, describe_all  # noqa: WPS433
+    rsa.get_adapter = get_adapter
+    rsa.describe_all = describe_all
     return rsa
 
 
@@ -95,13 +98,15 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
                   timeout: int, dsh_home: str, dry_run: bool) -> int:
     """在全新进程里按合同执行核验；主进程只保留摘要与日志路径。"""
     rsa = _load_runner()
-    reg = rsa.load_registry()
-    harnesses = reg.get("harnesses") or {}
-    name = harness_name if harness_name != "auto" else (reg.get("preference") or ["dsh"])[0]
-    if name not in harnesses:
-        print(f"未知 harness：{name}；可用：{', '.join(sorted(harnesses))}", file=sys.stderr)
+    from harnesses import REGISTRY, ORDER, available  # noqa: WPS433
+    name = harness_name if harness_name != "auto" else (available()[0].name if available() else ORDER[0])
+    adapter = REGISTRY.get(name)
+    if adapter is None:
+        print(f"未知 harness：{name}；可用：{', '.join(ORDER)}", file=sys.stderr)
         return 2
-    preset = harnesses[name]
+    if not adapter.headless:
+        print(f"harness {name} 不支持无头调用：{adapter.not_headless_reason}", file=sys.stderr)
+        return 2
 
     prompt = (
         f"严格按执行合同 {contract} 完成资产包核验。合同里列出的命令必须真实执行，"
@@ -111,19 +116,14 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     stub = os.environ.get("VERIFY_ENTRY_STUB_CMD")     # 仅供自测注入；生产不使用
     exe = ""
     if not stub:
-        import shutil
-        for b in preset.get("bins") or []:
-            exe = shutil.which(b) or ""
-            if exe:
-                break
+        exe = adapter.resolve_bin()
         if not exe:
-            print(f"harness {name} 未安装（找过 {preset.get('bins')}）；可用 --harness 指定已装的",
+            print(f"harness {name} 未安装（找过 {list(adapter.bins)}）；可用 --harness 指定已装的",
                   file=sys.stderr)
             return 2
-        model = preset.get("default_model") or ""
-        argv = rsa.build_argv({"name": name, "preset": preset, "bin": exe}, prompt, model,
-                              {"skill_dir": str(SKILL_DIR), "package": str(package),
-                               "run": str(run), "contract": str(contract)})
+        argv = adapter.build(prompt, {"bin": exe, "skill_dir": str(SKILL_DIR), "package": str(package),
+                                      "run": str(run), "contract": str(contract)})
+        argv = adapter.wrap(argv)          # 登录 shell：让宿主默认配置（端点/代理/PATH）生效
     else:
         argv = shlex.split(stub)
 
@@ -134,12 +134,11 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     # 于是把父进程所在目录（本次是 skill 仓库）当成 project 去做 copy/index，表现为卡死。
     env["PWD"] = str(run)
     env.pop("OLDPWD", None)
-    creds = rsa.credential_env(Path.home() / ".dsh")
-    env.update(creds)                                          # 凭据只进环境变量，不落盘
-    harness_env, harness_env_sources = rsa.resolve_harness_env(preset.get("env_map"))
-    env.update(harness_env)                                    # harness 需要的变量按注册表解析
-    injected = sorted(creds)
-    resolved = sorted(harness_env_sources)
+    # 默认**不注入任何凭据/端点变量**：一律用宿主机的默认配置（登录 shell 已带上宿主环境）。
+    # 唯一例外是 Sage：它由 sage_probe / run_skill_agent 的 sage 流程显式注入 SAGE_*。
+    injected: list[str] = []
+    resolved: list[str] = []
+    harness_env_sources: dict = {}
     dsh_note = ""
     if name == "dsh" and not stub:
         extra, dsh_note = rsa.dsh_home_runtime(outdir, "verify", dsh_home)
@@ -160,7 +159,8 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
         print(f"日志目录：{outdir}")
         return 0
 
-    proc = subprocess.run(argv, cwd=str(run), env=env, capture_output=True, text=True, timeout=timeout)
+    proc = subprocess.run(argv, cwd=str(run), env=env, capture_output=True, text=True,
+                          timeout=timeout, stdin=subprocess.DEVNULL)
     (outdir / "stdout.txt").write_text(proc.stdout or "", encoding="utf-8")
     (outdir / "stderr.txt").write_text(proc.stderr or "", encoding="utf-8")
     scrubbed = rsa.scrub_secrets(outdir)
@@ -188,7 +188,7 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     if any(k in err for k in ("Authentication required", "agent login", "CURSOR_API_KEY")):
         hints.append("harness 未鉴权：先执行 `agent login`，或 export CURSOR_API_KEY 后重试")
     if any(k in err for k in ("Missing environment variable", "unauthorized", "Unauthorized", "401")):
-        hints.append("harness 缺少凭证：按 assets/harness-registry.json 的 env_map 配置环境变量")
+        hints.append("harness 缺少凭证：按该 harness 自身配置文件/登录态准备（skill 不注入环境变量）")
     if "requires approval" in err or "permission" in err.lower() and "denied" in err.lower():
         hints.append("harness 权限不足：检查 argv 里的 --force / bypassPermissions / --auto 是否生效")
     if "unable to verify the first certificate" in err or "CERTIFICATE_VERIFY_FAILED" in err:

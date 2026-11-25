@@ -112,7 +112,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated        # 全新进
 python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只看会启动什么
 ```
 
-`--isolated` 复用 `assets/harness-registry.json` 里的 harness（默认首选 dsh；`--harness dsh|codex|claude|…` 可指定），
+`--isolated` 复用 `scripts/harnesses/` 里的适配器（默认首选已安装的第一个，`--harness dsh|codex|claude|kimi|qwen|opencode|cursor` 可指定），
 在独立进程中执行合同，主进程只输出 `P0/P1 数量、覆盖摘要、报告与日志路径`；凭据只经环境变量注入，
 跑完清理残留凭据。支持子智能体的 harness 也可以直接把合同喂给全新子智能体——效果等价。
 
@@ -124,14 +124,20 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | `codex` | `exec --skip-git-repo-check -s workspace-write` | `env:OPENAI_API_KEY` → `~/.codex/auth.json` → `cred:DEEPSEEK_API_KEY` |
 | `claude` | `-p --permission-mode bypassPermissions --add-dir <skill> --add-dir <包>` | `env:ANTHROPIC_AUTH_TOKEN` → `~/.bashrc` 的 export（含 `${VAR%…}` 派生） |
 | `opencode` | `run --title <固定标题> --auto`（模型用 opencode 配置默认） | `env:OPENAI_API_KEY` → `~/.bashrc` → `~/.codex/auth.json` → dsh 凭据 |
-| `cursor` | `agent -p --force --output-format text` | `env:CURSOR_API_KEY` → `~/.bashrc`；或先 `agent login` |
+| `cursor` | `agent -p --force --output-format text` | 走 Cursor 自身登录态（`agent login`）或 `CURSOR_API_KEY` |
+| `kimi` | `kimi -p <prompt>`（`-p` 与 `--auto` 互斥） | 走 `~/.kimi/config.toml` 的 provider/模型 |
+| `qwen` | `qwen -p <prompt> --approval-mode yolo` | 走 `~/.qwen/settings.json` 与其登录态 |
+| `zcode` | —（桌面应用，无 headless CLI） | 不适用 |
 
 实测状态（2026-11-25，本机）：
 
 | harness | 状态 | 说明 |
 |---|---|---|
 | `dsh` / `codex` / `claude` | ✅ 整包核验跑通 | 都有 `P0 0 / P1 0` 报告与完整证据 |
-| `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`、harbor 双 trial 与 Sage 2/2 均完成；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步），凭证走 `OPENAI_API_KEY`，模型用 opencode 配置里的默认模型 |
+| `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步） |
+| `kimi` | ✅ 最小包跑通 | `-p` 与 `--auto` 互斥已修；报告 `P0 0 / P1 0` |
+| `qwen` | ⏳ 慢但可跑 | 能完整推进（probe/coverage/harbor 均有产物），单批 >10 分钟 |
+| `zcode` | ⛔ 不可无头调用 | Electron 桌面应用，`zcode` 只启动 GUI；适配器标 `headless=False` 并报错说明 |
 | `cursor` | ⛔ 未鉴权 | CLI 已装（2026.11.22），缺 `CURSOR_API_KEY` 或 `agent login` |
 
 > 非交互场景下 claude 必须 `bypassPermissions` + `--add-dir`，否则所有命令都要审批；opencode 必须 `--auto`，否则非 TTY 下会等审批挂住；
@@ -243,7 +249,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 173 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 176 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py

@@ -25,11 +25,11 @@ python3 scripts/verify_entry.py --package <包根> --init
   不依赖模型自觉；
 - 只想看要做什么、不落盘：`python3 scripts/verify_entry.py --package <包根> --emit-prompt`；
 - **要隔离历史上下文**：加 `--isolated`——它在**全新进程**里按合同执行（harness 取自
-  `assets/harness-registry.json`，默认首选；`--dry-run` 只看会启动什么命令），主进程只收
+  `scripts/harnesses/`（一个 harness 一个适配器），默认首选已安装的；`--dry-run` 只看会启动什么命令），主进程只收
   `P0/P1 数量 / 覆盖摘要 / 报告路径 / 日志路径`；凭据只经环境变量注入，跑完清理残留。
   这一步是"历史会话不影响判定"的物理隔离手段，可在不支持子智能体的 harness 上同样使用。
-  各 harness 的参数与凭证来自 `assets/harness-registry.json`（`argv` 里的 `{skill_dir}`/`{package}` 占位符 +
-  `env_map` 声明凭证来源）。本机实测：**dsh / codex / claude 三者跑通**；opencode 通道参数已修对
+  各 harness 的调用形态来自 `scripts/harnesses/*.py`（`argv` 里的 `{skill_dir}`/`{package}` 占位符）；
+  **默认不注入任何环境变量/凭据**，一律用宿主机的默认配置（交互式 shell 包装让 `~/.bashrc` 生效）。本机实测：**dsh / codex / claude 三者跑通**；opencode 通道参数已修对
   （`--title` 必需、`--auto` 必需、子进程要同步 `PWD`）但内置免费模型不稳，尚未跑通整包；
   cursor 需先 `agent login` 或 `CURSOR_API_KEY`。
 
@@ -204,13 +204,15 @@ python scripts/run_skill_agent.py --skill <副本>/<资产目录> --out-dir <run
 python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装了哪些"
 ```
 
-**harness 选择**（预设表在 `assets/harness-registry.json`，内置 dsh / codex / claude / cursor / gemini / opencode / aider：
+**harness 选择**（适配器在 `scripts/harnesses/`，一个 harness 一个文件，内置 dsh / codex / claude / opencode / cursor / kimi / qwen / zcode：
 
 1. 首选 `validate/readme.md` 建议的 harness（按名字/显示名匹配预设，要有本机可执行文件）；
 2. 建议的没装 → 按预设顺序挑一个**已安装**的，证据里写明「建议 X、实际用 Y、为什么」；
 3. 一个都没装 → 报错并让你就地固化：`--harness-cmd "<本地命令模板，用 {prompt} 占位>"`；
-4. 预设之外的 harness 先就地分析：`--show-help <名字>` 或直接跑 `<bin> --help`，确认一次性调用的子命令与自动化开关，
-   再用 `--harness-cmd` 固化（**用户环境千变万化，预设只是加速，不是限制**）。
+4. 适配器之外的 harness 先就地分析：`--show-help <名字>` 或直接跑 `<bin> --help`，确认一次性调用的子命令与自动化开关，
+   再用 `--harness-cmd` 固化（**用户环境千变万化，适配器只是加速，不是限制**）；
+5. 新增 harness = 在 `scripts/harnesses/` 加一个文件（`HarnessAdapter` 实例）并在 `__init__.py` 追加一行，
+   **不要**改调用方逻辑；桌面应用等无 headless CLI 的（如 ZCode）标 `headless=False` 并写清原因。
 
 **provider / 模型**：默认**用 harness 自己配置的默认 provider 与模型**，脚本不覆盖。
 **Sage 测试**：沿用同一 harness，只换后端 —— `--backend sage` 时从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`

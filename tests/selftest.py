@@ -1943,23 +1943,30 @@ def t20_verify_entry(tmp: Path) -> None:
     os.environ["DEMO_KEY_SRC"] = "value-from-env"
     _vals, _srcs = _rsa.resolve_harness_env({"DEMO_KEY": ["env:DEMO_KEY_SRC"]})
     os.environ.pop("DEMO_KEY_SRC", None)
-    # 注册表：cursor / opencode 的 argv 必须带非交互所需的放行参数
-    _reg = json.loads((SKILL / "assets" / "harness-registry.json").read_text(encoding="utf-8"))["harnesses"]
+    # 适配器注册表：cursor / opencode 的 argv 必须带非交互所需的放行参数
+    from harnesses import REGISTRY as _REG, ORDER as _ORDER
+    _reg = {n: {"argv": list(_REG[n].argv), "env_map": None, "headless": _REG[n].headless}
+            for n in _ORDER}
     _cur = " ".join(_reg["cursor"]["argv"])
     _oc = " ".join(_reg["opencode"]["argv"])
     _oc_argv = _reg["opencode"]["argv"]
-    record("正例：opencode 预设声明 OPENAI_API_KEY 的 env_map 解析链",
-           (_reg["opencode"].get("env_map") or {}).get("OPENAI_API_KEY", [])[:2] ==
-           ["env:OPENAI_API_KEY", "bashrc:OPENAI_API_KEY"],
-           f"env_map={_reg['opencode'].get('env_map')}")
+    record("正例：适配器不注入环境变量（默认用宿主配置）",
+           all(not _REG[n].env({}).items() for n in _ORDER), "适配器 env() 不应返回任何变量")
     _no_model = _rsa.build_argv({"bin": "/usr/bin/oc",
                                  "preset": {"argv": ["{bin}", "run", "--auto", "{model}", "{prompt}"]}},
                                 "P", "")
     record("正例：未指定模型时自动去掉 --model 参数（交给 harness 用自身默认模型）",
            _no_model == ["/usr/bin/oc", "run", "--auto", "P"], f"argv={_no_model}")
 
-    record("正例：opencode 预设含 --title（否则会用默认模型生成标题、provider 不可达时卡死）",
+    record("正例：opencode 适配器含 --title（否则会用默认模型生成标题、provider 不可达时卡死）",
            "--title" in _oc_argv, f"argv={_oc_argv}")
+    record("正例：kimi 适配器不含 --auto（kimi 的 -p 与 --auto 互斥）",
+           "--auto" not in " ".join(_reg["kimi"]["argv"]), f"argv={_reg['kimi']['argv']}")
+    record("正例：zcode 标记为不可无头执行并给出原因",
+           _reg["zcode"]["headless"] is False, "zcode 应 headless=False")
+    record("正例：登录 shell 包装用 bash -ic（.bashrc 对非交互 shell 会提前 return）",
+           _REG["kimi"].wrap(["kimi", "-p", "x"])[:2] == [shutil.which("bash"), "-ic"],
+           f"wrap={_REG['kimi'].wrap(['kimi','-p','x'])[:2]}")
 
     record("正例：cursor 预设含 -p/--force/--output-format，opencode 预设含 run/--auto/{model}",
            "-p" in _cur and "--force" in _cur and "--output-format" in _cur

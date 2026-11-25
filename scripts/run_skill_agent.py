@@ -7,7 +7,7 @@
 harness 选定顺序
 ----------------
 1. 首选 `validate/readme.md` 里建议的 harness（按名字匹配预设：dsh / codex / claude / cursor / gemini / opencode / aider，
-   见 assets/harness-registry.json）；
+   见 scripts/harnesses/ 适配器包）；
 2. 建议的没装，就按预设顺序挑一个**已安装**的，并在证据里注明"建议 X、实际用 Y"；
 3. 一个都没装 → 报错，并提示用 `--harness-cmd` 就地固化本地命令（用户环境千变万化，预设只是加速）；
 4. **provider 用 harness 自己配置的默认值**，本脚本不覆盖；
@@ -42,7 +42,6 @@ except Exception:  # noqa: BLE001
         return payload
 
 SPEC = 'validate/readme.md'
-REGISTRY = Path(__file__).resolve().parents[1] / 'assets' / 'harness-registry.json'
 SAGE_ENV = {'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
             'model': ['SAGE_MODEL', 'SAGE_LLM_MODEL'],
             'api_key': ['SAGE_API_KEY', 'SAGE_LLM_API_KEY']}
@@ -279,11 +278,14 @@ def parse_spec(skill: Path) -> dict:
 
 # ---------------------------------------------------------------- harness 预设
 def load_registry() -> dict:
-    """读 harness 注册表；环境变量 ASSET_VERIFY_HARNESS_REGISTRY 可指向另一份（自测/私有分发用）。"""
-    import os as _os
-    path = Path(_os.environ.get("ASSET_VERIFY_HARNESS_REGISTRY") or REGISTRY)
+    """harness 注册表：来自 scripts/harnesses 适配器包（每个 harness 一个文件）。
+
+    环境变量 ASSET_VERIFY_HARNESS_REGISTRY 指向 JSON 时优先用它（自测/私有分发）。
+    """
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from harnesses import legacy_registry      # noqa: WPS433
+        return legacy_registry()
     except Exception:  # noqa: BLE001
         return {'preference': [], 'harnesses': {}}
 
@@ -319,6 +321,8 @@ def resolve_harness(spec: dict, registry: dict, wanted: str = 'auto') -> dict:
     for name in candidates:
         preset = presets.get(name)
         if not preset:
+            continue
+        if preset.get('headless') is False:        # 桌面应用等：明确不支持无头调用
             continue
         for b in preset.get('bins') or []:
             exe = shutil.which(b)
@@ -462,6 +466,14 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     prompt = build_prompt(spec, skill, out)
     cmd = build_argv(harness, prompt, model)
+    try:                                            # 让宿主 shell 配置（端点/代理/PATH）生效
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from harnesses import get as _get_adapter
+        _ad = _get_adapter(harness.get('name') or '')
+        if _ad is not None:
+            cmd = _ad.wrap(cmd)
+    except Exception:  # noqa: BLE001
+        pass
     env = dict(os.environ)
     dsh_note = ''
     if harness['name'] == 'dsh':
