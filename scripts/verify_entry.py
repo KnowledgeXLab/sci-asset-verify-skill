@@ -84,6 +84,67 @@ def render(package: Path, run: Path, intent: str) -> str:
     return out
 
 
+def update_gate() -> tuple[dict | None, int]:
+    """启动前检查远端版本。
+
+    * 已是最新 / 离线读不到 → 只记录，继续；
+    * 有新版且可自动更新 → 提示"可运行 update_skill.py --apply"，继续（不在核验中途改磁盘）；
+    * **有新版但无法自动完成 → 直接终止**，要求用户手动更新后重试（避免用旧版跑出不可复现的结论）。
+    """
+    sys.path.insert(0, str(SKILL_DIR / "scripts"))
+    import update_skill as us                                 # noqa: WPS433
+    try:
+        result = us.check()
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[版本检查] 跳过（检查失败：{exc}）")
+        return None, 0
+    status = result.get("status")
+    if status == "update_available_manual":
+        print(f"[版本检查] ⚠ {result.get('reason')}", file=sys.stderr)
+        print(f"[版本检查] 请先手动更新到 {result.get('latest')} 后重试；"
+              f"确认要用当前版本继续可加 --ignore-update。", file=sys.stderr)
+        return result, 3
+    if status == "behind":
+        print(f"[版本检查] 有新版本 {result.get('latest')}（当前 {result.get('current')}）："
+              f"可运行 scripts/update_skill.py --apply 更新（本次仍按当前版本核验）")
+    elif status == "up_to_date":
+        print(f"[版本检查] 已是最新（{result.get('current')}）")
+    else:
+        print(f"[版本检查] {result.get('reason') or status}")
+    return result, 0
+
+
+def run_preflight(package: Path, json_out: str | None = None) -> int:
+    """只跑预审。退出码与 preflight.py 一致：0 通过 / 1 包问题 / 2 环境问题。"""
+    sys.path.insert(0, str(SKILL_DIR / "scripts"))
+    import preflight as pf                                   # noqa: WPS433
+    report = pf.run(package)
+    pf.print_report(report)
+    if json_out:
+        out = Path(json_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"tool": "preflight.py", **report}, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+    if report["ok"]:
+        return 0
+    return 2 if report["env_blocked"] else 1
+
+
+def preflight_gate(package: Path) -> tuple[dict | None, int]:
+    """预审门禁：不通过就打印问题并返回退出码，调用方据此终止。"""
+    sys.path.insert(0, str(SKILL_DIR / "scripts"))
+    import preflight as pf                                   # noqa: WPS433
+    report = pf.run(package)
+    if report["ok"]:
+        print(f"[预审] 通过（提示 {len(report['warnings'])} 条），继续核验")
+        return report, 0
+    print(f"[预审] 未通过：阻断 {len(report['blockers'])} 条，已终止（未启动 agent、未消耗核验时间）",
+          file=sys.stderr)
+    pf.print_report(report, stream=sys.stderr)
+    print("修复上述问题后重试；如确认是预审误报，可加 --skip-preflight 强制继续。", file=sys.stderr)
+    return report, (2 if report["env_blocked"] else 1)
+
+
 def _load_runner():
     """复用 run_skill_agent.py 的隔离 DSH_HOME / 清理逻辑；harness 由适配器包提供。"""
     sys.path.insert(0, str(SKILL_DIR / "scripts"))
@@ -223,6 +284,12 @@ def main(argv=None) -> int:
     ap.add_argument("--dsh-home", default="auto", choices=["auto", "default", "isolated"])
     ap.add_argument("--timeout", type=int, default=3600, help="isolated 执行超时（秒）")
     ap.add_argument("--dry-run", action="store_true", help="isolated 时只打印将执行的命令")
+    ap.add_argument("--ignore-update", action="store_true",
+                    help="跳过启动前的远端版本检查/提示（不建议：新版本可能已修掉你要跑的问题）")
+    ap.add_argument("--preflight", action="store_true",
+                    help="只做环境与包格式预审（不建批次、不跑核验）")
+    ap.add_argument("--skip-preflight", action="store_true",
+                    help="跳过预审（仅在明确知道预审误报时使用）")
     ap.add_argument("--json-out")
     a = ap.parse_args(argv)
 
@@ -230,9 +297,26 @@ def main(argv=None) -> int:
     if not package.is_dir():
         print(f"资产包不存在：{package}", file=sys.stderr)
         return 1
+    if a.preflight:
+        return run_preflight(package, a.json_out)
+
     if not (a.init or a.emit_prompt or a.isolated):
         print("需要 --init / --emit-prompt / --isolated 之一", file=sys.stderr)
         return 2
+
+    # 版本检查：先问远端有没有更新版本（不依赖是否 git 安装）
+    update_info = None
+    if not a.ignore_update and not a.emit_prompt:
+        update_info, rc = update_gate()
+        if rc:
+            return rc
+
+    # 预审：环境 + 资产包格式。任何阻断都在起 agent 之前终止，避免白跑完整流程。
+    preflight_report = None
+    if not a.skip_preflight and not a.emit_prompt:
+        preflight_report, rc = preflight_gate(package)
+        if rc:
+            return rc
 
     run = next_run_dir(package, a.at)
     text = render(package, run, a.intent)
@@ -248,6 +332,14 @@ def main(argv=None) -> int:
 
     run.mkdir(parents=True, exist_ok=True)
     (run / "verify-task.md").write_text(text + "\n", encoding="utf-8")
+    if update_info is not None:
+        (run / "skill-update.json").write_text(
+            json.dumps({"tool": "update_skill.py", **update_info}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+    if preflight_report is not None:
+        (run / "preflight-report.json").write_text(
+            json.dumps({"tool": "preflight.py", **preflight_report}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
     if a.isolated:
         return isolated_exec(package, run, run / "verify-task.md", a.harness,
                              a.timeout, a.dsh_home, a.dry_run)

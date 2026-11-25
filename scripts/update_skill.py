@@ -29,6 +29,9 @@ import sys
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+# 非 git 安装（拷贝/解压/容器内分发）也要能查远端版本：用登记仓库地址
+DEFAULT_REMOTE = 'git@github.com:KnowledgeXLab/sci-asset-verify-skill.git'
+MANUAL_HINT = '发现新版本 {latest}（当前 {cur}），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试'
 TAG_RE = re.compile(r'^v?(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta|rc)\.?(\d+))?$')
 STAGE = {'alpha': 0, 'beta': 1, 'rc': 2, None: 3}
 
@@ -60,8 +63,18 @@ def is_git_repo() -> bool:
     return (SKILL_ROOT / '.git').exists() or git('rev-parse', '--git-dir')[0] == 0
 
 
+def remote_url() -> str:
+    """远端地址：优先 origin，其次环境变量，最后内置的登记仓库（非 git 安装也能查版本）。"""
+    if is_git_repo():
+        rc, out = git('remote', 'get-url', 'origin')
+        if rc == 0 and out.strip():
+            return out.strip().splitlines()[0]
+    return os.environ.get('ASSET_VERIFY_SKILL_REMOTE') or DEFAULT_REMOTE
+
+
 def remote_tags() -> list[str]:
-    rc, out = git('ls-remote', '--tags', 'origin')
+    url = remote_url()
+    rc, out = git('ls-remote', '--tags', url) if url else (1, '')
     if rc != 0:
         return []
     tags = []
@@ -117,25 +130,32 @@ def current_tag() -> str:
 
 
 def check() -> dict:
+    """无论是否 git 安装，都先问远端有没有更新版本；不能自动更新时明确要求用户手动更新。"""
     cur = local_version()
-    if not is_git_repo():
-        return {'status': 'not_git', 'current': cur,
-                'reason': '当前安装不是 git 仓库，无法自动更新（请重新下发最新版）'}
-    if is_dev_checkout():
-        return {'status': 'dev_branch', 'current': cur,
-                'reason': f'当前在开发分支 {current_branch()}，不自动切换发布版本（部署目录才需要自动更新）'}
     tags = remote_tags()
     if not tags:
-        return {'status': 'offline_or_no_remote', 'current': cur,
-                'reason': '读不到远端 tag（离线或无 origin），跳过自动更新'}
+        return {'status': 'offline_or_no_remote', 'current': cur, 'remote': remote_url(),
+                'reason': '读不到远端 tag（离线或仓库不可达），无法判断是否有更新'}
     latest = newest(tags)
-    tag_now = current_tag()
-    newest_local = newest([x for x in (cur, tag_now) if x])
     if not latest:
         return {'status': 'no_tags', 'current': cur, 'reason': '远端没有可比较的版本 tag'}
-    base = newest_local or cur
+    base = newest([x for x in (cur, current_tag()) if x]) or cur
     if parse_version(latest) and parse_version(base) and parse_version(latest) <= parse_version(base):
         return {'status': 'up_to_date', 'current': cur, 'latest': latest}
+
+    # 有更新：判断能不能自动完成
+    if not is_git_repo():
+        return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
+                'reason': MANUAL_HINT.format(latest=latest, cur=cur)
+                          + '（当前安装不是 git 仓库：请重新下发/解压最新版，或改用 git clone 安装）'}
+    if is_dev_checkout():
+        return {'status': 'dev_branch', 'current': cur, 'latest': latest,
+                'reason': f'当前在开发分支 {current_branch()}，不自动切换发布版本；'
+                          f'若这是部署目录，请手动 git checkout {latest}'}
+    ok, why = writable()
+    if not ok:
+        return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
+                'reason': MANUAL_HINT.format(latest=latest, cur=cur) + f'（{why}）'}
     return {'status': 'behind', 'current': cur, 'latest': latest}
 
 
@@ -193,9 +213,16 @@ def main(argv=None) -> int:
             result.update(apply_update(result['latest']))
             if result.get('status') == 'updated':
                 result['selftest'] = run_selftest()
+            elif result.get('status') in ('not_writable', 'dirty_worktree', 'fetch_failed', 'checkout_failed'):
+                # 有新版但自动更新没成：统一升级为"需手动更新"，并给出明确指引
+                result['status'] = 'update_available_manual'
+                result['reason'] = MANUAL_HINT.format(latest=result['latest'], cur=result['current']) \
+                    + f'（{result.get("reason", "")}）'
+                result['auto_update'] = 'failed'
 
     payload = {'tool': 'update_skill.py', 'skill_root': str(SKILL_ROOT), **result}
     label = {'up_to_date': '已是最新', 'updated': '已更新', 'behind': '有新版（未更新）',
+             'update_available_manual': '有新版，需手动更新',
              'not_writable': '无写权限，跳过自动更新',
              'dev_branch': '开发分支，跳过自动更新',
              'not_git': '非 git 安装，跳过', 'offline_or_no_remote': '离线/无 origin，跳过',
@@ -212,7 +239,7 @@ def main(argv=None) -> int:
         p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return 0 if result['status'] in ('up_to_date', 'updated', 'behind', 'not_git',
                                      'offline_or_no_remote', 'disabled', 'not_writable',
-                                     'dev_branch') else 1
+                                     'dev_branch', 'update_available_manual') else 1
 
 
 if __name__ == '__main__':

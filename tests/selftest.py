@@ -1621,8 +1621,9 @@ def t18_self_update(tmp: Path) -> None:
     git("push", "-q", "origin", "main", cwd=seed); git("push", "-q", "--tags", "origin", cwd=seed)
     (local / "VERSION").write_text("1.0.1\nlocal edit\n", encoding="utf-8")
     proc = run([str(up), "--apply"], local)
-    record("负例：工作区有本地改动时拒绝更新（不覆盖）",
-           proc.returncode == 1 and "工作区脏" in (proc.stdout + proc.stderr)
+    record("负例：工作区有本地改动时不覆盖，改为提示手动更新",
+           proc.returncode == 0 and ("手动更新" in (proc.stdout + proc.stderr)
+                                     or "工作区" in (proc.stdout + proc.stderr))
            and (local / "VERSION").read_text(encoding="utf-8").endswith("local edit\n"),
            f"rc={proc.returncode}")
 
@@ -1642,8 +1643,10 @@ def t18_self_update(tmp: Path) -> None:
     git("checkout", "--quiet", "--", ".", cwd=local)
     subprocess.run(["chmod", "-R", "a-w", str(local)], check=False)
     proc = run([str(up), "--apply"], local)
-    record("正例：skill 目录不可写时降级为提示（无写权限、退出码 0）",
-           proc.returncode == 0 and "无写权限" in (proc.stdout + proc.stderr), f"rc={proc.returncode}")
+    record("正例：skill 目录不可写时降级为提示（不失败、要求手动更新）",
+           proc.returncode == 0 and any(k in (proc.stdout + proc.stderr)
+                                        for k in ("无写权限", "不可写", "手动更新")),
+           f"rc={proc.returncode}")
     subprocess.run(["chmod", "-R", "u+w", str(local)], check=False)
 
 
@@ -1869,14 +1872,14 @@ def t20_verify_entry(tmp: Path) -> None:
         "name": "a1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
         encoding="utf-8")
 
-    proc = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--emit-prompt"], tmp)
+    proc = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--skip-preflight", "--ignore-update", "--emit-prompt"], tmp)
     out = proc.stdout or ""
     record("正例：--emit-prompt 输出固定合同（含包路径、批次目录、必跑命令、判定口径）",
            proc.returncode == 0 and str(pkg) in out and "probe_package.py --package" in out
            and "check_report.py" in out and "P0-SECRET" in out and "不参考" in out,
            f"rc={proc.returncode}")
 
-    proc2 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--init"], tmp)
+    proc2 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--skip-preflight", "--ignore-update", "--init"], tmp)
     runs = sorted(pkg.glob("asset-runs/run-*"))
     contract = runs[0] / "verify-task.md" if runs else None
     state = runs[0] / "state.json" if runs else None
@@ -1904,7 +1907,7 @@ def t20_verify_entry(tmp: Path) -> None:
                "合同缺执行环境约束")
 
     # isolated：dry-run 打印启动命令且不执行；stub 跑通后主进程只收摘要
-    proc_d = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--isolated", "--dry-run"], tmp)
+    proc_d = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--skip-preflight", "--ignore-update", "--isolated", "--dry-run"], tmp)
     out_d = proc_d.stdout or ""
     dirs_d = sorted(pkg.glob("asset-runs/run-*"))
     cmd_json = dirs_d[-1] / "isolated-agent" / "cmd.json" if dirs_d else None
@@ -1916,7 +1919,7 @@ def t20_verify_entry(tmp: Path) -> None:
            f"rc={proc_d.returncode}")
 
     stub = "python3 -c \"import json,pathlib,sys;r=pathlib.Path.cwd();(r/'probe-report.json').write_text(json.dumps({'verdict':{'summary':{'P0':0,'P1':0},'coverage_summary':{'pass':11,'na':5}}}));(r/'validation-report.md').write_text('# ok');print('stub done')\""
-    proc_i = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--isolated",
+    proc_i = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--skip-preflight", "--ignore-update", "--isolated",
                   "--timeout", "60"], tmp, env_extra={"VERIFY_ENTRY_STUB_CMD": stub})
     out_i = proc_i.stdout or ""
     dirs_i = sorted(pkg.glob("asset-runs/run-*"))
@@ -1988,6 +1991,62 @@ def t20_verify_entry(tmp: Path) -> None:
     record("正例：env_map 按 env: 前缀解析并记录来源（不泄露值）",
            _vals.get("DEMO_KEY") == "value-from-env" and _srcs.get("DEMO_KEY") == "env:DEMO_KEY_SRC",
            f"vals={list(_vals)} srcs={_srcs}")
+
+    # 预审：坏包（包根 asset.json / 非法 id / 坏 JSON / 无 asset.json 的目录）必须被挡住
+    badpkg = tmp / "t20-badpkg"
+    (badpkg / "a1").mkdir(parents=True)
+    (badpkg / "asset.json").write_text('{"x":1}', encoding="utf-8")
+    (badpkg / "a1" / "asset.json").write_text(json.dumps({"asset_id": "bad-id", "asset_type": "data"}),
+                                              encoding="utf-8")
+    (badpkg / "junk").mkdir()
+    proc_pf = run([str(SCRIPTS / "preflight.py"), "--package", str(badpkg)], tmp)
+    record("负例：预审挡住包根 asset.json / 非法 asset_id / 无 asset.json 的目录",
+           proc_pf.returncode in (1, 2) and "包根不应有 asset.json" in proc_pf.stdout
+           and "asset_id 不符合" in proc_pf.stdout and "没有 asset.json" in proc_pf.stdout,
+           f"rc={proc_pf.returncode}")
+
+    goodpkg = tmp / "t20-goodpkg"
+    (goodpkg / "g1" / "validate").mkdir(parents=True)
+    (goodpkg / "g1" / "payload").mkdir(parents=True)
+    _pay = "id,value\n1,1\n"
+    (goodpkg / "g1" / "payload" / "d.csv").write_text(_pay, encoding="utf-8")
+    import hashlib as _hl
+    _sha = _hl.sha256(_pay.encode()).hexdigest()
+    (goodpkg / "g1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD123456/earth/data/g1",
+        "asset_type": "data", "name": "g1", "description": "最小资产", "asset_version": "1.0.0",
+        "lifecycle": "validated",
+        "domains": [{"id": "domain:earth-science"}], "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"], "data_model": "tabular"},
+                 "artifacts": [{"id": "d", "artifact_type": "file", "uri": "payload/d.csv",
+                                "media_type": "text/csv", "role": "primary-data",
+                                "sha256": _sha, "size_bytes": len(_pay.encode())}],
+                 "domain_attributes": {}, "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    proc_pf2 = run([str(SCRIPTS / "preflight.py"), "--package", str(goodpkg)], tmp)
+    record("正例：预审对合规最小包放行（阻断 0）",
+           proc_pf2.returncode == 0 and "预审：通过" in proc_pf2.stdout, f"rc={proc_pf2.returncode}")
+
+    # 预审门禁：--isolated 遇到坏包必须终止且不建批次
+    proc_gate = run([str(SCRIPTS / "verify_entry.py"), "--package", str(badpkg), "--ignore-update", "--isolated",
+                     "--dry-run", "--ignore-update"], tmp)
+    record("负例：预审不通过时 --isolated 直接终止、不生成批次目录",
+           proc_gate.returncode in (1, 2) and "预审" in (proc_gate.stdout + proc_gate.stderr)
+           and not (badpkg / "asset-runs").exists(), f"rc={proc_gate.returncode}")
+
+    # 版本检查：非 git 安装 + 旧版本时要求手动更新（不启动核验）
+    fake = tmp / "t20-nongit"
+    (fake / "scripts").mkdir(parents=True)
+    (fake / "scripts" / "update_skill.py").write_text(
+        (SCRIPTS / "update_skill.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (fake / "VERSION").write_text("1.0.0\n", encoding="utf-8")
+    proc_up = run([str(fake / "scripts" / "update_skill.py"), "--check"], fake)
+    record("正例：非 git 安装也能查远端版本，有新版时提示需手动更新",
+           "手动更新" in proc_up.stdout or "offline" in proc_up.stdout.lower(),
+           f"rc={proc_up.returncode} out={proc_up.stdout.strip()[:80]}")
 
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"

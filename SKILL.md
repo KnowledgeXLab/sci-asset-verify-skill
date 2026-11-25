@@ -90,6 +90,16 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 2. **报告必须附覆盖表**：`probe-report.json` 的 `coverage` 列出每条检查的 `pass / fail / na`，`na` 必须带理由 —— 漏检要显式可见。
 3. **报告记 `probe_fingerprint` 与 skill 版本**；指纹相同而结论不同 = 执行偏离，不是资产变了。
 
+### 第零步：开跑前两道门（主进程，秒级）
+
+1. **版本检查**：`update_skill.py` 查远端 tag。有新版但装法/权限不支持自动更新 → 直接终止，
+   要求「手动更新 skill 后重试」（`--ignore-update` 可强行继续）。
+2. **预审**：`preflight.py` 校验环境（Python、可用 harness、docker/harbor、Sage 配置）与包格式
+   （包根不得有 asset.json、子目录必须是资产、必需字段、asset_type 八类、asset_id 四段式、包络校验）。
+   任一阻断即终止并打印问题清单，**不建批次、不起 agent**（`--skip-preflight` 可绕过误报）。
+
+报告落盘：`<run>/skill-update.json`、`<run>/preflight-report.json`。
+
 ## 1. 确定范围、阅读并建立使用说明
 
 以用户指定的原始资产目录为资产根目录，按 [references/local-assets.md](references/local-assets.md) 发现资产与入口。所有路径、服务和版本均从当前资产包读取。

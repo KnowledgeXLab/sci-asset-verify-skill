@@ -74,6 +74,35 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 | 网络 | 自动更新、`--check` 需要能访问 GitHub；核验本身不需要联网 |
 | 第三方依赖 | 无（`vendor/openpyxl`、`vendor/jsonschema` 已内嵌） |
 
+## 开跑前两道门（都在主进程完成，不烧核验时间）
+
+**1) 版本检查**（`scripts/update_skill.py`，`verify_entry.py` 启动时自动执行）
+
+不管 skill 是不是 `git clone` 装的，都会先 `git ls-remote --tags <远端>` 问最新版本：
+
+| 情况 | 行为 |
+|---|---|
+| 已是最新 | 记录 `skill-update.json`，继续 |
+| 有新版 + 能自动更新（git、干净、可写、非开发分支） | 提示可跑 `scripts/update_skill.py --apply`，本次仍按当前版本核验 |
+| **有新版 + 不能自动完成**（非 git 安装 / 无写权限 / 工作区脏 / 开发分支） | **终止**并提示「发现新版本 X（当前 Y），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试」 |
+
+远端地址取自 `origin`，非 git 安装时用内置登记仓库（可用 `ASSET_VERIFY_SKILL_REMOTE` 覆盖）。
+确认要用旧版继续：`--ignore-update`。
+
+**2) 预审**（`scripts/preflight.py`，`verify_entry.py` 启动时自动执行）
+
+| 层 | 检查 | 级别 |
+|---|---|---|
+| 环境 | Python ≥3.9、skill 文件完整、**至少一个可用 harness** | 阻断 |
+| 环境 | docker / harbor CLI 缺失、Sage-A1.5 未配置 | 提示 |
+| 包格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式、`asset_id` 不重复 | 阻断 |
+| 包格式 | `validate/`、`cases.json` 缺失 | 提示 |
+
+任一**阻断**项命中：不建批次、不起 agent、直接打印问题清单并退出（退出码 1=包问题 / 2=环境问题）。
+单独运行：`python3 scripts/preflight.py --package <包根> [--json-out F]`；
+核验入口同款：`python3 scripts/verify_entry.py --package <包根> --preflight`。
+确认是误报时用 `--skip-preflight` 强制继续。
+
 ## 开发与部署分离
 
 本仓库有两条使用面，**不要混用**：
@@ -261,7 +290,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 178 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 182 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
