@@ -136,7 +136,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 | `dsh` / `codex` / `claude` | ✅ 整包核验跑通 | 都有 `P0 0 / P1 0` 报告与完整证据 |
 | `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步） |
 | `kimi` | ✅ 最小包跑通 | `-p` 与 `--auto` 互斥已修；报告 `P0 0 / P1 0` |
-| `qwen` | ⏳ 慢但可跑 | 能完整推进（probe/coverage/harbor 均有产物），单批 >10 分钟 |
+| `qwen` | ✅ 最小包跑通 | 报告 `P0 0 / P1 0`；速度较慢（最小包约 15 分钟/批） |
 | `zcode` | ⛔ 不可无头调用 | Electron 桌面应用，`zcode` 只启动 GUI；适配器标 `headless=False` 并报错说明 |
 | `cursor` | ⛔ 未鉴权 | CLI 已装（2026.11.22），缺 `CURSOR_API_KEY` 或 `agent login` |
 
