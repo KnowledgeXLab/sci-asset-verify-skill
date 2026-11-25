@@ -74,6 +74,21 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 | 网络 | 自动更新、`--check` 需要能访问 GitHub；核验本身不需要联网 |
 | 第三方依赖 | 无（`vendor/openpyxl`、`vendor/jsonschema` 已内嵌） |
 
+## 跨 harness 使用（不假设对方的 agent 框架）
+
+核验流程不依赖任何特定 harness。任何 agent（DSH / Claude Code / Codex / Cursor / 其它）都从同一条命令开始：
+
+```bash
+python3 scripts/verify_entry.py --package <包根> --init     # 建批次目录 + 写固定执行合同
+python3 scripts/verify_entry.py --package <包根> --emit-prompt   # 只看合同，不落盘
+```
+
+`<批次>/verify-task.md` 是**由 skill 生成的固定执行合同**：包含必跑命令、判定口径（P0/P1/P2 与不校验项）、
+报告门禁与交付要求。执行者照它执行即可，结论由脚本门禁校验（`probe_package.py --evaluate`、
+`check_coverage.py`、`check_report.py`），不靠模型自觉，也不要求 harness 支持子智能体。
+
+支持子智能体的 harness 可以把这份合同原文喂给子智能体（主会话上下文更干净），但这只是可选项。
+
 ## 使用方法
 
 装好之后（见上节「安装」）无需额外配置，直接让 agent 使用本 skill 即可；也可把 `SKILL.md` 路径提供给 agent，由其按其中步骤执行。
@@ -179,7 +194,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部十九个脚本，共 157 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 162 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -194,13 +209,18 @@ python tests/selftest.py
 ```
 SKILL.md           六阶段流程的完整作业手册，agent 按此执行
 references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           十九个自检脚本（另有 4 个内部模块）
+scripts/           二十个自检脚本（另有 4 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
 vendor/            随包分发的 openpyxl
 ```
 
 ## 版本记录
+
+> 当前开发版 `1.4-beta.1-dev`（未发版）：**跨 harness 统一入口**——`scripts/verify_entry.py` 把核验流程固化成
+> 由 skill 生成的「执行合同」（`prompts/verify-task.md.tmpl` → `<run>/verify-task.md`），任何 agent 框架都照同一份合同跑；
+> 结论仍由脚本门禁校验，不依赖模型自觉，也不要求对方支持子智能体。
+
 
 > **Harbor 任务包支持**（合并 PR #1）：识别 task / 显式 dataset / 隐式 dataset 三种形态；静态检查入固定清单
 > （`P0-HARB-STRUCT` 必需文件、`P0-HARB-RUN` oracle/nop 双 trial、`P1-HARB-DATASET`/`P1-HARB-ENVELOPE`/`P1-HARB-LINT`）；

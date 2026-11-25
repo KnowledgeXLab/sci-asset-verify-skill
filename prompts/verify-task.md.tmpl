@@ -1,0 +1,77 @@
+# 资产包核验任务（固定执行合同）
+
+你用 `sci-asset-verify-skill` 核验下面这个包。本文件是**由 skill 生成的执行合同**，
+任何 harness（DSH / Claude Code / Codex / Cursor / 其它）都按同一份合同执行。
+
+- 资产包：`{package}`
+- 核验批次目录：`{run}`
+- skill 版本：{skill_version}（提交 {skill_commit}）
+- 交付用途：`{intent}`
+
+## 第一步（不可跳过）
+
+```bash
+cd {skill_dir}
+python3 scripts/probe_package.py --package {package} --run-dir {run} --evaluate --intent {intent} \
+    --json-out {run}/probe-report.json
+python3 scripts/validate_envelope.py {package} --json-out {run}/envelope-report.json
+python3 scripts/check_selfcontained.py --package {package} --json-out {run}/selfcontained-report.json
+```
+
+`probe-report.json` 的 `verdict.findings` 就是 P0/P1 结论；覆盖表里的 `na` 必须带理由。
+
+## 第二步：跑资产自带用例
+
+- 有 `validate/cases.json` 的资产：逐条跑该资产的 `validate/validate.py`，记录 rc 与关键输出；
+  把逐案结果汇总成 `{run}/cases.json`、`{run}/comparison.json`（结构见 references/validation.md）。
+- harbor 任务（含 `task.toml`）：
+
+```bash
+python3 scripts/harbor_run.py --package {package} --run-dir {run}
+```
+
+  期望 oracle `reward=1`、nop `reward=0`；跑不了记 blocked 并写明原因，不得当作通过。
+
+- 需要 Sage 附加测试时：
+
+```bash
+python3 scripts/sage_probe.py detect {package} --json-out {run}/sage-need.json
+python3 scripts/sage_probe.py config --probe --json-out {run}/sage-config.json
+```
+
+  配置缺失 → **先向用户索取**（`SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`，API URL 与 KEY 在端砚平台获取，
+  只放环境变量）；用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
+
+## 第三步：写报告并过门禁
+
+产出 `{run}/validation-report.md`（模板见 references/validation.md），然后：
+
+```bash
+python3 scripts/check_coverage.py --cases {run}/cases.json \
+    --run-dir {run} --report {run}/validation-report.md
+python3 scripts/check_report.py --report {run}/validation-report.md
+```
+
+（`--inventory` 可选：若已有 `{run}/inventory.json` 就一并传入，用于按包内实际资产类型核对覆盖度。）
+
+两条都必须通过（error 0）。
+
+## 判定口径（不得自行升降级）
+
+- **P0**：包结构、包络合规、资产完整性（含包外/绝对路径）、可执行验证入口与结论、
+  凭据/明文密钥（`P0-SECRET`）、Sage 未跑通（`P0-SAGE`）、harbor 必需文件与 oracle/nop（`P0-HARB-STRUCT`/`P0-HARB-RUN`）
+- **P1**：文档引用不存在、版本口径不一致、声明与实体不符、文档事实/算术错误、验证说明与用例不一致、
+  harbor 数据集/包络/lint（`P1-HARB-*`）
+- **P2**：建议，不限制来源（含清单外观察）
+- 问题清单每行必须写**归属**（资产目录名，或「包级」）
+- **不校验**：`governance` 取值、包根一级文件内容（含其 P2）、`asset_protocol` 字段内容、`lifecycle` 取值
+- **不参考**包内既有 `asset-runs/` 的结论，也不与历史批次对比
+
+## 交付要求
+
+1. 报告结论必须与 `probe-report.json` 一致；每条 P0/P1 都能在该 JSON 里找到对应 `check_id`
+2. 所有命令的真实输出留在 `{run}/` 里（不要重写成"看起来通过"的文字）
+3. 无法执行的阶段（无 docker、无 Sage、无 GPU 等）必须显式记录原因，不得省略
+4. 不得把凭据、token、`.credentials.yaml` 或任何明文密钥写进包内或报告
+
+完成后回报：P0/P1 数量、覆盖表摘要、未执行阶段及原因、报告路径。

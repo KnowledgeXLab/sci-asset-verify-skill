@@ -9,6 +9,24 @@ description: 科学数字资产交付与验收：阅读资产包并提炼使用�
 
 ## 0. 可复现性与判定口径
 
+### 0.0 跨 harness 统一入口：先取「执行合同」
+
+不假设对方用什么 harness（DSH / Claude Code / Codex / Cursor / 其它），**核验的第一条命令固定为**：
+
+```bash
+python3 scripts/verify_entry.py --package <包根> --init
+```
+
+它创建规范批次目录 `asset-runs/run-<YYYYMMDD>-<hhmmss>/`，并把**固定执行合同**写成
+`<run>/verify-task.md`（模板 `prompts/verify-task.md.tmpl`）。之后：
+
+- 执行者（人或 agent）**照 `verify-task.md` 执行**，不要凭记忆重排步骤；
+- 结论由脚本门禁校验（`probe_package.py --evaluate`、`check_coverage.py`、`check_report.py`），
+  不依赖模型自觉；
+- 只想看要做什么、不落盘：`python3 scripts/verify_entry.py --package <包根> --emit-prompt`；
+- 支持子智能体的 harness 可以把这份合同原文作为子智能体的输入（可选优化，不是必需）；
+  不支持子智能体的 harness 就在主会话按合同逐条跑，**结论口径完全一致**。
+
 ### 0.1 开跑先对齐版本（自动更新到远端最新 tag）
 
 核验开始前**第一件事**是让本 skill 自己是最新的，避免项目方各自拿旧版跑出不同结论：

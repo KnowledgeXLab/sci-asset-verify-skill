@@ -89,7 +89,7 @@ def valid_rows() -> dict:
 
 # --------------------------------------------------------------------------- T1 包络校验
 def t1_envelope(tmp: Path) -> None:
-    print("\n[1/19] validate_envelope.py — 包络只校验不构造")
+    print("\n[1/20] validate_envelope.py — 包络只校验不构造")
     case = tmp / "t1"
     case.mkdir()
 
@@ -214,7 +214,7 @@ def t1_envelope(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T2 清单生成与复检
 def t2_list(tmp: Path) -> None:
-    print("\n[2/19] build_list.py + check_list.py — 生成即自检")
+    print("\n[2/20] build_list.py + check_list.py — 生成即自检")
     import _deps
     _deps.ensure_openpyxl(verbose=False)
     from openpyxl import load_workbook
@@ -301,7 +301,7 @@ def t2_list(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T3 覆盖度门禁
 def t3_coverage(tmp: Path) -> None:
-    print("\n[3/19] check_coverage.py — 低于下限必须拦住")
+    print("\n[3/20] check_coverage.py — 低于下限必须拦住")
     case = tmp / "t3"
     case.mkdir()
 
@@ -345,7 +345,7 @@ def t3_coverage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T4 副本自检
 def t4_work_copy(tmp: Path) -> None:
-    print("\n[4/19] work_copy.py — 副本 init 自检与清理")
+    print("\n[4/20] work_copy.py — 副本 init 自检与清理")
     case = tmp / "t4"
     pkg = case / "pkg"
     (pkg / "sub").mkdir(parents=True)
@@ -399,7 +399,7 @@ def t4_work_copy(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T5 证据保留
 def t5_prune(tmp: Path) -> None:
-    print("\n[5/19] prune_evidence.py — 只留报告类证据")
+    print("\n[5/20] prune_evidence.py — 只留报告类证据")
     run_dir = tmp / "t5" / "run-t5"
     (run_dir / "tool" / "work" / "case1").mkdir(parents=True)
     (run_dir / "refs").mkdir()
@@ -439,7 +439,7 @@ def t5_prune(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T6 Sage 探测
 def t6_sage(tmp: Path) -> None:
-    print("\n[6/19] sage_probe.py — 需求判定、配置缺失向用户索取")
+    print("\n[6/20] sage_probe.py — 需求判定、配置缺失向用户索取")
     case = tmp / "t6"
     plain = case / "plain"
     (plain / "data").mkdir(parents=True)
@@ -532,7 +532,7 @@ def t6_sage(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T7 资产ID 生成
 def t7_asset_ids(tmp: Path) -> None:
-    print("\n[7/19] asset_ids.py — 从包络生成清单资产ID")
+    print("\n[7/20] asset_ids.py — 从包络生成清单资产ID")
     pkg = tmp / "t7" / "pkg"
     (pkg / "data" / "a").mkdir(parents=True)
     (pkg / "catalog.json").write_text(json.dumps([
@@ -572,7 +572,7 @@ def t7_asset_ids(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T8 外部资产引用
 def t8_external_refs(tmp: Path) -> None:
-    print("\n[8/19] external_refs.py — 每个资产目录下的外部资产引用校验与「资产关联」列")
+    print("\n[8/20] external_refs.py — 每个资产目录下的外部资产引用校验与「资产关联」列")
     base = tmp / "t8"
     pkg = base / "pkg"
 
@@ -635,7 +635,7 @@ def t8_external_refs(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T9 版本可追溯
 def t9_version_stamp(tmp: Path) -> None:
-    print("\n[9/19] _version.py + stamp_report.py — 校验 skill 版本可追溯")
+    print("\n[9/20] _version.py + stamp_report.py — 校验 skill 版本可追溯")
     ver = (SKILL / 'VERSION').read_text(encoding='utf-8').strip()
     out = tmp / "t9" / "v.json"
     (tmp / "t9").mkdir(parents=True, exist_ok=True)
@@ -711,7 +711,7 @@ def t9_version_stamp(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T10 报告分级
 def t10_report_levels(tmp: Path) -> None:
-    print("\n[10/19] check_report.py — 问题清单 P0/P1/P2 分级")
+    print("\n[10/20] check_report.py — 问题清单 P0/P1/P2 分级")
     d = tmp / "t10"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -749,7 +749,7 @@ def t10_report_levels(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T11 资产自包含
 def t11_selfcontained(tmp: Path) -> None:
-    print("\n[11/19] check_selfcontained.py — 资产只能引用自己目录内的文件")
+    print("\n[11/20] check_selfcontained.py — 资产只能引用自己目录内的文件")
     d = tmp / "t11"
     pkg = d / "pkg"
     good = pkg / "asset-a"
@@ -883,7 +883,7 @@ def t11_selfcontained(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T12 批次目录规范
 def t12_run_id(tmp: Path) -> None:
-    print("\n[12/19] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
+    print("\n[12/20] new_run.py / work_copy.py — 批次目录 run-[YYYYMMDD]-[hhmmss]")
     d = tmp / "t12"
     pkg = d / "pkg"
     pkg.mkdir(parents=True)
@@ -922,7 +922,7 @@ def t12_run_id(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T13 外部资产挂载
 def t13_mount_external(tmp: Path) -> None:
-    print("\n[13/19] mount_external.py — 先同包解析，包外复制进副本，再按 target_path 建软链")
+    print("\n[13/20] mount_external.py — 先同包解析，包外复制进副本，再按 target_path 建软链")
     d = tmp / "t13"
     copy_root = d / ".asset-work" / "run-x"
 
@@ -1002,7 +1002,7 @@ def t13_mount_external(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T14 挂载副本不参与校验
 def t14_mounted_not_checked(tmp: Path) -> None:
-    print("\n[14/19] 挂载进来的外部资产不能被当成包内资产（_layout 标记）")
+    print("\n[14/20] 挂载进来的外部资产不能被当成包内资产（_layout 标记）")
     d = tmp / "t14"
     pkg = d / "pkg"
     for slug, aid, typ in (("asset-a", "sciasset://2026ZD123456/earth/tool/asset-a", "tool"),
@@ -1060,7 +1060,7 @@ def t14_mounted_not_checked(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T15 skill 测试说明
 def t15_skill_spec(tmp: Path) -> None:
-    print("\n[15/19] check_skill_spec.py — skill 必须上 agent：md 里写清 harness/model/任务/门槛")
+    print("\n[15/20] check_skill_spec.py — skill 必须上 agent：md 里写清 harness/model/任务/门槛")
     d = tmp / "t15"
     pkg = d / "pkg"
 
@@ -1173,7 +1173,7 @@ def t15_skill_spec(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T16 skill 独立 CLI 验收
 def t16_skill_agent_cli(tmp: Path) -> None:
-    print("\n[16/19] run_skill_agent.py — skill 验收走独立 CLI 进程（不在会话内跑）")
+    print("\n[16/20] run_skill_agent.py — skill 验收走独立 CLI 进程（不在会话内跑）")
     d = tmp / "t16"
     skill = d / "pkg" / "skill-a"
     (skill / "validate" / "cases" / "C01").mkdir(parents=True)
@@ -1256,7 +1256,7 @@ def t16_skill_agent_cli(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T17 可复现性
 def t17_reproducible(tmp: Path) -> None:
-    print("\n[17/19] probe_package.py — 事实恒定 + P0×4/P1×5 固定判级")
+    print("\n[17/20] probe_package.py — 事实恒定 + P0×4/P1×5 固定判级")
     d = tmp / "t17"
 
     # ① 结构不合规 + 资产不完整 + 无验证入口
@@ -1552,7 +1552,7 @@ def t17_reproducible(tmp: Path) -> None:
 
 # --------------------------------------------------------------------------- T18 skill 自更新
 def t18_self_update(tmp: Path) -> None:
-    print("\n[18/19] update_skill.py — 开跑前对齐远端最新 tag（失败不阻断）")
+    print("\n[18/20] update_skill.py — 开跑前对齐远端最新 tag（失败不阻断）")
     import shutil as _sh
     if not _sh.which("git"):
         record("跳过：无 git", True, "git 不可用")
@@ -1668,7 +1668,7 @@ def _probe(pkg: Path, out: Path, tmp: Path) -> dict:
 
 
 def t19_harbor(tmp: Path) -> None:
-    print("\n[19/19] harbor 任务包 — 形态识别、静态检查、reward 解析、blocked 语义")
+    print("\n[19/20] harbor 任务包 — 形态识别、静态检查、reward 解析、blocked 语义")
     sys.path.insert(0, str(SCRIPTS))
     from _harbor import probe_harbor, static_issues, compute_task_digest
     from harbor_run import parse_job_reward
@@ -1839,6 +1839,44 @@ def t19_harbor(tmp: Path) -> None:
            f"levels={lv}")
 
 
+# --------------------------------------------------------------------------- T20 跨 harness 入口
+def t20_verify_entry(tmp: Path) -> None:
+    print("\n[20/20] verify_entry.py — 生成固定执行合同（与 harness 无关）")
+    pkg = tmp / "t20" / "pkg"
+    (pkg / "a1").mkdir(parents=True)
+    (pkg / "a1" / "asset.json").write_text(json.dumps({
+        "asset_id": "sciasset://2026ZD123456/earth/data/a1", "asset_type": "data",
+        "name": "a1", "asset_version": "1.0.0", "spec": {"artifacts": []}}, ensure_ascii=False),
+        encoding="utf-8")
+
+    proc = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--emit-prompt"], tmp)
+    out = proc.stdout or ""
+    record("正例：--emit-prompt 输出固定合同（含包路径、批次目录、必跑命令、判定口径）",
+           proc.returncode == 0 and str(pkg) in out and "probe_package.py --package" in out
+           and "check_report.py" in out and "P0-SECRET" in out and "不参考" in out,
+           f"rc={proc.returncode}")
+
+    proc2 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(pkg), "--init"], tmp)
+    runs = sorted(pkg.glob("asset-runs/run-*"))
+    contract = runs[0] / "verify-task.md" if runs else None
+    state = runs[0] / "state.json" if runs else None
+    ok = (proc2.returncode == 0 and contract is not None and contract.is_file()
+          and state is not None and state.is_file())
+    record("正例：--init 建规范批次目录并写入 verify-task.md + state.json", ok,
+           f"rc={proc2.returncode} runs={[r.name for r in runs]}")
+
+    if contract is not None:
+        text = contract.read_text(encoding="utf-8")
+        st = json.loads(state.read_text(encoding="utf-8"))
+        record("正例：合同记录了 skill 版本与提交号，state.json 结构完整",
+               st.get("skill_version") and st.get("skill_commit")
+               and st.get("contract") == "verify-task.md" and "sci-asset-verify-skill" in text,
+               f"state={ {k: st.get(k) for k in ('skill_version', 'skill_commit')} }")
+
+    proc3 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(tmp / "nope"), "--emit-prompt"], tmp)
+    record("负例：包不存在时退出码 1", proc3.returncode == 1, f"rc={proc3.returncode}")
+
+
 # --------------------------------------------------------------------------- main
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="saci-selftest-"))
@@ -1847,7 +1885,7 @@ def main() -> int:
     try:
         for fn in (t1_envelope, t2_list, t3_coverage, t4_work_copy, t5_prune, t6_sage,
                t7_asset_ids, t8_external_refs, t9_version_stamp, t10_report_levels, t11_selfcontained, t12_run_id, t13_mount_external, t14_mounted_not_checked,
-               t15_skill_spec, t16_skill_agent_cli, t17_reproducible, t18_self_update, t19_harbor):
+               t15_skill_spec, t16_skill_agent_cli, t17_reproducible, t18_self_update, t19_harbor, t20_verify_entry):
             try:
                 fn(tmp)
             except Exception as exc:  # noqa: BLE001
