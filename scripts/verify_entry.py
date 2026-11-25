@@ -120,7 +120,8 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
             print(f"harness {name} 未安装（找过 {preset.get('bins')}）；可用 --harness 指定已装的",
                   file=sys.stderr)
             return 2
-        argv = rsa.build_argv({"name": name, "preset": preset, "bin": exe}, prompt, "",
+        model = preset.get("default_model") or ""
+        argv = rsa.build_argv({"name": name, "preset": preset, "bin": exe}, prompt, model,
                               {"skill_dir": str(SKILL_DIR), "package": str(package),
                                "run": str(run), "contract": str(contract)})
     else:
@@ -129,6 +130,10 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     outdir = run / "isolated-agent"
     outdir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
+    # subprocess(cwd=...) 只改实际工作目录，不改 PWD 环境变量；opencode 等工具会信任 PWD，
+    # 于是把父进程所在目录（本次是 skill 仓库）当成 project 去做 copy/index，表现为卡死。
+    env["PWD"] = str(run)
+    env.pop("OLDPWD", None)
     creds = rsa.credential_env(Path.home() / ".dsh")
     env.update(creds)                                          # 凭据只进环境变量，不落盘
     harness_env, harness_env_sources = rsa.resolve_harness_env(preset.get("env_map"))
@@ -177,6 +182,20 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
     (outdir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
                                          encoding="utf-8")
 
+    # 常见环境问题的明确提示（不是资产问题，也不是 skill 问题）
+    err = (proc.stderr or "")
+    hints = []
+    if any(k in err for k in ("Authentication required", "agent login", "CURSOR_API_KEY")):
+        hints.append("harness 未鉴权：先执行 `agent login`，或 export CURSOR_API_KEY 后重试")
+    if any(k in err for k in ("Missing environment variable", "unauthorized", "Unauthorized", "401")):
+        hints.append("harness 缺少凭证：按 assets/harness-registry.json 的 env_map 配置环境变量")
+    if "requires approval" in err or "permission" in err.lower() and "denied" in err.lower():
+        hints.append("harness 权限不足：检查 argv 里的 --force / bypassPermissions / --auto 是否生效")
+    if "unable to verify the first certificate" in err or "CERTIFICATE_VERIFY_FAILED" in err:
+        hints.append("TLS 证书校验失败：内网自签网关需 NODE_EXTRA_CA_CERTS 或用户既有的 NODE_TLS_REJECT_UNAUTHORIZED")
+    if "stream error" in err or "UnknownError" in err:
+        hints.append("模型侧报错（provider/model 不可用）：换 --harness 或检查该 harness 的模型配置")
+
     print(f"[isolated] harness={name} rc={proc.returncode}")
     if summary["verdict"]:
         vd = summary["verdict"]
@@ -185,6 +204,8 @@ def isolated_exec(package: Path, run: Path, contract: Path, harness_name: str,
         print("[isolated] 未生成 probe-report.json —— 请在日志里确认为何没跑到判定阶段")
     print(f"[isolated] 报告：{summary['report'] or '未生成'}")
     print(f"[isolated] 日志：{outdir}（stdout/stderr/cmd/summary）")
+    for h in hints:
+        print(f"[isolated] 提示：{h}")
     if scrubbed:
         print(f"[isolated] 已清理残留凭据 {len(scrubbed)} 项")
     return 0 if proc.returncode == 0 and summary["report"] else 1

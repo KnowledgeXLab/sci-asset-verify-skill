@@ -1214,11 +1214,23 @@ def t16_skill_agent_cli(tmp: Path) -> None:
            proc.returncode == 0 and "dsh" in proc.stdout and "harness-default" in proc.stdout
            and "(harness 默认)" in proc.stdout, f"rc={proc.returncode}")
 
+    # 用临时注册表构造"指定 harness 未安装"的场景（不依赖本机装没装 cursor/aider）
+    reg_tmp = d / "registry-missing.json"
+    reg_tmp.write_text(json.dumps({
+        "schema_version": "1.0.0", "preference": ["fake-absent", "dsh"],
+        "harnesses": {
+            "fake-absent": {"display": "不存在的 harness", "bins": ["definitely-absent-xyz"],
+                            "argv": ["{bin}", "{prompt}"]},
+            "dsh": {"display": "DSH", "bins": ["dsh"], "argv": ["{bin}", "--profile", "headless",
+                                                               "--permission-mode", "workspace-write",
+                                                               "--", "{prompt}"]}}},
+        ensure_ascii=False), encoding="utf-8")
     proc = run([str(SCRIPTS / "run_skill_agent.py"), "--skill", str(skill),
-                "--out-dir", str(d / "agent-c"), "--harness", "cursor", "--dry-run"], d)
+                "--out-dir", str(d / "agent-c"), "--harness", "fake-absent", "--dry-run"], d,
+               env_extra={"ASSET_VERIFY_HARNESS_REGISTRY": str(reg_tmp)})
     rep = json.loads(proc.stdout)
     record("正例：指定的 harness 未安装时退用已安装的，并说明原因",
-           proc.returncode == 0 and rep["harness"] != "cursor" and "未安装" in rep["reason"],
+           proc.returncode == 0 and rep["harness"] != "fake-absent" and "未安装" in rep["reason"],
            f"harness={rep.get('harness')} reason={rep.get('reason')}")
 
     env = dict(os.environ)
@@ -1923,6 +1935,19 @@ def t20_verify_entry(tmp: Path) -> None:
     os.environ["DEMO_KEY_SRC"] = "value-from-env"
     _vals, _srcs = _rsa.resolve_harness_env({"DEMO_KEY": ["env:DEMO_KEY_SRC"]})
     os.environ.pop("DEMO_KEY_SRC", None)
+    # 注册表：cursor / opencode 的 argv 必须带非交互所需的放行参数
+    _reg = json.loads((SKILL / "assets" / "harness-registry.json").read_text(encoding="utf-8"))["harnesses"]
+    _cur = " ".join(_reg["cursor"]["argv"])
+    _oc = " ".join(_reg["opencode"]["argv"])
+    _oc_argv = _reg["opencode"]["argv"]
+    record("正例：opencode 预设含 --title（否则会用默认模型生成标题、provider 不可达时卡死）",
+           "--title" in _oc_argv, f"argv={_oc_argv}")
+
+    record("正例：cursor 预设含 -p/--force/--output-format，opencode 预设含 run/--auto/{model}",
+           "-p" in _cur and "--force" in _cur and "--output-format" in _cur
+           and "run" in _oc and "--auto" in _oc and "{model}" in _oc,
+           f"cursor={_cur} opencode={_oc}")
+
     record("正例：env_map 按 env: 前缀解析并记录来源（不泄露值）",
            _vals.get("DEMO_KEY") == "value-from-env" and _srcs.get("DEMO_KEY") == "env:DEMO_KEY_SRC",
            f"vals={list(_vals)} srcs={_srcs}")

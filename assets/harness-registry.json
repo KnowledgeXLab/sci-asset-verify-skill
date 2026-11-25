@@ -105,25 +105,30 @@
       }
     },
     "cursor": {
-      "display": "Cursor CLI（cursor-agent）",
+      "display": "Cursor CLI",
       "bins": [
+        "agent",
         "cursor-agent",
         "cursor"
       ],
       "argv": [
         "{bin}",
         "-p",
-        "{prompt}",
-        "--force"
+        "--force",
+        "--output-format",
+        "text",
+        "{prompt}"
       ],
-      "model_flag": [
-        "--model",
-        "{model}"
-      ],
-      "notes": "cursor-agent -p 非交互；--force 跳过交互确认",
+      "notes": "Cursor CLI 的 agent -p（headless）；--force 跳过审批。鉴权用 CURSOR_API_KEY（或先 `agent login`）；团队若关闭 headless 模式，-p 会在发送前直接报错。安装：curl https://cursor.com/install -fsS | bash",
+      "env_map": {
+        "CURSOR_API_KEY": [
+          "env:CURSOR_API_KEY",
+          "bashrc:CURSOR_API_KEY"
+        ]
+      },
       "sage": {
         "kind": "unsupported",
-        "why": "cursor-agent 只连 Cursor 后端，无法指向自定义 base_url"
+        "why": "Cursor 只连自家后端，无法指向自定义 base_url"
       }
     },
     "gemini": {
@@ -150,27 +155,33 @@
       }
     },
     "opencode": {
-      "display": "opencode",
+      "display": "OpenCode",
       "bins": [
         "opencode"
       ],
       "argv": [
         "{bin}",
         "run",
+        "--model",
+        "{model}",
+        "--title",
+        "资产包核验",
+        "--auto",
         "{prompt}"
       ],
       "model_flag": [
         "--model",
         "{model}"
       ],
-      "notes": "opencode run 一次性执行",
+      "notes": "opencode run 一次性执行（非交互）。**必须显式 --title**：否则 opencode 会用配置里的默认模型生成会话标题，若该 provider 不可达（本机自定义网关即如此）就会整批挂住。另需 --auto 自动放行权限；模型固定用内置免费 opencode/deepseek-v4.1-flash-free，避免依赖自定义 provider。",
       "sage": {
         "kind": "env",
         "env": {
           "OPENAI_BASE_URL": "{base_url}",
           "OPENAI_API_KEY": "{api_key}"
         }
-      }
+      },
+      "default_model": "opencode/deepseek-v4.1-flash-free"
     },
     "aider": {
       "display": "Aider",

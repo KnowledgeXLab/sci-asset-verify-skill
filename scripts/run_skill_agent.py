@@ -279,8 +279,11 @@ def parse_spec(skill: Path) -> dict:
 
 # ---------------------------------------------------------------- harness 预设
 def load_registry() -> dict:
+    """读 harness 注册表；环境变量 ASSET_VERIFY_HARNESS_REGISTRY 可指向另一份（自测/私有分发用）。"""
+    import os as _os
+    path = Path(_os.environ.get("ASSET_VERIFY_HARNESS_REGISTRY") or REGISTRY)
     try:
-        return json.loads(REGISTRY.read_text(encoding='utf-8'))
+        return json.loads(path.read_text(encoding='utf-8'))
     except Exception:  # noqa: BLE001
         return {'preference': [], 'harnesses': {}}
 
@@ -307,7 +310,12 @@ def resolve_harness(spec: dict, registry: dict, wanted: str = 'auto') -> dict:
     order = list(registry.get('preference') or presets.keys())
     hint = spec['harness_hint'] or ''
     preferred = [n for n in order if n in presets and _matches(presets[n], n, hint)]
-    candidates = ([wanted] if wanted and wanted != 'auto' else preferred) + [n for n in order if n not in preferred]
+    # 候选顺序：指定项优先，其后是 readme 建议项与其余预设（去重）。
+    # 修复：指定项未安装时，之前会把 preferred 一起排除，导致明明装了 dsh 也判"找不到可用 harness"。
+    candidates = []
+    for n in ([wanted] if wanted and wanted != 'auto' else []) + preferred + list(order):
+        if n in presets and n not in candidates:
+            candidates.append(n)
     for name in candidates:
         preset = presets.get(name)
         if not preset:
@@ -352,9 +360,11 @@ def build_argv(harness: dict, prompt: str, model: str, extra: dict | None = None
     argv = [prompt if a == '{prompt}' else a for a in argv]
     for k, v in (extra or {}).items():                 # {skill_dir} / {package} 等占位符
         argv = [v if a == '{' + k + '}' else a for a in argv]
-    if model and preset.get('model_flag'):
-        flag = [model if a == '{model}' else a for a in preset['model_flag']]
-        argv += flag
+    if model:
+        if any(a == '{model}' for a in argv):          # argv 里直接写了 {model}（如 opencode run --model {model}）
+            argv = [model if a == '{model}' else a for a in argv]
+        elif preset.get('model_flag'):
+            argv += [model if a == '{model}' else a for a in preset['model_flag']]
     return argv
 
 
