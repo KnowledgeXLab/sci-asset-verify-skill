@@ -89,8 +89,8 @@ def render(package: Path, run: Path, intent: str, copy: str = "", mode: str = "c
     return out
 
 
-STAGES = ("version_check", "static_review_origin", "work_copy", "external_mount",
-          "copy_check", "inventory_usage", "cases", "harbor", "sage", "deployment",
+STAGES = ("version_check", "static_review_origin", "prepare_copy", "inventory_usage",
+          "cases", "harbor", "sage", "deployment",
           "verdict_rerun", "report_gates", "registration", "prune_stamp", "cleanup")
 
 
@@ -195,14 +195,21 @@ def write_state(run: Path, package: Path, intent: str, stage1: dict | None) -> d
     if stage1:
         state["stages"]["version_check"]["status"] = "completed"
         state["stages"]["static_review_origin"]["status"] = "completed"
-        state["stages"]["work_copy"] = {"status": ("completed" if stage1.get("copy") else "not_applicable"),
-                                        "path": stage1.get("copy") or ""}
-        state["stages"]["external_mount"] = {"status": ("completed" if stage1.get("mount_rc") == 0
-                                                        else ("not_applicable" if not stage1.get("copy")
-                                                              else "failed"))}
-        state["stages"]["copy_check"] = {
-            "status": ("completed" if stage1.get("copy_check_rc") == 0
-                       else ("not_applicable" if not stage1.get("copy") else "failed")),
+        # prepare_copy 一个阶段、三个子步骤：建副本 → 外部资产挂载 → 副本可信性检查
+        substeps = {
+            "work_copy": {"status": ("completed" if stage1.get("copy") else "not_applicable"),
+                          "path": stage1.get("copy") or ""},
+            "external_mount": {"status": ("completed" if stage1.get("mount_rc") == 0
+                                          else ("not_applicable" if not stage1.get("copy") else "failed"))},
+            "copy_check": {"status": ("completed" if stage1.get("copy_check_rc") == 0
+                                      else ("not_applicable" if not stage1.get("copy") else "failed"))},
+        }
+        failed_sub = [k for k, v in substeps.items() if v["status"] == "failed"]
+        state["stages"]["prepare_copy"] = {
+            "status": ("failed" if failed_sub else
+                       ("completed" if stage1.get("copy") else "not_applicable")),
+            "substeps": substeps,
+            "path": stage1.get("copy") or "",
             "summary": stage1.get("static_summary")}
         state["stages"]["inventory_usage"] = {"status": ("completed" if stage1.get("inventory_rc") == 0
                                                          else "failed")}

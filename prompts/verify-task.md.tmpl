@@ -25,10 +25,8 @@
 | 动作 | 产物 |
 |---|---|
 | 版本检查 | `skill-update.json` |
-| 静态预审（原包）：结构/包络/实体完整性/凭据/自包含/文档引用 | `preflight-report.json`、`probe-static.json` |
-| 建工作副本 | `work-copy.json`（副本路径见 `work_copy` 字段，本次执行根目录 `{exec_root}`） |
-| 外部资产：引用校验 + 按 `external_assets.json` 挂载 | `external-refs.json`、`external-mounts.json` |
-| **副本可信性检查**：文件集忠实原包 / 软链未越出副本 / required 外部资产已挂载 | `copy-check.json` |
+| 静态预审（原包）：结构 / 包络 / 实体完整性 / 凭据 / 自包含 / 文档引用 / `external_assets.json` 格式 | `preflight-report.json` |
+| **准备副本**（一个步骤、三个子动作）：<br/>① 复制到 `.asset-work/<run>/`（含文件数/字节自检）<br/>② 按 `external_assets.json` 校验并挂载外部资产<br/>③ 副本可信性检查（文件集忠实 / 软链不越出副本 / required 已挂载） | `work-copy.json`、`external-refs.json`、`external-mounts.json`、`copy-check.json` |
 | 副本静态事实（供台账与报告引用，非门禁） | `probe-static.json` |
 | 盘点台账 | `inventory.json` |
 | 分阶段状态机 | `state.json`（每阶段 completed/failed/blocked/not_applicable，跑完继续更新） |

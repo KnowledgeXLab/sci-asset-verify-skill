@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -187,6 +188,23 @@ def check_package(pkg: Path) -> dict:
                              f"na {cov.get('na')} / deferred {cov.get('deferred')}（运行期三项）")
         except Exception as exc:                               # noqa: BLE001
             _add(warnings, "warn", "PREFLIGHT-PROBE", f"静态判定执行失败（跳过）：{exc}")
+
+    # external_assets.json 格式规范（只在建副本后才能挂载，但**格式**现在就该验）
+    extf = SKILL_DIR / "scripts" / "external_refs.py"
+    if extf.is_file() and subdirs:
+        try:
+            p = subprocess.run([sys.executable, str(extf), "--package", str(pkg), "--check",
+                                "--json-out", str(Path(tempfile.gettempdir()) / "preflight-external-refs.json")],
+                               capture_output=True, text=True, timeout=120)
+            txt = (p.stdout or "") + (p.stderr or "")
+            if p.returncode == 1:
+                bad = [l.strip() for l in txt.splitlines() if l.strip().startswith(("!", "×"))][:6]
+                _add(blockers, "error", "PREFLIGHT-EXTERNAL",
+                     "external_assets.json 格式不合规：" + ("；".join(bad) or "见 external_refs.py 输出"))
+            elif "问题" in txt and "0 条" not in txt.split("问题")[-1][:8]:
+                _add(warnings, "warn", "PREFLIGHT-EXTERNAL", txt.strip().splitlines()[-1][:160])
+        except Exception as exc:                               # noqa: BLE001
+            _add(warnings, "warn", "PREFLIGHT-EXTERNAL", f"external_assets.json 校验执行失败（跳过）：{exc}")
 
     # 自包含（越界引用）：静态可查，越界即 P0-COMPLETE 风险
     sc = SKILL_DIR / "scripts" / "check_selfcontained.py"

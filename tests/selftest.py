@@ -2118,7 +2118,8 @@ def t20_verify_entry(tmp: Path) -> None:
            proc_s1.returncode == 0 and _run is not None
            and (_run / "inventory.json").is_file() and (_run / "work-copy.json").is_file()
            and _state.get("exec_mode") == "copy"
-           and _state.get("stages", {}).get("work_copy", {}).get("status") == "completed"
+           and _state.get("stages", {}).get("prepare_copy", {}).get("status") == "completed"
+           and _state.get("stages", {}).get("prepare_copy", {}).get("substeps", {}).get("copy_check", {}).get("status") == "completed"
            and not any(p.is_file() for p in s1pkg.glob("*.csv")),
            f"rc={proc_s1.returncode} exec_mode={_state.get('exec_mode')}")
 
@@ -2208,6 +2209,28 @@ def t20_verify_entry(tmp: Path) -> None:
         record("正例：harness 适配器契约自检全绿（argv 含 {prompt}、priority 合法、桌面应用不进 auto）",
                proc_hc.returncode == 0 and "harness 契约自检：" in out_hc,
                out_hc.strip().splitlines()[-1] if out_hc.strip() else "无输出")
+
+    # 预审要检查 external_assets.json 的**格式**（asset_id 四段/版本/结构），不只是 target_path
+    extpkg = tmp / "t20-extfmt"
+    (extpkg / "a1").mkdir(parents=True)
+    (extpkg / "a1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD000011/ns/data/a1",
+        "asset_type": "data", "name": "a1", "description": "d", "asset_version": "1.0.0",
+        "lifecycle": "validated", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]}, "artifacts": [], "domain_attributes": {},
+                 "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    (extpkg / "a1" / "external_assets.json").write_text(json.dumps({"assets": [
+        {"asset_id": "sciasset://ns/data/x", "asset_version": "1.0.0", "target_path": "ext"}]}),
+        encoding="utf-8")
+    proc_ext = run([str(SCRIPTS / "preflight.py"), "--package", str(extpkg)], tmp)
+    record("负例：预审阶段就挡住 external_assets.json 格式不合规（asset_id 三段 / 缺 schema_version）",
+           proc_ext.returncode in (1, 2) and "PREFLIGHT-EXTERNAL" in (proc_ext.stdout + proc_ext.stderr),
+           f"rc={proc_ext.returncode}")
 
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
