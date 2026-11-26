@@ -173,7 +173,7 @@ Sage A1.5 兼容性测试是**附加项**，单独成节，不计入上述交付
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
 flowchart LR
-    A["版本检查<br/>update_skill.py"] --> B["静态预审<br/>preflight.py + probe --static-only"] --> C["建批次 + 状态机<br/>verify_entry.py"] --> D["建副本<br/>work_copy.py"] --> E["外部资产<br/>external_refs / mount_external"] --> F["副本二次审查 + 台账<br/>probe / build_inventory"]
+    A["版本检查<br/>update_skill.py"] --> B["静态预审<br/>preflight.py + probe --static-only"] --> C["建批次 + 状态机<br/>verify_entry.py"] --> D["建副本<br/>work_copy.py"] --> E["外部资产<br/>external_refs / mount_external"] --> F["副本可信性检查 + 台账<br/>probe / build_inventory"]
 
     classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
     classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
@@ -274,7 +274,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 186 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 189 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py

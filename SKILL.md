@@ -94,7 +94,8 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 
 版本检查 → 静态预审（原包：结构/包络/实体/凭据/自包含/文档引用，`probe_package --static-only`）
 → 建批次 + `state.json` 状态机 → 建副本（`work_copy.py init`）→ 外部资产校验与挂载
-（`external_refs.py`、`mount_external.py`）→ 副本二次静态审查 → 盘点台账（`build_inventory.py`）。
+（`external_refs.py`、`mount_external.py`）→ **副本可信性检查**（`check_copy.py`：文件集忠实原包 / 软链未越出副本 / required 外部资产已挂载）
+→ 副本静态事实（供台账与报告引用，非门禁）→ 盘点台账（`build_inventory.py`）。
 
 静态审查出的 P0 分两类：`P0-STRUCT`/`P0-ENVELOPE`（包不可读）**阻断**；其余（`P0-COMPLETE`/`P0-VERIFY`/`P0-SECRET`）
 **记录并进报告**，避免交付方拿不到一份写清问题的报告。

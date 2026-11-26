@@ -2132,6 +2132,41 @@ def t20_verify_entry(tmp: Path) -> None:
            and [c["case_id"] for c in _cases.get("cases", [])] == ["C01"],
            f"rc={getattr(proc_rc, 'returncode', 'n/a')}")
 
+    # check_copy：三类只在副本上才成立的问题
+    csrc = tmp / "t20-copy-src"; ccopy = tmp / "t20-copy-dst"
+    (csrc / "a1" / "payload").mkdir(parents=True)
+    (csrc / "a1" / "payload" / "d.csv").write_text("x\n", encoding="utf-8")
+    (csrc / "a1" / "external_assets.json").write_text(json.dumps(
+        {"assets": [{"asset_id": "sciasset://p/n/data/ext", "target_path": "ext", "required": True}]}),
+        encoding="utf-8")
+    __import__("shutil").copytree(csrc, ccopy)
+    (ccopy.parent / "external-mounts.json").write_text(json.dumps(
+        {"declared": 1, "resolved": [], "missing": [{"asset_id": "sciasset://p/n/data/ext",
+                                                     "target_path": "ext", "required": True}]}),
+        encoding="utf-8")
+    proc_cc = run([str(SCRIPTS / "check_copy.py"), "--source", str(csrc), "--copy", str(ccopy),
+                   "--mounts", str(ccopy.parent / "external-mounts.json")], tmp)
+    record("负例：required 外部资产没挂上 → check_copy 判副本不可信",
+           proc_cc.returncode == 1 and "COPY-MOUNT-MISSING" in proc_cc.stdout,
+           f"rc={proc_cc.returncode}")
+
+    (ccopy.parent / "external-mounts.json").write_text(json.dumps({"declared": 0, "resolved": []}),
+                                                       encoding="utf-8")
+    os.symlink(str(csrc / "a1" / "payload" / "d.csv"), ccopy / "a1" / "leak.csv")
+    proc_cc2 = run([str(SCRIPTS / "check_copy.py"), "--source", str(csrc), "--copy", str(ccopy),
+                    "--mounts", str(ccopy.parent / "external-mounts.json")], tmp)
+    record("负例：软链指回原包 → check_copy 判副本隔离失效",
+           proc_cc2.returncode == 1 and "COPY-SYMLINK-ESCAPE" in proc_cc2.stdout,
+           f"rc={proc_cc2.returncode}")
+
+    (ccopy / "a1" / "leak.csv").unlink()
+    (ccopy / "a1" / "payload" / "d.csv").unlink()
+    proc_cc3 = run([str(SCRIPTS / "check_copy.py"), "--source", str(csrc), "--copy", str(ccopy),
+                    "--mounts", str(ccopy.parent / "external-mounts.json")], tmp)
+    record("负例：副本缺文件 → check_copy 报 COPY-FILE-MISSING",
+           proc_cc3.returncode == 1 and "COPY-FILE-MISSING" in proc_cc3.stdout,
+           f"rc={proc_cc3.returncode}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)

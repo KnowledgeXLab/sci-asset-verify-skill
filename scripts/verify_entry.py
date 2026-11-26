@@ -90,7 +90,7 @@ def render(package: Path, run: Path, intent: str, copy: str = "", mode: str = "c
 
 
 STAGES = ("version_check", "static_review_origin", "work_copy", "external_mount",
-          "static_review_copy", "inventory_usage", "cases", "harbor", "sage", "deployment",
+          "copy_check", "inventory_usage", "cases", "harbor", "sage", "deployment",
           "verdict_rerun", "report_gates", "registration", "prune_stamp", "cleanup")
 
 
@@ -141,30 +141,32 @@ def stage1_prepare(package: Path, run: Path, do_copy: bool = True) -> dict:
         else:
             info["notes"].append("外部资产已按 external_assets.json 挂载到副本")
 
-    # 副本二次静态审查：挂载会改变结构，必须重查
+    # 副本可信性检查（替代"重跑一遍预审"）：只查复制/挂载才会暴露的三类问题
+    #   ① 文件集是否忠实于原包 ② 软链是否越出副本（隔离失效）③ required 外部资产是否挂上
+    if info["copy"]:
+        rc, out = _run_script("check_copy.py", ["--source", str(package), "--copy", str(exec_root),
+                                                "--mounts", str(run / "external-mounts.json"),
+                                                "--json-out", str(run / "copy-check.json")])
+        info["copy_check_rc"] = rc
+        if rc != 0:
+            info["errors"].append("副本可信性检查未通过：" + out.strip()[-400:])
+        else:
+            info["notes"].append("副本可信性：文件集忠实、软链未越界、外部资产已挂载")
+
+    # 副本静态事实（供盘点台账与报告引用；不作为门禁——合规性已由首次预审判过）
     rc, out = _run_script("probe_package.py", ["--package", str(exec_root), "--evaluate",
                                                "--static-only", "--json-out", str(run / "probe-static.json")])
     info["static_review_rc"] = rc
-    if rc not in (0,):
-        info["errors"].append(f"副本静态审查失败（rc={rc}）：{out.strip()[-300:]}")
+    if rc != 0:
+        info["notes"].append(f"副本静态审查未能执行（rc={rc}）：{out.strip()[-200:]}")
     else:
         try:
             v = json.loads((run / "probe-static.json").read_text(encoding="utf-8")).get("verdict") or {}
             info["static_summary"] = v.get("summary")
-            p0 = [f for f in (v.get("findings") or []) if str(f.get("level")) == "P0"]
+            p0 = [f.get("check_id") for f in (v.get("findings") or []) if str(f.get("level")) == "P0"]
             if p0:
-                info["static_p0"] = [f.get("check_id") for f in p0]
-                # 二次审查只判"初始化动作有没有把执行根搞坏"：P0-STRUCT 说明结构不可枚举
-                # （多半是建副本/挂载的锅）→ 终止重来。ENVELOPE 等属性类问题首次预审已经判过，
-                # 这里只记录、进报告，不重复阻断（否则不合规的包永远拿不到报告）。
-                broken = [c for c in info["static_p0"] if c == "P0-STRUCT"]
-                if broken:
-                    info["errors"].append(
-                        "副本静态审查发现执行根不可用：" + "、".join(broken) + "（检查建副本/挂载结果）")
-                else:
-                    info["notes"].append(
-                        "副本静态审查预判 P0：" + "、".join(info["static_p0"]) +
-                        "（已记录，须在报告问题清单中体现）")
+                info["static_p0"] = p0
+                info["notes"].append("副本静态预判 P0：" + "、".join(p0) + "（记录，须在报告中体现）")
         except Exception:                                     # noqa: BLE001
             pass
 
@@ -198,9 +200,10 @@ def write_state(run: Path, package: Path, intent: str, stage1: dict | None) -> d
         state["stages"]["external_mount"] = {"status": ("completed" if stage1.get("mount_rc") == 0
                                                         else ("not_applicable" if not stage1.get("copy")
                                                               else "failed"))}
-        state["stages"]["static_review_copy"] = {"status": ("completed" if stage1.get("static_review_rc") == 0
-                                                            else "failed"),
-                                                 "summary": stage1.get("static_summary")}
+        state["stages"]["copy_check"] = {
+            "status": ("completed" if stage1.get("copy_check_rc") == 0
+                       else ("not_applicable" if not stage1.get("copy") else "failed")),
+            "summary": stage1.get("static_summary")}
         state["stages"]["inventory_usage"] = {"status": ("completed" if stage1.get("inventory_rc") == 0
                                                          else "failed")}
     return state
