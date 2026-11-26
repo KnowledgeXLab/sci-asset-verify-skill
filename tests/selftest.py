@@ -2190,6 +2190,16 @@ def t20_verify_entry(tmp: Path) -> None:
     record("正例：原包预审能发现绝对路径软链（指向包内也算违规，搬迁即失效）",
            bool(_abs) and any("link.csv" in x for x in _abs), f"absolute_symlinks={_abs[:2]}")
 
+    # probe 正向命中自检：每个检查都要有违规样本证明它会报（防止"永远不触发"的静默失效）
+    hits = SKILL / "tests" / "probe_hits.py"
+    if hits.is_file():
+        proc_hits = run([str(hits)], tmp)
+        out_hits = (proc_hits.stdout or "") + (proc_hits.stderr or "")
+        record("正例：probe 每项检查都有违规样本命中（tests/probe_hits.py 全绿）",
+               proc_hits.returncode == 0 and "正向命中自检：" in out_hits
+               and " 0 通过" not in out_hits.split("正向命中自检：")[-1][:8],
+               out_hits.strip().splitlines()[-1] if out_hits.strip() else "无输出")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)

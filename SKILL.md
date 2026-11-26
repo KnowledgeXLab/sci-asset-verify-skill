@@ -9,6 +9,10 @@ description: 科学数字资产交付与验收：阅读资产包并提炼使用�
 
 ## 0. 可复现性与判定口径
 
+> 自检：`python3 tests/selftest.py`（行为断言）+ `python3 tests/probe_hits.py`
+> （每项检查各一条故意违规样本，证明判定真的会触发）。
+
+
 ### 0.0 跨 harness 统一入口：先取「执行合同」
 
 不假设对方用什么 harness（DSH / Claude Code / Codex / Cursor / 其它），**核验的第一条命令固定为**：
