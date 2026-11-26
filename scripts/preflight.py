@@ -16,7 +16,7 @@
 资产包（package）
   * 包根结构：不允许包根 `asset.json`（属 P0-STRUCT）
   * 一级子目录必须是资产目录（含 asset.json），否则 blocker
-  * 每个 asset.json：JSON 可解析、必需字段齐全、asset_type 合法、asset_id 四段式
+  * 每个 asset.json：JSON 可解析、必需字段齐全、asset_type 合法、asset_id 四段式（项目编号/命名空间/类型/名称）
   * asset_id 重复、目录名与 name 不一致
   * 包络校验（调用 validate_envelope.py 的快速模式）
   * validate/ 与 cases.json 缺失 → warning（可能本来就没有用例）
@@ -131,7 +131,8 @@ def check_package(pkg: Path) -> dict:
         aid = str(data.get("asset_id") or "")
         if aid and not ID_RE.match(aid):
             _add(blockers, "error", "P0-ENVELOPE",
-                 f"{d.name}: asset_id 不符合 sciasset://<批次>/<命名空间>/<类型>/<名称>：{aid}", str(aj))
+                 f"{d.name}: asset_id 不符合 sciasset://<项目编号>/<命名空间>/<类型>/<名称>：{aid}"
+                 "（第一段是项目编号，见项目任务书首页；随后是自拟命名空间、资产类型、资产名称）", str(aj))
         if aid:
             if aid in seen_ids:
                 _add(blockers, "error", "P0-ENVELOPE",

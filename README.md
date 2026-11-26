@@ -95,7 +95,7 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 |---|---|---|
 | 环境 | Python ≥3.9、skill 文件完整、**至少一个可用 harness** | 阻断 |
 | 环境 | docker / harbor CLI 缺失、Sage-A1.5 未配置 | 提示 |
-| 包格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式、`asset_id` 不重复 | 阻断 |
+| 包格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式（`sciasset://<项目编号>/<命名空间>/<类型>/<名称>`）、`asset_id` 不重复 | 阻断 |
 | 包格式 | `validate/`、`cases.json` 缺失 | 提示 |
 
 任一**阻断**项命中：不建批次、不起 agent、直接打印问题清单并退出（退出码 1=包问题 / 2=环境问题）。

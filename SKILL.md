@@ -95,7 +95,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 1. **版本检查**：`update_skill.py` 查远端 tag。有新版但装法/权限不支持自动更新 → 直接终止，
    要求「手动更新 skill 后重试」（`--ignore-update` 可强行继续）。
 2. **预审**：`preflight.py` 校验环境（Python、可用 harness、docker/harbor、Sage 配置）与包格式
-   （包根不得有 asset.json、子目录必须是资产、必需字段、asset_type 八类、asset_id 四段式、包络校验）。
+   （包根不得有 asset.json、子目录必须是资产、必需字段、asset_type 八类、asset_id 四段式（项目编号/命名空间/类型/名称）、包络校验）。
    任一阻断即终止并打印问题清单，**不建批次、不起 agent**（`--skip-preflight` 可绕过误报）。
 
 报告落盘：`<run>/skill-update.json`、`<run>/preflight-report.json`。
