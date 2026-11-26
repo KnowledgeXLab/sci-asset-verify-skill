@@ -252,36 +252,22 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 ## 执行流程
 
-左边是主流程（主进程，秒级），右边是「执行核验」这一步的展开（子进程，按固定合同执行）。
+上面是主流程（主进程，秒级），下面是「执行核验」这一步的展开（子进程，按固定合同执行）。
 **实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-flowchart LR
-    subgraph MAIN["主流程 · 主进程 verify_entry.py"]
-        direction TB
-        A["入口<br/>verify_entry.py --package P"]
-        B["门1 版本检查<br/>update_skill.py check"]
-        C["门2 预审<br/>preflight.py"]
-        D["执行核验<br/>verify_entry.py --isolated"]
-        E["摘要 + 归档<br/>verify_entry.py / 人工复核"]
-        A --> B --> C --> D --> E
+flowchart TD
+    subgraph MAIN["① 主流程 · 主进程（秒级）"]
+        direction LR
+        A["入口<br/>verify_entry.py"] --> B["门1 版本检查<br/>update_skill.py"] --> C["门2 预审<br/>preflight.py"] --> D["执行核验<br/>verify_entry.py --isolated"] --> E["摘要 + 归档<br/>脚本 / 人工"]
     end
 
-    subgraph DETAIL["执行核验展开 · 子进程按合同执行"]
+    subgraph DETAIL["② 执行核验展开 · 子进程按固定合同执行"]
         direction TB
-        D0["选适配器 + bash -ic<br/>verify_entry.py + harnesses/*.py"]
-        S1["第一步 机检<br/>probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"]
-        K["判定内核<br/>probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
-        S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"]
-        S2b["harbor_run.py<br/>sage_probe.py detect / config"]
-        S3["AI 自主执行<br/>写 validation-report.md<br/>（只能引用 probe-report）"]
-        S3b["check_coverage.py<br/>check_report.py"]
-        G{"两关都 error 0?"}
-        OUT["回传摘要<br/>verify_entry.py"]
-        D0 --> S1 --> K --> S2 --> S2b --> S3 --> S3b --> G
+        D0["选适配器 + bash -ic<br/>verify_entry.py + harnesses/*.py"] --> S1["第一步 机检<br/>probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["判定内核<br/>probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"] --> S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"] --> S3["AI 自主执行<br/>写 validation-report.md<br/>（只能引用 probe-report）"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"}
         G -- 否 --> S3
-        G -- 是 --> OUT
+        G -- 是 --> OUT["回传摘要<br/>verify_entry.py"]
     end
 
     D -. 展开 .-> D0
