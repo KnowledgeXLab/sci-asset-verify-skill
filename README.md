@@ -252,8 +252,8 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 ## 执行流程
 
-上面是主流程（主进程，秒级），下面是「执行核验」这一步的展开（子进程，按固定合同执行）。
-**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
+上下两块：**上面是主流程**（主进程，秒级），**下面是「执行核验」的展开**（子进程，按固定合同执行）；
+每块内部自左向右排。**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行；橙色＝人工。**
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
@@ -265,9 +265,20 @@ flowchart TD
 
     subgraph DETAIL["② 执行核验展开 · 子进程按固定合同执行"]
         direction TB
-        D0["选适配器 + bash -ic<br/>verify_entry.py + harnesses/*.py"] --> S1["第一步 机检<br/>probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["判定内核<br/>probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"] --> S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"] --> S3["AI 自主执行<br/>写 validation-report.md<br/>（只能引用 probe-report）"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"}
-        G -- 否 --> S3
-        G -- 是 --> OUT["回传摘要<br/>verify_entry.py"]
+        subgraph R1["第一步 机检 + 判定内核"]
+            direction LR
+            D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
+        end
+        subgraph R2["第二步 用例"]
+            direction LR
+            S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases / comparison"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"]
+        end
+        subgraph R3["第三步 报告与门禁"]
+            direction LR
+            S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
+            G -- 否 --> S3
+        end
+        R1 --> R2 --> R3
     end
 
     D -. 展开 .-> D0
