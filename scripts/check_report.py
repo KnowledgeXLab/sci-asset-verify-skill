@@ -81,11 +81,36 @@ def check_attribution(report: Path, text: str) -> list[str]:
     return warns
 
 
+def check_harbor_run_dir(report: Path) -> list[str]:
+    """包内有 harbor 任务但没跑 harbor_run.py 时，P0-HARB-RUN 会停在 na，需提醒重跑判定。"""
+    run_dir = report.parent
+    probe_f = run_dir / 'probe-report.json'
+    if not probe_f.is_file():
+        return []
+    try:
+        prof = (json.loads(probe_f.read_text(encoding='utf-8')).get('checks') or {}).get('harbor_run_profile') or {}
+    except Exception:  # noqa: BLE001
+        return []
+    if prof and prof.get('executed') is False and prof.get('report_present') is False:
+        return ['probe-report.json 显示 harbor_run.py 尚未执行（report_present=false）——'
+                ' 如果包内有 harbor 任务，请跑完第二步后带 --run-dir 重跑判定']
+    return []
+
+
 def check_sage_run_dir(report: Path) -> list[str]:
     """有 sage-need.json 却没带 --run-dir 跑探测时，P0-SAGE 会被漏判。"""
     run_dir = report.parent
     need_f = run_dir / 'sage-need.json'
     probe_f = run_dir / 'probe-report.json'
+    # 先看判定是否跑在 detect 之前（needs_detect=true 说明这一批还没判过 Sage 需求）
+    if probe_f.is_file():
+        try:
+            _prof = (json.loads(probe_f.read_text(encoding='utf-8')).get('checks') or {}).get('sage_profile') or {}
+        except Exception:  # noqa: BLE001
+            _prof = {}
+        if _prof.get('needs_detect'):
+            return ['probe-report.json 里 sage_profile.needs_detect=true —— 判定跑在 sage_probe.py detect 之前，'
+                    'P0-SAGE 会漏判；请跑完第二步后带 --run-dir 重跑 probe_package.py']
     if not need_f.is_file():
         return []
     try:
@@ -103,6 +128,13 @@ def check_sage_run_dir(report: Path) -> list[str]:
     if not prof:
         return ['本批需要 Sage 附加测试，但 probe-report.json 里没有 sage_profile'
                 ' —— 说明探测没带 --run-dir，P0-SAGE 会漏判，请重跑']
+    if prof.get('needs_detect'):
+        return ['本批需要 Sage 附加测试，但 probe-report.json 里 sage_profile.needs_detect=true ——'
+                ' 判定跑在 sage_probe.py detect 之前，P0-SAGE 会漏判；'
+                '请跑完第二步后带 --run-dir 重跑 probe_package.py']
+    if not prof.get('needed'):
+        return ['本批 sage-need.json 判定需要 Sage，但 probe-report.json 记 needed=false ——'
+                ' 判定与需求不一致（很可能判定跑在 Sage 之前），请重跑判定']
     if not prof.get('ran_ok') and 'P0-SAGE' not in probe_f.read_text(encoding='utf-8'):
         return ['Sage 未跑通，但结论里没有 P0-SAGE —— 请按 SKILL.md 第 6 步索取配置后重判，'
                 '仍失败须判 P0 阻断']
@@ -264,6 +296,7 @@ def main(argv=None) -> int:
     warnings += check_attribution(report, text)
     warnings += check_root_file_judgement(report, text)
     warnings += check_sage_run_dir(report)
+    warnings += check_harbor_run_dir(report)
     warnings += check_lifecycle_mention(report, text)
 
     payload = _stamp({'tool': 'check_report.py', 'report': str(report),

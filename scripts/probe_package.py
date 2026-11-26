@@ -495,6 +495,7 @@ def probe_sage(run_dir: Path) -> dict:
             return {}
 
     need = load('sage-need.json')
+    detected = bool(need)
     cfg = load('sage-config.json')
     rep = load('sage-a1.5-report.json')
     needed = bool(need.get('needed'))
@@ -513,7 +514,9 @@ def probe_sage(run_dir: Path) -> dict:
             error_kind = 'config_invalid'
         else:
             error_kind = 'not_run'
-    return {'needed': needed, 'config_status': cfg.get('status'), 'missing': cfg.get('missing') or [],
+    return {'needed': needed, 'detected': detected,
+            'needs_detect': (not detected and run_dir is not None),
+            'config_status': cfg.get('status'), 'missing': cfg.get('missing') or [],
             'probe_ok': cfg.get('probe_ok'), 'report_status': report_status,
             'failed_runs': len(failed_runs), 'ran_ok': ran_ok, 'error_kind': error_kind,
             'hint': SAGE_HINT if (needed and not ran_ok) else ''}
@@ -523,7 +526,7 @@ def probe_harbor_run(run_dir: Path) -> dict:
     """harbor_run.py 的执行结果（oracle/nop 双 trial、lint 发现、blocked）。"""
     f = run_dir / 'harbor-run-report.json'
     if not f.is_file():
-        return {'executed': False}
+        return {'executed': False, 'report_present': False}
     try:
         doc = json.loads(f.read_text(encoding='utf-8'))
     except Exception:  # noqa: BLE001
@@ -693,6 +696,10 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
                           'detail': harbor_run['lint_reproducibility']})
 
     sage = checks.get('sage_profile') or {}
+    if sage.get('needs_detect'):
+        notes.append({'level': 'P2', 'topic': 'Sage 需求未判定',
+                      'detail': 'sage-need.json 缺失：本次 --run-dir 指向的批次还没跑 sage_probe.py detect，'
+                                'P0-SAGE 只能记 na。跑完第二步后请带 --run-dir 重跑 probe_package.py。'})
     if sage.get('needed') and not sage.get('ran_ok'):
         add('P0-SAGE', {'error_kind': sage.get('error_kind'), 'config_status': sage.get('config_status'),
                         'missing': sage.get('missing'), 'report_status': sage.get('report_status'),
@@ -742,7 +749,11 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
     elif harbor_run.get('executed'):
         harb_run = (True, '')
     else:
-        harb_run = (False, 'oracle/nop 由 harbor_run.py 执行判定：本次未执行（需 docker + harbor CLI）')
+        if harbor_run.get('report_present'):
+            harb_run = (False, 'oracle/nop 由 harbor_run.py 执行判定：本次未执行（需 docker + harbor CLI）')
+        else:
+            harb_run = (False, '本次还没跑 harbor_run.py（第二步产物缺失）——'
+                              '跑完第二步后必须带 --run-dir 重跑 probe_package.py 再判定')
     na_rules = {
         'P0-HARB-RUN': harb_run,
         'P0-HARB-STRUCT': (harbor_present, '包内没有 harbor 任务/数据集资产'),
@@ -751,7 +762,10 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
         'P1-HARB-ENVELOPE': (harbor_present, '包内没有 harbor 任务/数据集资产'),
         'P1-HARB-LINT': (bool(harbor_run.get('executed')), 'harbor lint 未采集（需 harbor CLI，由 harbor_run.py 执行）'),
         'P0-SAGE': (bool((checks.get('sage_profile') or {}).get('needed')),
-                    '本包不需要 Sage 附加测试（无 skill/agent 类资产或未判定为需要）'),
+                    ('本包是否需要 Sage 尚未判定：先跑 sage_probe.py detect 写 sage-need.json，'
+                     '再带 --run-dir 重跑 probe_package.py'
+                     if (checks.get('sage_profile') or {}).get('needs_detect')
+                     else '本包不需要 Sage 附加测试（无 skill/agent 类资产或未判定为需要）')),
         'P1-DECL': (any(v.get('has_metadata') for v in dprof.values()), '没有 data 资产声明 metadata，无可核对项'),
         'P1-VERSION': (bool((checks.get('version_profile') or {})), '版本一致性检查不可用'),
         'P1-VERIFY-DOC': (any(v.get('cases_json') for v in ((checks.get('verify_entry_profile') or {}).get('assets') or {}).values()),

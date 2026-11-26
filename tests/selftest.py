@@ -2049,6 +2049,42 @@ def t20_verify_entry(tmp: Path) -> None:
            or "offline" in proc_up.stdout.lower(),
            f"rc={proc_up.returncode} out={proc_up.stdout.strip()[:80]}")
 
+    # 判定跑在第二步之前：P0-SAGE / P0-HARB-RUN 会停在 na，且能自证"还没跑"
+    early = tmp / "t20-early"
+    (early / "asset-runs" / "run-20260101-000000").mkdir(parents=True)
+    run_dir = early / "asset-runs" / "run-20260101-000000"
+    pkg_early = tmp / "t20-goodpkg2"
+    (pkg_early / "g1").mkdir(parents=True)
+    (pkg_early / "g1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD123456/earth/data/g1",
+        "asset_type": "data", "name": "g1", "description": "x", "asset_version": "1.0.0",
+        "lifecycle": "validated", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]}, "artifacts": [], "domain_attributes": {},
+                 "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(pkg_early), "--run-dir", str(run_dir),
+         "--evaluate", "--json-out", str(run_dir / "probe-report.json")], tmp)
+    prof = (json.loads((run_dir / "probe-report.json").read_text(encoding="utf-8"))["checks"]
+            .get("sage_profile") or {})
+    hprof = (json.loads((run_dir / "probe-report.json").read_text(encoding="utf-8"))["checks"]
+             .get("harbor_run_profile") or {})
+    record("正例：判定跑在第二步之前时，sage/harbor 显式标为「未执行」而不是「不适用」",
+           prof.get("needs_detect") is True and hprof.get("report_present") is False,
+           f"sage={prof.get('needs_detect')} harbor_report_present={hprof.get('report_present')}")
+
+    (run_dir / "validation-report.md").write_text(
+        "---\nskill: sci-asset-verify-skill\nskill_version: 1.4-beta.1-dev\n"
+        "generated_at: 2026-01-01T00:00:00+08:00\n---\n\n# 报告\n\n## 结论\n\n通过\n\n"
+        "## 问题清单\n\nP0、P1、P2 均为无。\n", encoding="utf-8")
+    proc_cr = run([str(SCRIPTS / "check_report.py"), "--report", str(run_dir / "validation-report.md")], tmp)
+    out_cr = (proc_cr.stdout or "") + (proc_cr.stderr or "")
+    record("负例：报告写通过但 Sage/harbor 判定没跑完 → check_report 告警",
+           "needs_detect" in out_cr and "harbor_run.py 尚未执行" in out_cr, f"rc={proc_cr.returncode}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)

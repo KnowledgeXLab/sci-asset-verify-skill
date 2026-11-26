@@ -40,6 +40,10 @@ python3 scripts/check_selfcontained.py --package {package} --json-out {run}/self
 
 `probe-report.json` 的 `verdict.findings` 就是 P0/P1 结论；覆盖表里的 `na` 必须带理由。
 
+> **注意执行顺序**：本步只产**静态事实**。`P0-SAGE`、`P0-HARB-RUN`、`P1-HARB-LINT` 要看第二步的运行产物
+> （`sage-need.json` / `sage-a1.5-report.json` / `harbor-run-report.json`），此时必然记 `na`。
+> **第二步跑完后必须重跑一次**（覆盖同一个文件），三项才会变成真实结论——见第三步开头的命令。
+
 ## 第二步：跑资产自带用例
 
 - 有 `validate/cases.json` 的资产：逐条跑该资产的 `validate/validate.py`，记录 rc 与关键输出；
@@ -63,6 +67,17 @@ python3 scripts/sage_probe.py config --probe --json-out {run}/sage-config.json
   只放环境变量；**模型名固定为 Sage-A1.5，不需要用户提供**）；用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
 
 ## 第三步：写报告并过门禁
+
+**先重跑判定（必须）**——这一步把第二步的运行产物纳入判定，覆盖第一步那份静态报告：
+
+```bash
+cd {skill_dir}
+python3 scripts/probe_package.py --package {package} --run-dir {run} --evaluate --intent {intent} \
+    --json-out {run}/probe-report.json
+```
+
+重跑后确认：`P0-SAGE` / `P0-HARB-RUN` / `P1-HARB-LINT` 不再是因为「还没跑」而 `na`；
+若仍为 `na`，`na_reason` 必须写明是"本包不适用"还是"环境不具备（缺 docker/harbor）"。
 
 产出 `{run}/validation-report.md`（模板见 references/validation.md），然后：
 
