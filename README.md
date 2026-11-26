@@ -50,7 +50,7 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 ### 4. 离线 / 无 git 的安装方式
 
 直接拷贝整个目录到 skills 位置也能用（依赖已随 `vendor/` 打包，无网络也能跑），
-但**自动更新不可用**——`update_skill.py` 会提示"非 git 安装，请重新下发最新版"。
+但**自动更新不可用**——`update_skill.py` 会提示"非 git 安装，请手动下载最新版"。
 
 
 ### 装在哪里：权限与自动更新的取舍
@@ -63,7 +63,7 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 | **用户级** `~/.dsh/skills/sci-asset-verify-skill` | ⚠️ 视权限 | 会话若只允许写工作区（`workspace-write`），`git checkout` 会被拒；此时脚本报 `无写权限，跳过自动更新`（**不中断核验**），需放宽权限或手动 pull |
 
 脚本的行为：更新前先探测目录可写性，不可写就**降级为提示**（退出码 0，核验继续），并给出三条路——
-放宽会话写权限、手动 `git pull`、或重新下发最新版。要强制关闭自动更新：`--no-update` 或 `ASSET_VERIFY_NO_UPDATE=1`。
+放宽会话写权限、手动 `git pull`、或手动下载最新版替换目录。要强制关闭自动更新：`--no-update` 或 `ASSET_VERIFY_NO_UPDATE=1`。
 
 ### 环境要求
 

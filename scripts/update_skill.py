@@ -147,7 +147,7 @@ def check() -> dict:
     if not is_git_repo():
         return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
                 'reason': MANUAL_HINT.format(latest=latest, cur=cur)
-                          + '（当前安装不是 git 仓库：请重新下发/解压最新版，或改用 git clone 安装）'}
+                          + '（当前安装不是 git 仓库：请手动下载最新版并替换目录，或改用 git clone 安装）'}
     if is_dev_checkout():
         return {'status': 'dev_branch', 'current': cur, 'latest': latest,
                 'reason': f'当前在开发分支 {current_branch()}，不自动切换发布版本；'
@@ -164,7 +164,7 @@ def apply_update(latest: str) -> dict:
     if not ok:
         return {'status': 'not_writable', 'action': 'skipped',
                 'reason': f'没有写权限，无法自动更新（{why}）。'
-                          '可在核验会话里放宽写权限，或由使用者手动 git pull / 重新下发最新版'}
+                          '可在核验会话里放宽写权限，或由使用者手动 git pull / 手动下载最新版替换'}
     if dirty():
         return {'status': 'dirty_worktree', 'action': 'skipped',
                 'reason': '工作区有未提交改动，自动更新会覆盖你的修改；请先提交或 stash'}
@@ -174,7 +174,7 @@ def apply_update(latest: str) -> dict:
         if any(k in out for k in ('权限不够', 'permission denied', 'EACCES')) or 'denied' in low:
             return {'status': 'not_writable', 'action': 'skipped',
                     'reason': '没有写权限，无法自动更新（git fetch 被拒）。'
-                              '可放宽会话写权限，或手动 pull / 重新下发最新版'}
+                              '可放宽会话写权限，或手动 pull / 手动下载最新版替换'}
         return {'status': 'fetch_failed', 'action': 'skipped', 'reason': out.strip()[:300]}
     rc, out = git('checkout', '--quiet', latest)
     if rc != 0:

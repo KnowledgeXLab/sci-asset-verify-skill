@@ -42,7 +42,7 @@ python scripts/update_skill.py --apply --json-out <run>/skill-update.json
 ```
 
 - 有新版 → `git checkout <最新 tag>`（工作区有未提交改动时**拒绝更新**，绝不覆盖你的修改），更新后自动跑一次自测，结果记进 `skill-update.json`
-- 已是最新 / 非 git 安装 / 离线无 origin / **skill 目录不可写**（如用户级安装但会话只能写工作区）/ 显式关闭（`--no-update` 或 `ASSET_VERIFY_NO_UPDATE=1`）→ 打印一行状态并**继续核验**，不阻断；不可写时提示放宽权限、手动 pull 或重新下发
+- 已是最新 / 非 git 安装 / 离线无 origin / **skill 目录不可写**（如用户级安装但会话只能写工作区）/ 显式关闭（`--no-update` 或 `ASSET_VERIFY_NO_UPDATE=1`）→ 打印一行状态并**继续核验**，不阻断；不可写时提示放宽权限、手动 pull 或手动下载最新版
 - 更新后报告 front matter 自然反映新版本（`_version.py` 读磁盘版本 + 提交号）；同一次核验内不中途切换版本
 
 同一份包、同一版 skill、同一交付用途（`--intent`），结论必须一致。做法是**固定过程与判据**：
