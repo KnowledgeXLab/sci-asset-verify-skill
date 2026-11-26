@@ -2200,6 +2200,15 @@ def t20_verify_entry(tmp: Path) -> None:
                and " 0 通过" not in out_hits.split("正向命中自检：")[-1][:8],
                out_hits.strip().splitlines()[-1] if out_hits.strip() else "无输出")
 
+    # harness 适配器契约
+    hc = SKILL / "tests" / "harness_contract.py"
+    if hc.is_file():
+        proc_hc = run([str(hc)], tmp)
+        out_hc = (proc_hc.stdout or "") + (proc_hc.stderr or "")
+        record("正例：harness 适配器契约自检全绿（argv 含 {prompt}、priority 合法、桌面应用不进 auto）",
+               proc_hc.returncode == 0 and "harness 契约自检：" in out_hc,
+               out_hc.strip().splitlines()[-1] if out_hc.strip() else "无输出")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)
