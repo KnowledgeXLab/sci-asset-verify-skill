@@ -153,11 +153,18 @@ def stage1_prepare(package: Path, run: Path, do_copy: bool = True) -> dict:
             info["static_summary"] = v.get("summary")
             p0 = [f for f in (v.get("findings") or []) if str(f.get("level")) == "P0"]
             if p0:
-                # 静态审查出的 P0 是**判定结论**，写进报告而不是终止流程；
-                # 否则交付方拿不到一份写清问题的报告，只能反复退回。
                 info["static_p0"] = [f.get("check_id") for f in p0]
-                info["notes"].append(
-                    "副本静态审查预判 P0：" + "、".join(info["static_p0"]) + "（已记录，须在报告问题清单中体现）")
+                # 二次审查只判"初始化动作有没有把执行根搞坏"：P0-STRUCT 说明结构不可枚举
+                # （多半是建副本/挂载的锅）→ 终止重来。ENVELOPE 等属性类问题首次预审已经判过，
+                # 这里只记录、进报告，不重复阻断（否则不合规的包永远拿不到报告）。
+                broken = [c for c in info["static_p0"] if c == "P0-STRUCT"]
+                if broken:
+                    info["errors"].append(
+                        "副本静态审查发现执行根不可用：" + "、".join(broken) + "（检查建副本/挂载结果）")
+                else:
+                    info["notes"].append(
+                        "副本静态审查预判 P0：" + "、".join(info["static_p0"]) +
+                        "（已记录，须在报告问题清单中体现）")
         except Exception:                                     # noqa: BLE001
             pass
 
