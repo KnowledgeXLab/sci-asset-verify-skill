@@ -31,7 +31,9 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 # 非 git 安装（拷贝/解压/容器内分发）也要能查远端版本：用登记仓库地址
 DEFAULT_REMOTE = 'git@github.com:KnowledgeXLab/sci-asset-verify-skill.git'
-MANUAL_HINT = '发现新版本 {latest}（当前 {cur}），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试'
+MANUAL_HOWTO = ('git 部署目录执行 git fetch --tags && git checkout {latest}',
+                '非 git 安装则手动下载最新版并替换目录',
+                '想以后能自动更新就改用 git clone 安装')
 TAG_RE = re.compile(r'^v?(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta|rc)\.?(\d+))?$')
 STAGE = {'alpha': 0, 'beta': 1, 'rc': 2, None: 3}
 
@@ -48,7 +50,10 @@ def parse_version(text: str):
 
 def local_version() -> str:
     f = SKILL_ROOT / 'VERSION'
-    return f.read_text(encoding='utf-8').strip() if f.is_file() else ''
+    if not f.is_file():
+        return ''
+    lines = [l.strip() for l in f.read_text(encoding='utf-8').splitlines() if l.strip()]
+    return lines[0] if lines else ''
 
 
 def git(*args, cwd=SKILL_ROOT) -> tuple[int, str]:
@@ -129,6 +134,13 @@ def current_tag() -> str:
     return out.strip().splitlines()[0] if rc == 0 and out.strip() else ''
 
 
+def _manual(cur: str, latest: str, reason: str) -> dict:
+    """有新版但无法自动更新：返回结构化原因与处理建议（打印时分行，避免嵌套括号）。"""
+    return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
+            'reason': reason,
+            'howto': [h.format(latest=latest) for h in MANUAL_HOWTO]}
+
+
 def check() -> dict:
     """无论是否 git 安装，都先问远端有没有更新版本；不能自动更新时明确要求用户手动更新。"""
     cur = local_version()
@@ -145,17 +157,14 @@ def check() -> dict:
 
     # 有更新：判断能不能自动完成
     if not is_git_repo():
-        return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
-                'reason': MANUAL_HINT.format(latest=latest, cur=cur)
-                          + '（当前安装不是 git 仓库：请手动下载最新版并替换目录，或改用 git clone 安装）'}
+        return _manual(cur, latest, '当前安装不是 git 仓库，无法自动切换版本')
     if is_dev_checkout():
         return {'status': 'dev_branch', 'current': cur, 'latest': latest,
                 'reason': f'当前在开发分支 {current_branch()}，不自动切换发布版本；'
                           f'若这是部署目录，请手动 git checkout {latest}'}
     ok, why = writable()
     if not ok:
-        return {'status': 'update_available_manual', 'current': cur, 'latest': latest,
-                'reason': MANUAL_HINT.format(latest=latest, cur=cur) + f'（{why}）'}
+        return _manual(cur, latest, why or 'skill 目录不可写，无法自动切换版本')
     return {'status': 'behind', 'current': cur, 'latest': latest}
 
 
@@ -215,10 +224,9 @@ def main(argv=None) -> int:
                 result['selftest'] = run_selftest()
             elif result.get('status') in ('not_writable', 'dirty_worktree', 'fetch_failed', 'checkout_failed'):
                 # 有新版但自动更新没成：统一升级为"需手动更新"，并给出明确指引
-                result['status'] = 'update_available_manual'
-                result['reason'] = MANUAL_HINT.format(latest=result['latest'], cur=result['current']) \
-                    + f'（{result.get("reason", "")}）'
-                result['auto_update'] = 'failed'
+                _why = str(result.get('reason') or '自动更新未完成').splitlines()[0]
+                result = {**result, **_manual(result['current'], result['latest'], _why),
+                          'auto_update': 'failed'}
 
     payload = {'tool': 'update_skill.py', 'skill_root': str(SKILL_ROOT), **result}
     label = {'up_to_date': '已是最新', 'updated': '已更新', 'behind': '有新版（未更新）',
@@ -228,9 +236,15 @@ def main(argv=None) -> int:
              'not_git': '非 git 安装，跳过', 'offline_or_no_remote': '离线/无 origin，跳过',
              'dirty_worktree': '工作区脏，跳过', 'disabled': '已关闭自动更新',
              'fetch_failed': '拉取失败', 'checkout_failed': '切换失败'}.get(result['status'], result['status'])
-    print(f"[skill 版本] {label}：当前 {result.get('current')}"
-          + (f" → 远端 {result.get('latest')}" if result.get('latest') else '')
-          + (f"（{result['reason']}）" if result.get('reason') else ''))
+    if result['status'] == 'update_available_manual':
+        print(f"[skill 版本] ⚠ 有新版本 {result.get('latest')}（当前 {result.get('current')}），但无法自动更新")
+        print(f"[skill 版本] 原因：{result.get('reason')}")
+        for how in result.get('howto') or []:
+            print(f"[skill 版本] 处理：{how}")
+    else:
+        print(f"[skill 版本] {label}：当前 {result.get('current')}"
+              + (f" → 远端 {result.get('latest')}" if result.get('latest') else '')
+              + (f"（{result['reason']}）" if result.get('reason') else ''))
     if result.get('selftest', {}).get('ran'):
         print(f"[skill 版本] 更新后自测：{result['selftest'].get('summary') or result['selftest'].get('rc')}")
     if args.json_out:

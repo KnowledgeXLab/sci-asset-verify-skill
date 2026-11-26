@@ -1622,7 +1622,7 @@ def t18_self_update(tmp: Path) -> None:
     (local / "VERSION").write_text("1.0.1\nlocal edit\n", encoding="utf-8")
     proc = run([str(up), "--apply"], local)
     record("负例：工作区有本地改动时不覆盖，改为提示手动更新",
-           proc.returncode == 0 and ("手动更新" in (proc.stdout + proc.stderr)
+           proc.returncode == 0 and ("无法自动更新" in (proc.stdout + proc.stderr)
                                      or "工作区" in (proc.stdout + proc.stderr))
            and (local / "VERSION").read_text(encoding="utf-8").endswith("local edit\n"),
            f"rc={proc.returncode}")
@@ -2045,7 +2045,8 @@ def t20_verify_entry(tmp: Path) -> None:
     (fake / "VERSION").write_text("1.0.0\n", encoding="utf-8")
     proc_up = run([str(fake / "scripts" / "update_skill.py"), "--check"], fake)
     record("正例：非 git 安装也能查远端版本，有新版时提示需手动更新",
-           "手动更新" in proc_up.stdout or "offline" in proc_up.stdout.lower(),
+           "无法自动更新" in proc_up.stdout and "手动下载最新版" in proc_up.stdout
+           or "offline" in proc_up.stdout.lower(),
            f"rc={proc_up.returncode} out={proc_up.stdout.strip()[:80]}")
 
     # 报告引用跨会话记忆必须告警

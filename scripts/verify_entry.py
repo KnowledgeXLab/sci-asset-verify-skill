@@ -100,9 +100,12 @@ def update_gate() -> tuple[dict | None, int]:
         return None, 0
     status = result.get("status")
     if status == "update_available_manual":
-        print(f"[版本检查] ⚠ {result.get('reason')}", file=sys.stderr)
-        print(f"[版本检查] 请先手动更新到 {result.get('latest')} 后重试；"
-              f"确认要用当前版本继续可加 --ignore-update。", file=sys.stderr)
+        print(f"[版本检查] ⚠ 有新版本 {result.get('latest')}（当前 {result.get('current')}），但无法自动更新",
+              file=sys.stderr)
+        print(f"[版本检查] 原因：{result.get('reason')}", file=sys.stderr)
+        for how in result.get("howto") or []:
+            print(f"[版本检查] 处理：{how}", file=sys.stderr)
+        print("[版本检查] 更新后重试；确认要用当前版本继续可加 --ignore-update。", file=sys.stderr)
         return result, 3
     if status == "behind":
         print(f"[版本检查] 有新版本 {result.get('latest')}（当前 {result.get('current')}）："
