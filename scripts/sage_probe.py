@@ -13,8 +13,9 @@
 
 配置来源（按优先级）
 --------------------
-  1. CLI：--base-url / --model / --api-key-env
-  2. 环境变量：SAGE_BASE_URL / SAGE_MODEL / SAGE_API_KEY（别名：SAGE_LLM_BASE_URL / SAGE_LLM_MODEL / SAGE_LLM_API_KEY）
+  1. CLI：--base-url / --api-key-env
+  2. 环境变量：SAGE_BASE_URL / SAGE_API_KEY（别名：SAGE_LLM_BASE_URL / SAGE_LLM_API_KEY）
+  **模型名固定为 Sage-A1.5，不从环境变量读取，也不需要用户提供。**
   3. 宿主机的 DSH 配置：~/.dsh/profiles/*/cordis.patch.yml 里 models 含 Sage 的 provider（取 baseURL 与 apiKeyEnv），
      密钥从环境变量或 ~/.dsh/.credentials.yaml 的 refs 解析（只读取，不落盘、不打印）
   **找不到配置时退出码 3，并把缺哪几项、怎么提供打印出来——必须立即把这段反馈给用户，由用户提供；
@@ -26,7 +27,7 @@
 ----
   python scripts/sage_probe.py detect <资产根目录> --json-out <run>/sage-need.json
   python scripts/sage_probe.py config --json-out <run>/sage-config.json [--probe]
-  python scripts/sage_probe.py report <run> --status blocked_missing_config --note "缺 SAGE_MODEL"
+  python scripts/sage_probe.py report <run> --status blocked_missing_config --note "缺 SAGE_BASE_URL"
 """
 from __future__ import annotations
 
@@ -54,9 +55,10 @@ except Exception:                        # noqa: BLE001
         return payload
 
 LLM_ASSET_TYPES = {'skill', 'task', 'trajectory', 'benchmark', 'model'}
+# Sage 的模型名由平台固定，不通过环境变量配置
+SAGE_MODEL = 'Sage-A1.5'
 ENV_KEYS = {
     'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
-    'model': ['SAGE_MODEL', 'SAGE_LLM_MODEL'],
     'api_key': ['SAGE_API_KEY', 'SAGE_LLM_API_KEY'],
 }
 # 包内出现这些字样就算“涉及大模型 API”，逐条留证据
@@ -191,8 +193,8 @@ def detect(root: Path) -> dict:
 
 # ---------------------------------------------------------------- config
 def resolve_config(args) -> tuple[dict, list[str]]:
-    cfg = {'base_url': args.base_url, 'model': args.model,
-           'api_key_env': args.api_key_env, 'sources': {}}
+    cfg = {'base_url': args.base_url, 'model': SAGE_MODEL,
+           'api_key_env': args.api_key_env, 'sources': {'model': 'fixed'}}
     for field, names in ENV_KEYS.items():
         if cfg.get(field):
             cfg['sources'][field] = 'cli'
@@ -204,17 +206,16 @@ def resolve_config(args) -> tuple[dict, list[str]]:
                 cfg['sources'][field] = f'env:{n}'
                 break
     # 3) 宿主机的 DSH 配置（只读）
-    if not cfg.get('base_url') or not cfg.get('model'):
+    if not cfg.get('base_url'):
         disc = discover_dsh_sage(Path.home())
         if disc.get('base_url'):
-            for field in ('base_url', 'model'):
-                if not cfg.get(field) and disc.get(field):
-                    cfg[field] = disc[field]
-                    cfg['sources'][field] = disc['source']
+            if not cfg.get('base_url'):
+                cfg['base_url'] = disc['base_url']
+                cfg['sources']['base_url'] = disc['source']
             if disc.get('api_key') and not cfg.get('api_key'):
                 cfg['api_key'] = disc['api_key']
                 cfg['sources']['api_key'] = disc.get('api_key_source') or 'dsh'
-    missing = [f for f in ('base_url', 'model') if not cfg.get(f)]
+    missing = [f for f in ('base_url',) if not cfg.get(f)]
     if not cfg.get('api_key_env') and not cfg.get('api_key'):
         key_found = any(os.environ.get(n) for n in ENV_KEYS['api_key'])
         if not key_found:
@@ -332,7 +333,6 @@ SAGE_SOURCE_HINT = ('API URL 与 API KEY 可在端砚平台（书生·Intern-Dis
 def user_request_block(missing: list[str]) -> str:
     want = {
         'base_url': 'SAGE_BASE_URL   —— Sage A1.5 的 OpenAI 兼容地址（形如 http://<Sage 服务>/v1）',
-        'model': 'SAGE_MODEL      —— 该服务上的模型/服务名（核验方给出的 served name）',
         'api_key': 'SAGE_API_KEY    —— 若服务需要鉴权则提供；本地 vLLM 可留空',
     }
     lines = ['', '=' * 72,
@@ -341,7 +341,7 @@ def user_request_block(missing: list[str]) -> str:
     lines += ['', SAGE_SOURCE_HINT]
     lines += ['',
               '提供方式（密钥只放环境变量，不要写进文件、不要贴进对话、更不要带进交付包）：',
-              '  export SAGE_BASE_URL=... SAGE_MODEL=... SAGE_API_KEY=...   # 然后告诉我"已配置"，我直接重跑',
+              '  export SAGE_BASE_URL=... SAGE_API_KEY=...   # 模型名固定为 Sage-A1.5，无需设置；然后告诉我"已配置"，我直接重跑',
               '  或者告知已配置在哪个 profile/凭据文件里，我只从环境变量读取，不做任何落盘。',
               '',
               '若始终无法提供可用配置，本次核验会按 P0（P0-SAGE）阻断交付：',
@@ -381,7 +381,6 @@ def main(argv=None) -> int:
 
     c = sub.add_parser('config', help='解析并可选探测 Sage 配置')
     c.add_argument('--base-url')
-    c.add_argument('--model')
     c.add_argument('--api-key-env')
     c.add_argument('--probe', action='store_true')
     c.add_argument('--json-out')

@@ -227,7 +227,7 @@ python scripts/prune_evidence.py --run <asset-runs>/<run_id>
 判定与配置用 `scripts/sage_probe.py`：
 
 - `detect` 写 `sage-need.json`：`needed` + 证据（哪一行、哪类线索）；`needed=false` 记 `not_applicable_no_llm_asset`。
-- `config` 写 `sage-config.json`：按 CLI > 环境变量 > 宿主机 DSH profile/凭据 的顺序解析 `SAGE_BASE_URL` / `SAGE_MODEL` / `SAGE_API_KEY`，并可选探测（列模型、确认 Sage 在列）。**退出码 3 表示缺配置，
+- `config` 写 `sage-config.json`：按 CLI > 环境变量 > 宿主机 DSH profile/凭据 的顺序解析 `SAGE_BASE_URL` / `SAGE_API_KEY`（模型名固定 `Sage-A1.5`），并可选探测（列模型、确认 Sage 在列）。**退出码 3 表示缺配置，
   必须立刻把脚本打印的"需要用户提供"清单反馈给用户**，等其提供后再跑；不得静默跳过或代填其他后端结果。
 - `report` 写 `sage-a1.5-report.json`：`status` ∈ {`completed`, `blocked_missing_config`, `not_supported_by_package`}。
   这些文件里只记地址/模型名/是否配置，不记密钥值。
@@ -239,7 +239,7 @@ python scripts/prune_evidence.py --run <asset-runs>/<run_id>
 
 | 项目 | 值 |
 |---|---|
-| 后端 | `<SAGE_MODEL>`（`<SAGE_BASE_URL>`，密钥经环境变量注入，不落盘） |
+| 后端 | `Sage-A1.5`（`<SAGE_BASE_URL>`，密钥经环境变量注入，不落盘） |
 | 状态 | completed / blocked_missing_config / not_supported_by_package |
 | 结果 | N/M 用例通过，K 项检查；与通用后端结果并列，只作对比 |
 | 用途 | 仅反映换后端后的兼容性，**不参与通过率与覆盖度，也不改变第 0 节判定** |

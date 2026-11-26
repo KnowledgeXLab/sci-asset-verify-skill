@@ -478,7 +478,7 @@ def probe_secrets(root: Path, assets: list) -> dict:
     return {'hits': hits[:50], 'count': len(hits)}
 
 
-SAGE_HINT = ('Sage 配置未就绪：请在运行环境设置 SAGE_BASE_URL / SAGE_MODEL / SAGE_API_KEY 后重跑；'
+SAGE_HINT = ('Sage 配置未就绪：请在运行环境设置 SAGE_BASE_URL / SAGE_API_KEY 后重跑（模型名固定 Sage-A1.5）；'
              'API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery）获取。'
              '未完成配置前不得以「未测」结案。')
 

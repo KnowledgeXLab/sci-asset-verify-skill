@@ -227,7 +227,7 @@ python scripts/run_skill_agent.py --list-harnesses     # 看预设与"本机装�
    **不要**改调用方逻辑；桌面应用等确实没有 headless CLI 的，标 `headless=False` 并写清原因（ZCode 有 `zcode-cli --prompt`，故按 CLI 支持）。
 
 **provider / 模型**：默认**用 harness 自己配置的默认 provider 与模型**，脚本不覆盖。
-**Sage 测试**：沿用同一 harness，只换后端 —— `--backend sage` 时从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`
+**Sage 测试**：沿用同一 harness，只换后端 —— `--backend sage` 时从 `SAGE_BASE_URL`/`SAGE_API_KEY`
 （含 `SAGE_LLM_*` 别名）读取，按预设声明的方式注入（env 变量或配置补丁）；预设声明不支持自定义后端（如 cursor-agent）时明确失败，不偷用默认后端。
 
 跑完自动用 readme 声明的门槛脚本判 **agent 产物**（`--artifact <产物目录>`），证据落 `agent-<资产>-report.json`。
@@ -378,15 +378,15 @@ python scripts/sage_probe.py detect <资产根目录> --json-out <run>/sage-need
 
 它按「有无 skill 资产」+ 包内证据（`LLM_*`/`OPENAI_*` 环境模板、`chat/completions` 调用、model-backed 适配器、Sage 后端开关、asset.json 的模型依赖）判定；只有既无 skill 资产又无这些证据时才记 `not_applicable_no_llm_asset`。
 
-需要测时先解析配置，优先级 **CLI > 环境变量 `SAGE_BASE_URL` / `SAGE_MODEL` / `SAGE_API_KEY` > 宿主机的 DSH 配置**（`~/.dsh/profiles/*/cordis.patch.yml` 里 models 含 Sage 的 provider；密钥只从环境变量读，必要时从 `~/.dsh/.credentials.yaml` **内存解析**后注入环境变量，不写任何文件）：
+需要测时先解析配置，优先级 **CLI > 环境变量 `SAGE_BASE_URL` / `SAGE_API_KEY` > 宿主机的 DSH 配置**（**模型名固定 `Sage-A1.5`，不从环境变量读**）（`~/.dsh/profiles/*/cordis.patch.yml` 里 models 含 Sage 的 provider；密钥只从环境变量读，必要时从 `~/.dsh/.credentials.yaml` **内存解析**后注入环境变量，不写任何文件）：
 
 ```
 python scripts/sage_probe.py config --probe --json-out <run>/sage-config.json
 ```
 
-- **退出码 0**：配置可用。用资产包自带的正确性 harness 把后端换成 Sage 跑一遍（例如包内 `run_correctness.py --backend-name sage-a1.5 --llm-base-url <SAGE_BASE_URL> --llm-model <SAGE_MODEL> --llm-api-key-env SAGE_API_KEY`），输出放 `<run>/validation-run/correctness-sage/`，再把结果写进 `sage-a1.5-report.json` 与报告小节。
+- **退出码 0**：配置可用。用资产包自带的正确性 harness 把后端换成 Sage 跑一遍（例如包内 `run_correctness.py --backend-name sage-a1.5 --llm-base-url <SAGE_BASE_URL> --llm-model Sage-A1.5 --llm-api-key-env SAGE_API_KEY`），输出放 `<run>/validation-run/correctness-sage/`，再把结果写进 `sage-a1.5-report.json` 与报告小节。
 - **退出码 3（配置缺失）/ 退出码 4（配置存在但连通性失败）**：脚本会打印"需要用户提供"的清单。此时**立刻按下面三步走**，不要静默跳过，也不要把别的模型结果代填为 Sage：
-  1. **向用户索取配置**：要 `SAGE_BASE_URL`（API URL）、`SAGE_MODEL`（一般 `Sage-A1.5`）、`SAGE_API_KEY`。
+  1. **向用户索取配置**：只要 `SAGE_BASE_URL`（API URL）与 `SAGE_API_KEY`；模型名固定 `Sage-A1.5`，不需要用户提供。
      索取时明确告诉用户：**API URL 与 API KEY 可在端砚平台（书生·Intern-Discovery，`discovery-api.intern-ai.org.cn`）获取**；
      并请用户在**运行环境里设置环境变量**（或告知已配置在哪个 profile），**不要把明文密钥贴到对话里**。
   2. 用户给出后 `export` 再重跑 `sage_probe.py config --probe`；仍失败就再确认一次（地址/模型名/密钥是否同一环境）。

@@ -506,19 +506,19 @@ def t6_sage(tmp: Path) -> None:
     fake_home = case / "home"
     fake_home.mkdir(exist_ok=True)
     env = {"HOME": str(fake_home)}
-    for k in ("SAGE_BASE_URL", "SAGE_MODEL", "SAGE_API_KEY", "SAGE_LLM_BASE_URL",
+    for k in ("SAGE_BASE_URL", "SAGE_API_KEY", "SAGE_LLM_BASE_URL",
               "SAGE_LLM_MODEL", "SAGE_LLM_API_KEY"):
         env[k] = ""
     proc = run([str(SCRIPTS / "sage_probe.py"), "config", "--json-out", str(case / "cfg.json")],
                case, env_extra=env)
     cfg = json.loads((case / "cfg.json").read_text(encoding="utf-8")) if (case / "cfg.json").exists() else {}
-    record("负例：找不到 Sage 配置 → 退出码 3 且给出索取清单",
-           proc.returncode == 3 and "SAGE_BASE_URL" in proc.stdout and cfg.get("status") == "missing_config",
-           f"rc={proc.returncode} status={cfg.get('status')}")
+    record("负例：找不到 Sage 配置 → 退出码 3 且给出索取清单（只要 BASE_URL 与 API_KEY）",
+           proc.returncode == 3 and "SAGE_BASE_URL" in proc.stdout and cfg.get("status") == "missing_config"
+           and "SAGE_MODEL" not in proc.stdout, f"rc={proc.returncode} status={cfg.get('status')}")
 
     probe_env = dict(env, DUMMY_SAGE_KEY="dummy")
     proc = run([str(SCRIPTS / "sage_probe.py"), "config", "--base-url", "http://127.0.0.1:9/v1",
-                "--model", "x", "--api-key-env", "DUMMY_SAGE_KEY", "--probe",
+                "--api-key-env", "DUMMY_SAGE_KEY", "--probe",
                 "--json-out", str(case / "cfg2.json")], case, env_extra=probe_env)
     record("负例：配置齐全但探测不通 → 退出码 4", proc.returncode == 4, f"rc={proc.returncode}")
 

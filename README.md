@@ -12,60 +12,7 @@
 
 本 skill 是**一个目录**，装到 agent 能读到的 skills 位置即可。推荐用 git 安装（这样才能用上"开跑自动对齐最新版"）。
 
-### 1. 用 git 安装（推荐）
-
-```bash
-# DSH：装到用户级 skills 目录（也可放项目的 .dsh/skills/ 下，仅该项目生效）
-mkdir -p ~/.dsh/skills
-git clone --depth 1 https://github.com/KnowledgeXLab/sci-asset-verify-skill.git \
-    ~/.dsh/skills/sci-asset-verify-skill
-
-# 想钉在某个版本上：加 --branch
-git clone --depth 1 --branch 1.2-beta.5 https://github.com/KnowledgeXLab/sci-asset-verify-skill.git \
-    ~/.dsh/skills/sci-asset-verify-skill
-```
-
-其他 agent（Claude Code / Codex / Cursor 等）：把同一仓库 clone 到它的 skills 目录即可，技能说明在 `SKILL.md`。
-
-### 2. 验证安装
-
-```bash
-cd ~/.dsh/skills/sci-asset-verify-skill
-cat VERSION                                  # 当前版本，如 1.2-beta.5
-python3 tests/selftest.py                    # 自测：应显示「自测结果：N/N 通过」
-python3 scripts/update_skill.py --check      # 与远端最新 tag 比对
-python3 scripts/validate_envelope.py --help  # 任一脚本能跑即说明依赖就绪
-```
-
-### 3. 更新
-
-装好之后**不必再人工 pull**：每次核验开始时 `scripts/update_skill.py` 会检查远端最新 tag，
-有新版就切过去（工作区有未提交改动时拒绝更新，不覆盖本地修改）；也可以手动：
-
-```bash
-python3 scripts/update_skill.py --apply        # 切到远端最新 tag，并自动跑一次自测
-python3 scripts/update_skill.py --apply --no-update   # 本次不更新
-```
-
-### 4. 离线 / 无 git 的安装方式
-
-直接拷贝整个目录到 skills 位置也能用（依赖已随 `vendor/` 打包，无网络也能跑），
-但**自动更新不可用**——`update_skill.py` 会提示"非 git 安装，请手动下载最新版"。
-
-
-### 装在哪里：权限与自动更新的取舍
-
-自动更新要写 skill 目录（工作区 + `.git`），所以**装在哪里取决于 agent 的写权限**：
-
-| 安装位置 | 自动更新 | 说明 |
-|---|---|---|
-| **项目级** `<项目>/.dsh/skills/sci-asset-verify-skill` | ✅ 可用 | 在会话工作区内，`workspace-write` 沙箱即可写 |
-| **用户级** `~/.dsh/skills/sci-asset-verify-skill` | ⚠️ 视权限 | 会话若只允许写工作区（`workspace-write`），`git checkout` 会被拒；此时脚本报 `无写权限，跳过自动更新`（**不中断核验**），需放宽权限或手动 pull |
-
-脚本的行为：更新前先探测目录可写性，不可写就**降级为提示**（退出码 0，核验继续），并给出三条路——
-放宽会话写权限、手动 `git pull`、或手动下载最新版替换目录。要强制关闭自动更新：`--no-update` 或 `ASSET_VERIFY_NO_UPDATE=1`。
-
-### 环境要求
+### 0. 系统环境要求
 
 | 项 | 要求 |
 |---|---|
@@ -73,123 +20,60 @@ python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 | git | 仅"安装/自动更新"需要；离线拷贝安装可不要 |
 | 网络 | 自动更新、`--check` 需要能访问 GitHub；核验本身不需要联网 |
 | 第三方依赖 | 无（`vendor/openpyxl`、`vendor/jsonschema` 已内嵌） |
+| Harness | Deepseek Harness / Claude Code / Codex / OpenCode / Kimi Code / Qwen Code / ZCode |
+| 附加配置 | SAGE_BASE_URL/SAGE_API_KEY，用于 Sage A1.5 兼容性测试 |
 
-## 开跑前两道门（都在主进程完成，不烧核验时间）
+#### 依赖说明
 
-**1) 版本检查**（`scripts/update_skill.py`，`verify_entry.py` 启动时自动执行）
+执行校验所必须的依赖库已随本 skill 置于 `vendor/` 目录，纯 Python 实现，MIT 许可，无需另行安装。运行时按以下顺序解析：当前环境已安装的版本、`vendor/` 内置版本、自动安装；三者均不可用时终止并输出修复命令。可在离线环境与干净容器中直接执行。
 
-不管 skill 是不是 `git clone` 装的，都会先 `git ls-remote --tags <远端>` 问最新版本：
 
-| 情况 | 行为 |
-|---|---|
-| 已是最新 | 记录 `skill-update.json`，继续 |
-| 有新版 + 能自动更新（git、干净、可写、非开发分支） | 提示可跑 `scripts/update_skill.py --apply`，本次仍按当前版本核验 |
-| **有新版 + 不能自动完成**（非 git 安装 / 无写权限 / 工作区脏 / 开发分支） | **终止**并提示「发现新版本 X（当前 Y），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试」 |
+### 1. 用 git 安装（推荐）
 
-远端地址取自 `origin`，非 git 安装时用内置登记仓库（可用 `ASSET_VERIFY_SKILL_REMOTE` 覆盖）。
-确认要用旧版继续：`--ignore-update`。
-
-**2) 预审**（`scripts/preflight.py`，`verify_entry.py` 启动时自动执行）
-
-| 层 | 检查 | 级别 |
-|---|---|---|
-| 环境 | Python ≥3.9、skill 文件完整、**至少一个可用 harness** | 阻断 |
-| 环境 | docker / harbor CLI 缺失、Sage-A1.5 未配置 | 提示 |
-| 包格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式（`sciasset://<项目编号>/<命名空间>/<类型>/<名称>`）、`asset_id` 不重复 | 阻断 |
-| 包格式 | `validate/`、`cases.json` 缺失 | 提示 |
-
-任一**阻断**项命中：不建批次、不起 agent、直接打印问题清单并退出（退出码 1=包问题 / 2=环境问题）。
-单独运行：`python3 scripts/preflight.py --package <包根> [--json-out F]`；
-核验入口同款：`python3 scripts/verify_entry.py --package <包根> --preflight`。
-确认是误报时用 `--skip-preflight` 强制继续。
-
-## 开发与部署分离
-
-本仓库有两条使用面，**不要混用**：
-
-| 位置 | 用途 | 版本要求 |
-|---|---|---|
-| `<工作区>/sci-asset-verify-skill`（本仓库） | **开发**：只在这里改代码 | 开发分支 `dev`，`VERSION` 带 `-dev` 后缀 |
-| `<工作区>/.dsh/skills/sci-asset-verify-skill` | **部署**：其他会话/其他用户实际跑的那份 | 只放**已发布 tag**（`git clone --branch <tag>`），由 `scripts/update_skill.py` 自动跟进 |
-
-流程：
-
-1. 开发只在 `dev` 分支（`git switch dev`）进行，`main` 保持与最近一次发布一致；
-2. 发版：`VERSION` 去掉 `-dev` → 合并到 `main` → 打 tag → 推送；
-3. 部署目录 `git fetch --tags && git checkout <新 tag>`（或直接跑 `scripts/update_skill.py --apply`）。
-
-`update_skill.py` 在**开发分支上会自动跳过**（输出 `开发分支，跳过自动更新`），避免把开发工作区切到发布 tag；
-只有部署目录（detached HEAD 或 main）才会真的切换版本。
-
-## 跨 harness 使用（不假设对方的 agent 框架）
-
-核验流程不依赖任何特定 harness。任何 agent（DSH / Claude Code / Codex / Cursor / 其它）都从同一条命令开始：
+Deepseek Harness：clone 到工作区的 .dsh/skills/ 或用户级 skills 目录
 
 ```bash
-python3 scripts/verify_entry.py --package <包根> --init     # 建批次目录 + 写固定执行合同
-python3 scripts/verify_entry.py --package <包根> --emit-prompt   # 只看合同，不落盘
+SKILL_DIR="<workspace-or-user-home>/.dsh/skills"
+mkdir -p $SKILL_DIR
+git clone --depth 1 https://github.com/KnowledgeXLab/sci-asset-verify-skill.git \
+    "$SKILL_DIR/sci-asset-verify-skill"
 ```
 
-`<批次>/verify-task.md` 是**由 skill 生成的固定执行合同**：包含必跑命令、判定口径（P0/P1/P2 与不校验项）、
-报告门禁与交付要求。执行者照它执行即可，结论由脚本门禁校验（`probe_package.py --evaluate`、
-`check_coverage.py`、`check_report.py`），不靠模型自觉，也不要求 harness 支持子智能体。
+其他 harness（Claude Code / Codex 等）：clone 到相应的 skills 目录即可，技能说明在 `SKILL.md`。
 
-要**隔离历史上下文**（不让之前的会话/判断影响本次结论）：
+#### 自动更新
+
+通过 clone 方式安装的 skill 支持在每次核验开始时自动检查并拉取仓库中的最新 tag（工作区有未提交改动时拒绝更新，不覆盖本地修改）。但是需要留意 agent 是否具有 skill 安装目录的写权限：
+
+| 安装位置 | 自动更新 | 说明 |
+|---|---|---|
+| **工作区** | ✅ 可用 | 在会话工作区内，`workspace-write` 沙箱即可写 |
+| **用户级** | ⚠️ 视权限 | 会话若只允许写工作区（`workspace-write`），`git checkout` 会被拒；此时脚本报 `无写权限，跳过自动更新`，需放宽权限或手动 pull |
+
+要强制关闭自动更新，可指定环境变量 `ASSET_VERIFY_NO_UPDATE=1`。要手动更新，可执行以下命令：
 
 ```bash
-python3 scripts/verify_entry.py --package <包根> --isolated        # 全新进程按合同执行
-python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只看会启动什么
+python3 scripts/update_skill.py --apply        # 切到远端最新 tag，并自动跑一次自测
+python3 scripts/update_skill.py --apply --no-update   # 本次不更新
 ```
 
-`--isolated` 复用 `scripts/harnesses/` 里的适配器（默认首选已安装的第一个，`--harness dsh|codex|claude|kimi|qwen|opencode|cursor` 可指定），
-在独立进程中执行合同，主进程只输出 `P0/P1 数量、覆盖摘要、报告与日志路径`；凭据只经环境变量注入，
-跑完清理残留凭据。支持子智能体的 harness 也可以直接把合同喂给全新子智能体——效果等价。
+### 2. 离线 / 无 git 的安装方式
 
-各 harness 的凭证与权限按注册表的 `env_map` / `argv` 声明解析（本机实测可用的写法）：
+下载并解压到 skills 位置也可使用（依赖已随 `vendor/` 打包，无网络也能跑），但**自动更新不可用**——`update_skill.py` 会提示"非 git 安装，请手动下载最新版"。
 
-| harness | 关键参数 | 凭证来源（按顺序） |
-|---|---|---|
-| `dsh` | `--profile headless --permission-mode workspace-write` | `~/.dsh/.credentials.yaml` 的 `*_API_KEY`（仅环境变量） |
-| `codex` | `exec --skip-git-repo-check -s workspace-write` | `env:OPENAI_API_KEY` → `~/.codex/auth.json` → `cred:DEEPSEEK_API_KEY` |
-| `claude` | `-p --permission-mode bypassPermissions --add-dir <skill> --add-dir <包>` | `env:ANTHROPIC_AUTH_TOKEN` → `~/.bashrc` 的 export（含 `${VAR%…}` 派生） |
-| `opencode` | `run --title <固定标题> --auto`（模型用 opencode 配置默认） | `env:OPENAI_API_KEY` → `~/.bashrc` → `~/.codex/auth.json` → dsh 凭据 |
-| `cursor` | `agent -p --force --output-format text` | 走 Cursor 自身登录态（`agent login`）或 `CURSOR_API_KEY` |
-| `kimi` | `kimi -p <prompt>`（`-p` 与 `--auto` 互斥） | 走 `~/.kimi/config.toml` 的 provider/模型 |
-| `qwen` | `qwen -p <prompt> --approval-mode yolo` | 走 `~/.qwen/settings.json` 与其登录态 |
-| `zcode` | `zcode-cli --prompt <prompt>`（`--mode` 默认 yolo） | 走 `~/.zcode` 登录态（`zcode-cli login`） |
+### 3. 验证安装
 
-优先级（`--harness auto` 按 `(priority, order)` 选，**已知不可用的不参与**）：
-
-| 优先级 | 含义 | harness |
-|---|---|---|
-| **P1** | 整包核验跑通 | `dsh` → `codex` → `claude` → `opencode` |
-| **P2** | 最小包跑通（较慢） | `kimi` → `qwen` |
-| **P3** | 可调用但不稳定 | `zcode` |
-| **P4** | 仅登记 / 未鉴权 | `cursor`（`verified=blocked`，auto 不会选它） |
-
-优先级写在每个适配器的 `priority=` 字段（`scripts/harnesses/*.py`），调一行即可改变排序；
-`python3 scripts/run_skill_agent.py --list-harnesses` 会打印 `P1/P2… + auto✓/auto✗ + 实测结论`。
-
-实测状态（2026-11-25，本机）：
-
-| harness | 状态 | 说明 |
-|---|---|---|
-| `dsh` / `codex` / `claude` | ✅ 整包核验跑通 | 都有 `P0 0 / P1 0` 报告与完整证据 |
-| `opencode` | ✅ 整包核验跑通 | 9 资产 / 38 例全通过、`P0 0 / P1 0`；三个坑已修（`--title`、`--auto`、子进程 `PWD` 同步） |
-| `kimi` | ✅ 最小包跑通 | `-p` 与 `--auto` 互斥已修；报告 `P0 0 / P1 0` |
-| `qwen` | ✅ 最小包跑通 | 报告 `P0 0 / P1 0`；速度较慢（最小包约 15 分钟/批） |
-| `zcode` | ⚠️ CLI 可调用，整包未稳定完成 | 用 `zcode-cli --prompt`（`zcode` 本体是桌面 GUI）。冒烟通过；整包两次尝试：一次跑到 12 个产物（probe/coverage/check-report/harbor）但 14 分钟未出报告，一次在 probe 后停住 → 慢且不稳定，建议 `--timeout ≥ 1800` 并观察 |
-| `cursor` | ⛔ 未鉴权 | CLI 已装（2026.11.22），缺 `CURSOR_API_KEY` 或 `agent login` |
-
-> 非交互场景下 claude 必须 `bypassPermissions` + `--add-dir`，否则所有命令都要审批；opencode 必须 `--auto`，否则非 TTY 下会等审批挂住；
-> cursor 需先 `agent login` 或设 `CURSOR_API_KEY`。内网自签网关（自定义 provider）需要 `NODE_TLS_REJECT_UNAUTHORIZED`
-> 或 `NODE_EXTRA_CA_CERTS`，skill 只继承用户已有设置、不会主动关闭校验。
+```bash
+cd "<path/to/sci-asset-verify-skill>"
+cat VERSION                                  # 打印当前版本
+python3 tests/selftest.py                    # 自测：应显示「自测结果：N/N 通过」
+python3 scripts/update_skill.py --check      # 与远端最新 tag 比对
+python3 scripts/validate_envelope.py --help  # 任一脚本能跑即说明依赖就绪
+```
 
 ## 使用方法
 
-装好之后（见上节「安装」）无需额外配置，直接让 agent 使用本 skill 即可；也可把 `SKILL.md` 路径提供给 agent，由其按其中步骤执行。
-
-执行前需明确核验对象与核验范围，例如：
+直接在 Harness 中提示 agent 使用本 skill 即可；也可把 `SKILL.md` 路径提供给 agent，由其按其中步骤执行。执行前需明确核验对象与核验范围，推荐的提示词如下：
 
 ```
 用 sci-asset-verify-skill 自查 /data/delivery/some-package-2.1.0/ 这个包，
@@ -202,7 +86,7 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 - 服务已部署，仅需补跑用例：「跳过部署，直接用 http://xxx 那个服务」
 - 上次执行中断：「接着 `asset-runs/run-20261114-105545` 那次继续」
 
-资产涉及大模型调用且需进行 Sage A1.5 兼容性验证时，应提供 `SAGE_BASE_URL`、`SAGE_MODEL`、`SAGE_API_KEY`。未提供时，agent 将暂停并向用户索取，不会跳过该环节。
+资产涉及大模型调用且需进行 Sage A1.5 兼容性验证时，应提供 `SAGE_BASE_URL`、`SAGE_API_KEY`。未提供时，agent 将暂停并向用户索取，不会跳过该环节。
 
 核验完成后，资产目录下生成 `asset-runs/run-[YYYYMMDD]-[hhmmss]/`（批次目录名固定为「日期-时分秒」，便于按时间追溯）。其中以下三项为主要交付物：
 
@@ -212,43 +96,70 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 其余文件为过程记录，供接收方复核时查阅。
 
-## 检查范围
+## 核验结论判读
 
-以下六个方面是**检查内容维度**（不是执行顺序）：它们分别落在上面流程图的「第一步 机检」「第二步 用例」「第三步 报告」里，
-每个方面对应一类不符合项。
+### 1. 检查范围
 
-阶段一为资产盘点与使用说明。核查版本、入口、依赖、输入输出是否完整可追溯，常见问题包括目录名与版本号不一致、入口脚本缺失、依赖未声明。
+包含六个**检查内容维度**：
 
-阶段二为资产登记。按对外清单 23 列填写，表头、枚举、必填项、版本格式、一资产一行、用例引用可解析性均由脚本校验。使用内部字段口径、枚举值不在词表内、两行名称与版本重复等情况将直接报错。
+1. 资产盘点与使用说明：核查版本、入口、依赖、输入输出是否完整可追溯，常见问题包括目录名与版本号不一致、入口脚本缺失、依赖未声明；
+2. 资产登记：按对外清单 23 列填写，表头、枚举、必填项、版本格式、一资产一行、用例引用可解析性均由脚本校验。枚举值不在词表内、两行名称与版本重复等情况将直接报错；
+3. 部署核验：存在 MCP 时完成注册并执行一次最小业务调用；存在模型时完成加载并执行一次推理。仅提供配置文件而服务不可用的情况不予通过；
+4. 用例执行：使用资产包给定的用例逐条执行，记录输入、实际输出、退出码与耗时。用例缺失、期望值缺失、预期失败用例未按约定报错，均予以记录；
+5. 比对与报告：逐项比对期望值，并按各类资产的用例数量下限核对覆盖度。通过率未注明分母、覆盖度不足却宣称完成的，将在报告中明确指出；
+6. Sage A1.5 兼容性测试（仅针对涉及大模型调用的资产）：切换后端执行后单独成节，不影响交付结论。
 
-阶段三为部署核验。存在 MCP 时完成注册并执行一次最小业务调用；存在模型时完成加载并执行一次推理。仅提供配置文件而服务不可用的情况不予通过。
+### 2. 结论判读
 
-阶段四为用例执行。使用资产包给定的用例逐条执行，记录输入、实际输出、退出码与耗时。用例缺失、期望值缺失、预期失败用例未按约定报错，均予以记录。
+**唯一验收来源是批次目录里的 `validation-report.md`**；登记表、清单、聊天记录里的说法都不构成验收结论，
+只能转述该报告与 `comparison.json` 的内容。
 
-阶段五为比对与报告。逐项比对期望值，并按各类资产的用例数量下限核对覆盖度。通过率未注明分母、覆盖度不足却宣称完成的，将在报告中明确指出。
+#### 先看结论
 
-阶段六为 Sage A1.5 附加测试，仅针对涉及大模型调用的资产。切换后端执行后单独成节，不影响交付结论。
+报告第 1 节只给三种之一：
 
-中间产物可选清理：需要瘦身时跑 `scripts/prune_evidence.py --run <批次目录>`，只保留报告类证据；
-默认不自动删除，便于复核时翻执行日志。
+| 结论 | 含义 |
+|---|---|
+| **通过** | 所有给定用例执行且与 expected output 一致，无未判定项 |
+| **不通过** | 存在 P0，或给定用例与 expected output 不一致 |
+| **未判定** | 缺 expected output / 阈值 / 用例无法执行，**不等于通过** |
 
-## 结论判读
+同时核对三件事：**通过率的分母**（planned/executed/passed 分别是多少）、**覆盖表**（任何类型的用例数低于下限，
+报告必须写「覆盖不足」，不得宣称闭环完成）、**未执行项**（`blocked`/`skipped`/`not_evaluated` 必须逐条写明原因）。
 
-用例状态分为四种：通过、失败、未判定、不适用。
+#### 再看问题分级
 
-未判定指缺少期望值或判定阈值，仅给出差值而不给出结论。不适用分两种情形：资产包内本不存在该类资产，属合规跳过；或本 skill 无对应验收步骤，属能力缺口，报告中标注「未覆盖」，交付前应与接收方确认处理方式。
+问题清单固定三级，每条都带**编号**、**归属**（哪个资产目录，或「包级」）、证据与整改要求：
 
-判定遵循以下规则：
+| 级别 | 含义 | 处置 |
+|---|---|---|
+| **P0 阻断** | 不可计为有效交付 | 必须修完重交：包结构/包络不合规、声明的实体缺失或摘要不符、无可用验证入口或用例结论不通过、包内出现凭据/明文密钥、需要 Sage 却未跑通、harbor 任务包缺必需文件或 oracle/nop 不达标 |
+| **P1 重要** | 规范强制要求不符，影响复现或验收 | 建议整改后重交：文档引用指向不存在的文件、版本口径不一致、声明与实体不符、文档事实/算术错误、验证说明与用例不一致、覆盖不足 |
+| **P2 建议** | 可改进，不构成违规 | 由交付方自行取舍，不影响结论 |
 
-- 每个资产在清单中仅占一行，用例不额外占用资产行
-- 通过率注明分母，例如「27/27」；未执行项单独列出，不计入分母
-- 某类资产用例数低于下限时，报告标注「覆盖不足」
-- 资产包内缺失的描述文件不由本 skill 补写
-- Sage 附加测试结果仅说明后端切换后的可用性，不计入交付结论
+要点：
 
-## 依赖说明
+- **P0/P1 只能来自 `probe-report.json` 的 `check_id`**，判定级别写死在 `assets/audit-checks.json` 里，执行者不得升降级；
+  P2 不限制来源，清单外的观察也写进 P2
+- **P0 只认资产自带用例/门槛的结论**；核验方补建的用例即使发现问题，最高只算 P1
+- 有些情况**明确不判**（写了反而是噪音）：`governance` 取值、包根一级文件内容、`spec.asset_protocol` 字段、
+  `lifecycle=draft`、资产内部实现风格、示例包里的占位编号/单位等，详见 [references/validation.md](references/validation.md)
 
-资产清单生成依赖 openpyxl，已随本 skill 置于 `vendor/` 目录，纯 Python 实现，MIT 许可，无需另行安装。运行时按以下顺序解析：当前环境已安装的版本、`vendor/` 内置版本、自动安装；三者均不可用时终止并输出修复命令。可在离线环境与干净容器中直接执行。如需固定依赖行为，可设置 `ACI_ASSET_VERIFY_AUTO_INSTALL=0`。
+#### 资产可交付标准
+
+| 判定 | 条件 |
+|---|---|
+| **可交付** | `P0 = 0`，且覆盖度达标（各类用例数不低于 `assets/case-minimums.json` 下限），且没有未说明的未执行项 |
+| **不可交付** | 出现任一 P0，或用例与 expected output 不一致，或覆盖不足却宣称完成 |
+| **附条件交付** | `P0 = 0` 但存在 P1：按 P1 清单整改后重交；P2 仅作建议 |
+
+Sage A1.5 兼容性测试是**附加项**，单独成节，不计入上述交付判定；但需要 Sage 却因配置缺失未跑通时，
+按 `P0-SAGE` 阻断交付（不允许以「未测」结案）。
+
+#### 可复现性
+
+同一份包 + 同一版 skill + 同一用途（`--intent`）⇒ 同一结论。报告的 front matter 记录了 `skill_version`/`skill_commit`，
+`probe-report.json` 记录了 `probe_fingerprint`：**指纹相同而结论不同，说明执行偏离，不是资产变了**，应重跑而不是改判。
 
 ## 执行流程
 
@@ -257,12 +168,12 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 **实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
 
-### ① 主流程（主进程）
+### 1. 主流程（主进程）
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
 flowchart LR
-    A["入口<br/>verify_entry.py"] --> B["门1 版本检查<br/>update_skill.py"] --> C["门2 预审<br/>preflight.py"] --> D["执行核验<br/>verify_entry.py --isolated"] --> E["摘要 + 归档<br/>脚本 / 人工"]
+    A["入口<br/>verify_entry.py"] --> B["版本检查<br/>update_skill.py"] --> C["快速预审<br/>preflight.py"] --> D["执行核验<br/>verify_entry.py --isolated"] --> E["摘要 + 归档<br/>脚本 / 人工"]
 
     classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
     classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
@@ -272,62 +183,83 @@ flowchart LR
     class E human;
 ```
 
-`D` 就是下面三步的入口：它拉起独立进程，把固定合同交给 agent 执行。
+1. 版本检查（`scripts/update_skill.py`）
+    | 情况 | 行为 |
+    |---|---|
+    | 已是最新 | 记录 `skill-update.json`，继续 |
+    | 有新版 + 能自动更新（git、干净、可写、非开发分支） | 提示可跑 `scripts/update_skill.py --apply`，本次仍按当前版本核验 |
+    | **有新版 + 不能自动完成**（非 git 安装 / 无写权限 / 工作区脏 / 开发分支） | **终止**并提示「发现新版本 X（当前 Y），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试」 |
+2. 快速预审（`scripts/preflight.py`）
+    | 层 | 检查 | 级别 |
+    |---|---|---|
+    | 环境 | Python ≥3.9、skill 文件完整、**至少一个可用 harness** | 阻断 |
+    | 环境 | docker / harbor CLI 缺失、Sage-A1.5 未配置 | 提示 |
+    | 格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式（`sciasset://<项目编号>/<命名空间>/<类型>/<名称>`）、`asset_id` 不重复 | 阻断 |
+    | 格式 | `validate/`、`cases.json` 缺失 | 提示 |
 
-### ② 执行核验展开（子进程按固定合同执行）
+    若命中任一**阻断**项，则跳过后续核验流程，直接打印问题清单并退出（退出码 1=包问题 / 2=环境问题）。
+3. 执行核验：拉起独立进程，把固定合同交给 agent 执行（见下节）。
 
-**第一步 机检 + 判定内核**（脚本）
+### 2. 执行核验展开（子进程按固定合同执行）
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-flowchart LR
-    D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
+1. 机检 + 判定内核（脚本）
+    ```mermaid
+    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+    flowchart LR
+        D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
 
-    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-    class D0,S1,K script;
-```
+        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+        class D0,S1,K script;
+    ```
+2. 跑用例（AI 调度 + 脚本）
+    ```mermaid
+    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+    flowchart LR
+        S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"]
 
-**第二步 用例**（AI 调度 + 脚本）
+        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+        classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+        class S2 ai;
+        class S2b script;
+    ```
+3. 报告与复核（AI 写报告 + 脚本复核，不通过就回写）
+    ```mermaid
+    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+    flowchart LR
+        S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
+        G -- 否 --> S3
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-flowchart LR
-    S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"]
+        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+        classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+        class S3 ai;
+        class S3b,G,OUT script;
+    ```
 
-    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
-    class S2 ai;
-    class S2b script;
-```
-
-**第三步 报告与门禁**（AI 写报告 + 脚本门禁，不通过就回写）
-
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-flowchart LR
-    S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
-    G -- 否 --> S3
-
-    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
-    class S3 ai;
-    class S3b,G,OUT script;
-```
-
+### 3. 各步骤的关联执行体
 | 步骤 | 执行体 | 脚本 / 说明 |
 |---|---|---|
-| 门1 版本检查 | 脚本 | `update_skill.py`（`git ls-remote --tags`，有新版且不能自动更新则终止） |
-| 门2 预审 | 脚本 | `preflight.py`（环境 + 包格式，内部调 `validate_envelope.py`） |
+| 版本检查 | 脚本 | `update_skill.py`（`git ls-remote --tags`，有新版且不能自动更新则终止） |
+| 快速预审 | 脚本 | `preflight.py`（环境 + 包格式，内部调 `validate_envelope.py`） |
 | 执行核验 | 脚本起进程 | `verify_entry.py --isolated` + `harnesses/*.py`（适配器）+ `run_skill_agent.py`（DSH_HOME 隔离与清理） |
-| 第一步 机检 | 脚本 ×3 | `probe_package.py`、`validate_envelope.py`、`check_selfcontained.py` |
-| 判定内核 | 脚本 | `probe_package.py --evaluate`（P0/P1 全部由它给出，AI 不得升降级） |
-| 第二步 用例 | **AI** + 资产脚本 | AI 逐条调资产自带 `validate/validate.py`、算 expected/actual 偏差并汇总 `cases.json` / `comparison.json` |
-| 第二步 harbor / Sage | 脚本 | `harbor_run.py`、`sage_probe.py detect/probe` |
-| 第三步 写报告 | **AI** | 无脚本；结论必须能对回 `probe-report.json` 的 `check_id` |
-| 第三步 门禁 | 脚本 ×2 | `check_coverage.py`（用例下限）、`check_report.py`（分级/归属/竖线/跨批次措辞） |
+| -- 机检 | 脚本 ×3 | `probe_package.py`、`validate_envelope.py`、`check_selfcontained.py` |
+| -- 判定内核 | 脚本 | `probe_package.py --evaluate`（P0/P1 全部由它给出，AI 不得升降级） |
+| -- 跑用例 | **AI** + 资产脚本 | AI 逐条调资产自带 `validate/validate.py`、算 expected/actual 偏差并汇总 `cases.json` / `comparison.json` |
+| -- harbor / Sage | 脚本 | `harbor_run.py`、`sage_probe.py detect/probe` |
+| -- 写报告 | **AI** | 无脚本；结论必须能对回 `probe-report.json` 的 `check_id` |
+| -- 复核 | 脚本 ×2 | `check_coverage.py`（用例下限）、`check_report.py`（分级/归属/竖线/跨批次措辞） |
 | 摘要 / 归档 | 脚本 + 人工 | `verify_entry.py` 输出摘要；批次留 `asset-runs/run-<ts>/` 供复核 |
 
 每一步的真实输出都落在批次目录里，报告只引用本批次落盘事实，不引用历史会话或既有 `asset-runs/` 结论。
+
+## Harness 支持
+
+目前已实现以下 harness 的支持，默认优先级如下：
+
+`dsh` → `codex` → `claude` → `opencode` → `kimi` → `qwen` → `zcode` → `cursor`
+
+核验入口默认按优先级自动检测和调起宿主机上已经安装的 harness，使用该 harness 的默认端点和模型配置执行核验流程。也可以通过参数 `--harness <harness>` 指定要调用的 harness。
+
+优先级写在每个适配器的 `priority=` 字段（`scripts/harnesses/*.py`），调一行即可改变排序。
 
 ## 测试与验证环境
 
@@ -360,7 +292,7 @@ references/        登记字段口径与示例、比较规则与报告格式、�
 scripts/           二十个自检脚本（另有 4 个内部模块）
 assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
 tests/selftest.py  脚本自测套件
-vendor/            随包分发的 openpyxl
+vendor/            随包分发的依赖库
 ```
 
 ## 版本记录
@@ -559,6 +491,14 @@ vendor/            随包分发的 openpyxl
 
 ## 维护
 
-Knowledge Frontier Team，上海人工智能实验室。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
+本仓库分开发（dev）和部署（main）两条分支，不可混用：
+
+| 分支 | 用途 | 版本要求 |
+|-----|-----|---------|
+| dev | 开发：只在这里改代码 | VERSION 带 -dev 后缀 |
+| main | 部署：用户实际跑的那份 |	只放已发布 tag（git clone --branch <tag>），由 scripts/update_skill.py 自动跟进 |
 
 脚本变更后应先执行 `python tests/selftest.py`，80 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+
+---
+上海人工智能实验室领域 - 知识集成团队。仓库：`KnowledgeXLab/sci-asset-verify-skill`。

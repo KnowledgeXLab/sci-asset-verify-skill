@@ -59,8 +59,8 @@ python3 scripts/sage_probe.py detect {package} --json-out {run}/sage-need.json
 python3 scripts/sage_probe.py config --probe --json-out {run}/sage-config.json
 ```
 
-  配置缺失 → **先向用户索取**（`SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`，API URL 与 KEY 在端砚平台获取，
-  只放环境变量）；用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
+  配置缺失 → **先向用户索取**（`SAGE_BASE_URL`/`SAGE_API_KEY`，API URL 与 KEY 在端砚平台获取，
+  只放环境变量；**模型名固定为 Sage-A1.5，不需要用户提供**）；用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
 
 ## 第三步：写报告并过门禁
 

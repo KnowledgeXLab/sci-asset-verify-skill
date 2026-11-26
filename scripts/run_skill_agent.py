@@ -11,7 +11,7 @@ harness 选定顺序
 2. 建议的没装，就按预设顺序挑一个**已安装**的，并在证据里注明"建议 X、实际用 Y"；
 3. 一个都没装 → 报错，并提示用 `--harness-cmd` 就地固化本地命令（用户环境千变万化，预设只是加速）；
 4. **provider 用 harness 自己配置的默认值**，本脚本不覆盖；
-5. Sage 测试**沿用同一 harness**，只换后端：从 `SAGE_BASE_URL`/`SAGE_MODEL`/`SAGE_API_KEY`（含 `SAGE_LLM_*` 别名）读取，
+5. Sage 测试**沿用同一 harness**，只换后端：从 `SAGE_BASE_URL`/`SAGE_API_KEY`（含 `SAGE_LLM_*` 别名）读取，模型固定 `Sage-A1.5`，
    按预设声明的方式注入（env 或配置补丁）；预设声明不支持时明确失败，不偷偷用默认后端。
 
 用法：
@@ -42,8 +42,9 @@ except Exception:  # noqa: BLE001
         return payload
 
 SPEC = 'validate/readme.md'
+# Sage 模型名由平台固定（Sage-A1.5），不通过环境变量配置
+SAGE_MODEL = 'Sage-A1.5'
 SAGE_ENV = {'base_url': ['SAGE_BASE_URL', 'SAGE_LLM_BASE_URL'],
-            'model': ['SAGE_MODEL', 'SAGE_LLM_MODEL'],
             'api_key': ['SAGE_API_KEY', 'SAGE_LLM_API_KEY']}
 DSH_HOME_AUTO = 'auto'
 
@@ -291,7 +292,8 @@ def load_registry() -> dict:
 
 
 def sage_env() -> dict:
-    out = {}
+    """Sage 后端配置：只有 base_url 与 api_key；模型名固定 SAGE_MODEL。"""
+    out = {'model': SAGE_MODEL}
     for key, names in SAGE_ENV.items():
         for n in names:
             if os.environ.get(n):
@@ -398,7 +400,7 @@ def main(argv=None) -> int:
     ap.add_argument('--harness-cmd', help='自定义命令模板（用 {prompt} 占位），用于预设之外的 harness')
     ap.add_argument('--backend', choices=['harness', 'sage'], default='harness',
                     help='harness=用 harness 自己的默认 provider；sage=同一 harness 换 Sage 后端（SAGE_* 环境变量）')
-    ap.add_argument('--model', help='覆盖模型（默认：harness 自行决定；Sage 时取 SAGE_MODEL）')
+    ap.add_argument('--model', help='覆盖模型（默认：harness 自行决定；Sage 时固定 Sage-A1.5）')
     ap.add_argument('--timeout', type=int, default=900)
     ap.add_argument('--json-out')
     ap.add_argument('--dry-run', action='store_true')
@@ -457,7 +459,7 @@ def main(argv=None) -> int:
             and not _matches(harness['preset'], harness['name'], harness['hint'])):
         substituted = f"readme 建议 {harness['hint']}；本机没有可用的，改用已安装的 {harness['preset'].get('display')}"
 
-    model = args.model or (sage.get('model', '') if args.backend == 'sage' else '')
+    model = args.model or (SAGE_MODEL if args.backend == 'sage' else '')
     provider = 'sage-env' if args.backend == 'sage' else 'harness-default'
     if args.backend == 'sage' and harness['name'] != 'custom':
         sage_mech = (harness['preset'].get('sage') or {}).get('kind')
@@ -466,7 +468,7 @@ def main(argv=None) -> int:
                   '请换一个支持 env 注入的 harness 或用 --harness-cmd 指定。', file=sys.stderr)
             return 2
         if not sage.get('base_url') or not sage.get('model'):
-            print('Sage 测试需要 SAGE_BASE_URL 与 SAGE_MODEL（或 SAGE_LLM_* 别名）环境变量；'
+            print('Sage 测试需要 SAGE_BASE_URL（或 SAGE_LLM_BASE_URL）环境变量；模型名固定 Sage-A1.5；'
                   'README 声明的是同一 harness 换后端，缺配置时不做降级。', file=sys.stderr)
             return 2
 
