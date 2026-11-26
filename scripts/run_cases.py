@@ -14,6 +14,15 @@
       [--artifacts <run>/artifacts]
   python scripts/run_cases.py --package <资产根目录> --run-dir <run> --jobs 1 --only grid-samples
 
+调用契约（每个资产自己声明，避免脚本瞎猜命令行）：
+  <资产>/validate/run.json  可选，例如
+    {"runner": "validate/validate.py",
+     "args": ["--case", "{case}", "--artifact", "{artifact}"]}
+  占位符：{case} 用例 id、{artifact} 产物目录、{asset} 资产目录、{work} 每 case 临时工作目录、
+          {package} 执行根（副本根，需要跨资产取兄弟资产时用）。
+  没写 run.json 时默认 `validate/validate.py --case <id> --artifact <产物目录>`。
+  单个用例还可用 `cases.json` 里的 `"args": [...]` 覆盖（例如"预期错误"用例需要隔离环境时）。
+
 产物：
   <run>/cases-<资产目录>.json      分片（每 case：rc/stdout 尾部/是否通过/证据路径）
   <run>/cases.json                 合并结果（按 asset + case_id 排序）
@@ -60,13 +69,22 @@ def discover(package: Path, only: list[str] | None = None) -> list[dict]:
         if not isinstance(cases, list) or not cases:
             continue
         meta = load(d / 'asset.json')
+        # 调用契约：资产可在 validate/run.json 里声明自己的 argv（占位符 {case} {artifact} {asset}）
+        contract = load(vdir / 'run.json') if (vdir := d / 'validate') else {}
+        runner_rel = str(contract.get('runner') or 'validate/validate.py')
+        runner = d / runner_rel
         out.append({'dir': d, 'name': d.name, 'runner': runner if runner.is_file() else None,
                     'cases': cases, 'asset_id': meta.get('asset_id') or '',
-                    'asset_type': meta.get('asset_type') or ''})
+                    'asset_type': meta.get('asset_type') or '',
+                    # 注意：显式写 "args": [] 表示"这个 runner 自己跑全部用例"，不能当缺省处理
+                    'args': list(contract['args']) if 'args' in contract
+                            else ['--case', '{case}', '--artifact', '{artifact}'],
+                    'contract': bool(contract)})
     return out
 
 
-def run_one(asset: dict, run_dir: Path, timeout: int, artifacts: Path | None = None) -> dict:
+def run_one(asset: dict, run_dir: Path, timeout: int, artifacts: Path | None = None,
+            package: Path | None = None) -> dict:
     logs = run_dir / 'case-runs' / asset['name']
     logs.mkdir(parents=True, exist_ok=True)
     results = []
@@ -74,12 +92,22 @@ def run_one(asset: dict, run_dir: Path, timeout: int, artifacts: Path | None = N
         cid = str(case.get('id') or case.get('case_id') or '?')
         log = logs / f"{cid}.log"
         if asset['runner'] is None:
-            results.append({'case_id': cid, 'asset': asset['name'], 'status': 'not_evaluated',
-                            'rc': None, 'reason': 'no_runner', 'log': str(log.relative_to(run_dir))})
+            results.append({'case_id': cid, 'asset': asset['name'], 'status': 'blocked',
+                            'rc': None, 'reason': 'no_runner',
+                            'detail': '该资产没有 validate/validate.py，无法执行用例（不是"未判定"，是缺入口）',
+                            'log': str(log.relative_to(run_dir))})
             continue
         # 产物目录优先用 <artifacts>/<资产目录>（第二步跑出来的实际输出），否则退回资产目录本身
         art_dir = (artifacts / asset['name']) if (artifacts and (artifacts / asset['name']).is_dir()) else asset['dir']
-        cmd = [sys.executable, str(asset['runner']), '--case', cid, '--artifact', str(art_dir)]
+        work_dir = logs / f"{cid}.work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        # 用例级可覆盖 argv（典型场景：预期错误用例需要"缺依赖"的隔离环境）
+        args_tpl = case.get('args') if isinstance(case.get('args'), list) else asset['args']
+        argv = [t.replace('{case}', cid).replace('{artifact}', str(art_dir))
+                 .replace('{asset}', str(asset['dir'])).replace('{work}', str(work_dir))
+                 .replace('{package}', str(package or asset['dir']))
+                for t in args_tpl]
+        cmd = [sys.executable, str(asset['runner']), *argv]
         t0 = time.time()
         try:
             p = subprocess.run(cmd, cwd=str(asset['dir']), capture_output=True, text=True, timeout=timeout)
@@ -106,7 +134,8 @@ def run_one(asset: dict, run_dir: Path, timeout: int, artifacts: Path | None = N
 def merge(run_dir: Path, shards: list[dict]) -> dict:
     rows = [c for s in shards for c in s['cases']]
     rows.sort(key=lambda c: (c.get('asset') or '', c.get('case_id') or ''))
-    counts = {k: sum(1 for r in rows if r['status'] == k) for k in ('pass', 'fail', 'not_evaluated')}
+    counts = {k: sum(1 for r in rows if r['status'] == k)
+              for k in ('pass', 'fail', 'blocked', 'not_evaluated')}
     merged = {'tool': 'run_cases.py', 'cases': rows,
               'assets': [{'asset': s['asset'], 'asset_id': s['asset_id'], 'asset_type': s['asset_type'],
                           'runner': s['runner'], 'cases': len(s['cases'])} for s in
@@ -146,7 +175,7 @@ def main(argv=None) -> int:
     shards = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         art_root = Path(args.artifacts).expanduser().resolve() if args.artifacts else None
-        futures = {pool.submit(run_one, a, run_dir, args.timeout, art_root): a for a in assets}
+        futures = {pool.submit(run_one, a, run_dir, args.timeout, art_root, package): a for a in assets}
         for fut in as_completed(futures):
             shard = fut.result()
             shards.append(shard)
@@ -156,10 +185,10 @@ def main(argv=None) -> int:
     merged = merge(run_dir, shards)
     tot = merged['totals']
     print(f"合并：planned {tot['planned']} / pass {tot['pass']} / fail {tot['fail']} / "
-          f"not_evaluated {tot['not_evaluated']} → {run_dir / 'cases.json'}")
+          f"blocked {tot.get('blocked', 0)} / not_evaluated {tot['not_evaluated']} → {run_dir / 'cases.json'}")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
-    return 0 if tot['fail'] == 0 else 1
+    return 0 if tot['fail'] == 0 and tot.get('blocked', 0) == 0 else 1
 
 
 if __name__ == '__main__':

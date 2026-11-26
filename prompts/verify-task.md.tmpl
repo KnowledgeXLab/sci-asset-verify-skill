@@ -54,7 +54,13 @@ python3 scripts/run_cases.py --package {exec_root} --run-dir {run} \
     --artifacts {run}/artifacts --jobs 4        # 建议 4，上限 8
 ```
 
-它对每个带 `validate/cases.json` 的资产调用其 `validate/validate.py --case <id> --artifact <产物目录>`，
+它对每个带 `validate/cases.json` 的资产按其**自声明的调用契约**执行：优先读 `<资产>/validate/run.json`
+（`{"runner": "...", "args": ["--case","{case}","--artifact","{artifact}"]}`，占位符支持 `{case}` `{artifact}`
+`{asset}` `{work}` `{package}`），单个用例还可用 `cases.json` 里的 `"args": [...]` 覆盖
+（典型用途：预期错误用例需要"缺依赖"的隔离环境）；两者都没有时按
+`validate/validate.py --case <id> --artifact <产物目录>` 默认调用。资产没有 runner 时记 `blocked/no_runner`，不静默当作未判定。
+
+
 **每资产写一个分片 `cases-<资产>.json`，最后按 (asset, case_id) 排序合并成 `cases.json`**——
 并发也要保证同一包两次运行逐字节一致。用例较多时可分批：`--only <资产目录>`。
 
