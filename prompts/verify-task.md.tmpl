@@ -3,8 +3,9 @@
 你用 `sci-asset-verify-skill` 核验下面这个包。本文件是**由 skill 生成的执行合同**，
 任何 harness（DSH / Claude Code / Codex / Cursor / 其它）都按同一份合同执行。
 
-- 资产包：`{package}`
+- 资产包（原包）：`{package}`
 - 核验批次目录：`{run}`
+- 执行根目录：`{exec_root}`（{exec_mode}）
 - skill 版本：{skill_version}（提交 {skill_commit}）
 - 交付用途：`{intent}`
 
@@ -12,84 +13,132 @@
 
 本次核验必须在**没有历史上下文的环境**里执行：
 
-- 优先：新会话 / 独立进程（`scripts/run_skill_agent.py` 用的就是独立进程 + headless profile）；
+- 优先：新会话 / 独立进程（`scripts/run_skill_agent.py` 用的是独立进程 + headless profile）；
   支持子智能体的 harness 用**全新子智能体**（spawn），不要用继承父会话的 fork 形式；
 - 不得把此前对其它资产包、其它版本的判断、印象、结论带进本次判定；
-- 判定**只以本批次落盘的机检事实为准**：`probe-report.json`、`envelope-report.json`、
-  `selfcontained-report.json`、`cases.json`、`harbor-run-report.json`、`sage-config.json`；
-- 报告里不得出现"上次判过""与上一批相比""我记得/此前认为"这类跨会话、跨批次的依据
-  （`check_report.py` 会告警）。
+- 判定**只以本批次落盘的机检事实为准**（`probe-report.json` 等），报告里不得出现"上次判过""与上一批相比"这类依据。
 
-如果执行环境已经带了历史上下文（例如在同一会话里已经聊过这个包），
-**先把事实与判定重跑成落盘 JSON，再只依据这些 JSON 写结论**，不要用记忆补写任何一条 P0/P1。
+## 阶段一：初始化（主进程已完成，无需重跑）
 
-## 第零步：预审已完成（无需重跑）
+主进程已在启动本任务前完成下列动作，产物都在 `{run}/`：
 
-主进程已在启动本任务前完成环境与包格式预审，结果见同目录 `preflight-report.json`
-（含 harness 候选、Sage 配置状态、资产清单、阻断/提示项）。预审不通过时本任务不会启动。
+| 动作 | 产物 |
+|---|---|
+| 版本检查 | `skill-update.json` |
+| 静态预审（原包）：结构/包络/实体完整性/凭据/自包含/文档引用 | `preflight-report.json`、`probe-static.json` |
+| 建工作副本 | `work-copy.json`（副本路径见 `work_copy` 字段，本次执行根目录 `{exec_root}`） |
+| 外部资产：引用校验 + 按 `external_assets.json` 挂载 | `external-refs.json`、`external-mounts.json` |
+| 副本二次静态审查（挂载后重申） | `probe-static.json`（覆盖表见 `verdict`） |
+| 盘点台账 | `inventory.json` |
+| 分阶段状态机 | `state.json`（每阶段 completed/failed/blocked/not_applicable，跑完继续更新） |
 
-## 第一步（不可跳过）
+**执行范围**：所有会运行包内代码或写中间文件的动作都在 `{exec_root}` 里做；**原包只允许写 `{run}`**，
+不得改动原包的其它文件（收尾会用 `manifest-before.json` 复核）。
+
+## 阶段二：逐资产校验
+
+### 2.1 先写使用说明
+
+读 `inventory.json`、`probe-static.json` 与各资产 readme，写 `{run}/usage.md`：
+每个资产的用途与适用边界、输入/输出字段及单位、运行环境、实际入口与示例命令（区分本地路径/服务端路径/下载 URL）。
+
+### 2.2 逐资产产出被测产物
+
+按资产自带 `validate/readme.md` 的说明运行资产入口，把产物写到 `{run}/artifacts/<资产目录>/`。
+跑不动的资产（缺依赖/缺 GPU/缺服务）不要跳过：写清阻塞原因并更新 `state.json`。
+
+### 2.3 用例执行（可并发，最多 8 路）
 
 ```bash
 cd {skill_dir}
-python3 scripts/probe_package.py --package {package} --run-dir {run} --evaluate --intent {intent} \
-    --json-out {run}/probe-report.json
-python3 scripts/validate_envelope.py {package} --json-out {run}/envelope-report.json
-python3 scripts/check_selfcontained.py --package {package} --json-out {run}/selfcontained-report.json
+python3 scripts/run_cases.py --package {exec_root} --run-dir {run} \
+    --artifacts {run}/artifacts --jobs 4        # 建议 4，上限 8
 ```
 
-`probe-report.json` 的 `verdict.findings` 就是 P0/P1 结论；覆盖表里的 `na` 必须带理由。
+它对每个带 `validate/cases.json` 的资产调用其 `validate/validate.py --case <id> --artifact <产物目录>`，
+**每资产写一个分片 `cases-<资产>.json`，最后按 (asset, case_id) 排序合并成 `cases.json`**——
+并发也要保证同一包两次运行逐字节一致。用例较多时可分批：`--only <资产目录>`。
 
-> **注意执行顺序**：本步只产**静态事实**。`P0-SAGE`、`P0-HARB-RUN`、`P1-HARB-LINT` 要看第二步的运行产物
-> （`sage-need.json` / `sage-a1.5-report.json` / `harbor-run-report.json`），此时必然记 `na`。
-> **第二步跑完后必须重跑一次**（覆盖同一个文件），三项才会变成真实结论——见第三步开头的命令。
+**不要用本脚本并发跑下面两件事**（会互相踩端口/限流）：harbor 与 Sage 必须串行。
 
-## 第二步：跑资产自带用例
-
-- 有 `validate/cases.json` 的资产：逐条跑该资产的 `validate/validate.py`，记录 rc 与关键输出；
-  把逐案结果汇总成 `{run}/cases.json`、`{run}/comparison.json`（结构见 references/validation.md）。
-- harbor 任务（含 `task.toml`）：
+### 2.4 Harbor 任务包（串行）
 
 ```bash
-python3 scripts/harbor_run.py --package {package} --run-dir {run}
+python3 scripts/harbor_run.py --package {exec_root} --run-dir {run}
 ```
 
-  期望 oracle `reward=1`、nop `reward=0`；跑不了记 blocked 并写明原因，不得当作通过。
+期望 oracle `reward=1`、nop `reward=0`；跑不了记 blocked 并写明原因（缺 docker/harbor CLI），不得当作通过。
 
-- 需要 Sage 附加测试时：
+### 2.5 Sage A1.5 附加测试（串行）
 
 ```bash
-python3 scripts/sage_probe.py detect {package} --json-out {run}/sage-need.json
+python3 scripts/sage_probe.py detect {exec_root} --json-out {run}/sage-need.json
 python3 scripts/sage_probe.py config --probe --json-out {run}/sage-config.json
 ```
 
-  配置缺失 → **先向用户索取**（`SAGE_BASE_URL`/`SAGE_API_KEY`，API URL 与 KEY 在端砚平台获取，
-  只放环境变量；**模型名固定为 Sage-A1.5，不需要用户提供**）；用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
+模型名固定 **Sage-A1.5**，只需 `SAGE_BASE_URL` 与 `SAGE_API_KEY`（只放环境变量）。配置缺失 → **先向用户索取**；
+用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
 
-## 第三步：写报告并过门禁
+### 2.6 部署核验（model / environment 类资产，串行）
 
-**先重跑判定（必须）**——这一步把第二步的运行产物纳入判定，覆盖第一步那份静态报告：
+- 有 MCP：注册到目标客户端，执行 `initialize` + `tools/list`，核对工具名与 schema，再做一次最小业务调用；
+  仅生成配置/进程能起/HTTP 200 都不算注册成功；
+- 有模型：核对权重与预处理/词表/架构版本，加载权重并做一次推理，记录实际权重 hash、设备、依赖版本与响应；
+- 结果写 `{run}/deployment/<资产目录>.json`（脱敏），并把 `state.json` 的 `deployment` 阶段置 completed/blocked；
+- 包内确实没有该类型资产 → `not_applicable_no_such_asset`；有该类型但本 skill 无对应验收步骤 → `not_supported_by_skill`（不得用 not_applicable 掩盖）。
+
+## 阶段三：汇总复核
+
+### 3.1 重跑判定（必须，纳入运行期事实）
 
 ```bash
-cd {skill_dir}
-python3 scripts/probe_package.py --package {package} --run-dir {run} --evaluate --intent {intent} \
+python3 scripts/probe_package.py --package {exec_root} --run-dir {run} --evaluate --intent {intent} \
     --json-out {run}/probe-report.json
 ```
 
-重跑后确认：`P0-SAGE` / `P0-HARB-RUN` / `P1-HARB-LINT` 不再是因为「还没跑」而 `na`；
-若仍为 `na`，`na_reason` 必须写明是"本包不适用"还是"环境不具备（缺 docker/harbor）"。
+`verdict.findings` 就是 P0/P1 结论。确认 `P0-SAGE` / `P0-HARB-RUN` / `P1-HARB-LINT` 不再因为"还没跑"而 `na`；
+若仍 `na`，理由必须写明是「本包不适用」还是「环境不具备（缺 docker/harbor）」。
+阶段一那份 `probe-static.json` 只是预审留痕，**不能替代这份**。
 
-产出 `{run}/validation-report.md`（模板见 references/validation.md），然后：
+### 3.2 覆盖度门禁
 
 ```bash
-python3 scripts/check_coverage.py --cases {run}/cases.json \
+python3 scripts/check_coverage.py --cases {run}/cases.json --inventory {run}/inventory.json \
     --run-dir {run} --report {run}/validation-report.md
-python3 scripts/check_report.py --report {run}/validation-report.md
 ```
 
-（`--inventory` 可选：若已有 `{run}/inventory.json` 就一并传入，用于按包内实际资产类型核对覆盖度。）
+### 3.3 写报告
 
-两条都必须通过（error 0）。
+按 `references/validation.md` 的模板写 `{run}/validation-report.md`（结论 / 对比对象 / 结果对比表 / 问题清单 / 覆盖度 / 未执行项）。
+报告只能引用本批次落盘事实，问题清单每条必须写**归属**。
+
+### 3.4 登记填表（对外清单 23 列）
+
+```bash
+python3 scripts/asset_ids.py --package {exec_root} --rows {run}/registration/rows.json --inject
+python3 scripts/external_refs.py --package {exec_root} --rows {run}/registration/rows.json --inject
+python3 scripts/build_list.py --rows {run}/registration/rows.json \
+    --out {run}/registration/科学数字资产清单.xlsx --package {exec_root}
+python3 scripts/check_list.py {run}/registration/科学数字资产清单.xlsx
+```
+
+资产ID 由包络生成、不带版本号；「资产关联」列只放 `external_assets.json` 声明的 `asset_id`（去 `sciasset://` 前缀）。
+
+### 3.5 报告门禁与收尾
+
+```bash
+python3 scripts/check_report.py --report {run}/validation-report.md
+python3 scripts/prune_evidence.py --run {run}            # 裁剪可重建的大体积中间产物
+python3 scripts/stamp_report.py --run {run}              # 报告 front matter + 证据 JSON 版本戳
+```
+
+两条门禁都必须 error 0。收尾（仅在真建了副本时）：把 `state.json` 各阶段置终态，然后
+
+```bash
+python3 scripts/work_copy.py clean {package} --run-id {run_name} --verify
+```
+
+`clean --verify` 会删副本并用 `manifest-before.json` 复核**原包未被改动**；报出差异就必须在报告里说明原因。
 
 ## 判定口径（不得自行升降级）
 

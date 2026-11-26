@@ -22,7 +22,14 @@ import json
 import re
 import sys
 from collections import Counter
+from pathlib import PurePosixPath
 from pathlib import Path
+
+try:
+    from _layout import is_mounted_external as _is_mounted
+except Exception:                        # noqa: BLE001
+    def _is_mounted(d):
+        return (d / '.mounted-external.json').is_file()
 
 try:
     from _layout import package_asset_dirs
@@ -291,6 +298,23 @@ def probe_envelope(root: Path) -> dict:
     return {'errors': errs, 'summary': data.get('summary') or {}, 'rc': proc.returncode}
 
 
+def _declared_targets(d: Path) -> set[str]:
+    """资产 external_assets.json 里声明的 target_path（规范化成 POSIX 相对路径）。"""
+    f = d / 'external_assets.json'
+    if not f.is_file():
+        return set()
+    try:
+        doc = json.loads(f.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        return set()
+    out = set()
+    for a in doc.get('assets') or []:
+        tp = str((a or {}).get('target_path') or '').strip()
+        if tp:
+            out.add(PurePosixPath(tp).as_posix().rstrip('/'))
+    return out
+
+
 def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
     """声明引用包外路径（../、绝对、file://）与指向包外的软链。"""
     outside, links = [], []
@@ -314,8 +338,15 @@ def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
                 tgt = p.resolve()
             except Exception:  # noqa: BLE001
                 continue
-            if d.resolve() not in tgt.parents and tgt != d.resolve():
-                links.append(f'{d.name}:{p.relative_to(d)}')
+            if d.resolve() in tgt.parents or tgt == d.resolve():
+                continue
+            # 挂载进来的外部资产（external_assets.json 解析后由 mount_external 软链）是合规的
+            if _is_mounted(tgt):
+                continue
+            # 该软链若正是本资产 external_assets.json 里声明的 target_path，也属合规引用
+            if PurePosixPath(str(p.relative_to(d))).as_posix().rstrip('/') in _declared_targets(d):
+                continue
+            links.append(f'{d.name}:{p.relative_to(d)}')
     return {'outside_refs': sorted(outside), 'escaping_symlinks': sorted(links)}
 
 
@@ -553,7 +584,10 @@ def probe_harbor_run(run_dir: Path) -> dict:
             'lint_note': lint.get('note')}
 
 
-def checks_of(root: Path, run_dir: Path | None = None) -> dict:
+RUNTIME_CHECKS = ('P0-SAGE', 'P0-HARB-RUN', 'P1-HARB-LINT')
+
+
+def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
     for d in assets:
@@ -581,8 +615,9 @@ def checks_of(root: Path, run_dir: Path | None = None) -> dict:
         'verify_entry_profile': probe_verify_entry(assets),
         'secret_profile': probe_secrets(root, assets),
         'harbor_profile': harbor_prof,
-        'harbor_run_profile': probe_harbor_run(run_dir) if run_dir else {},
-        'sage_profile': probe_sage(run_dir) if run_dir else {},
+        'harbor_run_profile': ({} if static_only else (probe_harbor_run(run_dir) if run_dir else {})),
+        'sage_profile': ({} if static_only else (probe_sage(run_dir) if run_dir else {})),
+        'static_only': static_only,
     }
 
 
@@ -772,10 +807,13 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
                           '没有资产提供 cases.json，无口径可比'),
         'P1-DOC-FACT': (False, '事实/算术类错误需人工判读，机器不自动判'),
     }
+    static_only = bool(checks.get('static_only'))
     coverage = []
     for c in spec['checks']:
         if c['id'] in failed:
             status, reason = 'fail', ''
+        elif static_only and c['id'] in RUNTIME_CHECKS:
+            status, reason = 'deferred', '运行期检查：第二步跑完后带 --run-dir 重跑判定'
         elif c['id'] in na_rules and not na_rules[c['id']][0]:
             status, reason = 'na', na_rules[c['id']][1]
         elif not (checks.get('package_summary') or {}).get('asset_count'):
@@ -785,7 +823,8 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
         coverage.append({'check_id': c['id'], 'level': c.get('level'), 'status': status, 'na_reason': reason})
 
     return {'intent': intent, 'findings': findings, 'notes': notes, 'coverage': coverage,
-            'coverage_summary': {k: sum(1 for c in coverage if c['status'] == k) for k in ('pass', 'fail', 'na')},
+            'coverage_summary': {k: sum(1 for c in coverage if c['status'] == k)
+                                 for k in ('pass', 'fail', 'na', 'deferred')},
             'summary': {'P0': sum(1 for f in findings if f['level'] == 'P0'),
                         'P1': sum(1 for f in findings if f['level'] == 'P1')},
             'note': 'P0/P1 只来自本清单；P2 是建议，可由执行者自由补充（含清单外观察）'}
@@ -802,6 +841,8 @@ def main(argv=None) -> int:
     ap.add_argument('--print-hash', action='store_true', help='只打印事实指纹（用于验证可复现性）')
     ap.add_argument('--evaluate', action='store_true', help='按 assets/audit-checks.json 输出固定严重度的结论')
     ap.add_argument('--run-dir', help='本次核验的 run 目录：从中读 sage-need/sage-config/sage 报告，判 P0-SAGE')
+    ap.add_argument('--static-only', action='store_true',
+                    help='只做静态审查（跳过依赖 run 产物的 P0-SAGE/P0-HARB-RUN/P1-HARB-LINT，覆盖表记 deferred）')
     ap.add_argument('--intent', choices=['delivery', 'review'], default='delivery',
                     help='交付用途：delivery=对外交付（默认）/ review=内部评审')
     args = ap.parse_args(argv)
@@ -814,7 +855,7 @@ def main(argv=None) -> int:
     if run_dir is not None and not run_dir.is_dir():
         print(f'run 目录不存在：{run_dir}', file=sys.stderr)
         return 2
-    checks = checks_of(root, run_dir)
+    checks = checks_of(root, run_dir, static_only=args.static_only)
     fp = fingerprint(checks)
     if args.print_hash:
         print(fp)
@@ -831,7 +872,8 @@ def main(argv=None) -> int:
         for f in v['findings']:
             print(f"  [{f['level']}] {f['check_id']} {f['name']}")
         cs = v.get('coverage_summary') or {}
-        print(f"  覆盖：pass {cs.get('pass', 0)} / fail {cs.get('fail', 0)} / na {cs.get('na', 0)}"
+        extra = f" / deferred {cs.get('deferred', 0)}（运行期检查，第二步后重跑）" if cs.get('deferred') else ''
+        print(f"  覆盖：pass {cs.get('pass', 0)} / fail {cs.get('fail', 0)} / na {cs.get('na', 0)}{extra}"
               '（na 表示该检查项对本包不适用，理由写进 probe-report.json 的 coverage）')
     if args.json_out:
         p = Path(args.json_out)

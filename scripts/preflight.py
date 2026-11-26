@@ -153,8 +153,56 @@ def check_package(pkg: Path) -> dict:
     if not subdirs:
         _add(blockers, "error", "P0-STRUCT", "资产包里没有任何资产目录", str(pkg))
 
+    # probe 静态判定（跳过需 run 产物的三项）：把 P0 级 findings 直接转成阻断项
+    probe = SKILL_DIR / "scripts" / "probe_package.py"
+    if probe.is_file() and subdirs:
+        try:
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "preflight-probe.json"
+                p = subprocess.run([sys.executable, str(probe), "--package", str(pkg), "--evaluate",
+                                    "--static-only", "--json-out", str(out)],
+                                   capture_output=True, text=True, timeout=180)
+                doc = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+                verdict = doc.get("verdict") or {}
+                # 只有「包不可读/不可解析」类才阻断；其余静态 P0 是**判定结论**，留给报告，
+                # 预审阶段强行拦掉会让交付方拿不到一份写清问题的报告。
+                BLOCKING = {"P0-STRUCT", "P0-ENVELOPE"}
+                for f in verdict.get("findings") or []:
+                    cid = str(f.get("check_id") or "P0-UNKNOWN")
+                    owners = ", ".join(f.get("assets") or []) or "包级"
+                    detail = json.dumps(f.get("detail") or {}, ensure_ascii=False)[:180]
+                    if cid in BLOCKING:
+                        _add(blockers, "error", cid, f"{f.get('name') or ''}：{detail}", owners)
+                    else:
+                        _add(warnings, "warn", f"PREFLIGHT-{cid}",
+                             f"静态预判 {cid}（{owners}）：{detail} —— 不阻断，需在报告问题清单中体现")
+                cov = verdict.get("coverage_summary") or {}
+                if cov:
+                    report_stats = {"pass": cov.get("pass"), "fail": cov.get("fail"),
+                                    "na": cov.get("na"), "deferred": cov.get("deferred")}
+                    if True:
+                        _add(warnings, "info", "PREFLIGHT-PROBE",
+                             f"静态判定覆盖：pass {cov.get('pass')} / fail {cov.get('fail')} / "
+                             f"na {cov.get('na')} / deferred {cov.get('deferred')}（运行期三项）")
+        except Exception as exc:                               # noqa: BLE001
+            _add(warnings, "warn", "PREFLIGHT-PROBE", f"静态判定执行失败（跳过）：{exc}")
+
+    # 自包含（越界引用）：静态可查，越界即 P0-COMPLETE 风险
+    sc = SKILL_DIR / "scripts" / "check_selfcontained.py"
+    if sc.is_file() and subdirs and not any(b["code"] == "P0-COMPLETE" for b in blockers):
+        try:
+            p = subprocess.run([sys.executable, str(sc), "--package", str(pkg)],
+                               capture_output=True, text=True, timeout=180)
+            if p.returncode == 1:
+                tail = [l.strip() for l in (p.stdout or "").splitlines() if l.strip()][-6:]
+                _add(blockers, "error", "P0-COMPLETE",
+                     "自包含校验未通过（越界引用）：" + ("；".join(tail) or "见 check_selfcontained 输出"))
+        except Exception as exc:                               # noqa: BLE001
+            _add(warnings, "warn", "PREFLIGHT-SELF", f"自包含校验执行失败（跳过）：{exc}")
+
     val = SKILL_DIR / "scripts" / "validate_envelope.py"
-    if val.is_file() and subdirs:
+    if val.is_file() and subdirs and not any(b["code"] == "P0-ENVELOPE" for b in blockers):
         try:
             p = subprocess.run([sys.executable, str(val), str(pkg)], capture_output=True, text=True, timeout=120)
             if p.returncode != 0:

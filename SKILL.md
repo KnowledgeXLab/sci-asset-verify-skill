@@ -90,7 +90,28 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 2. **报告必须附覆盖表**：`probe-report.json` 的 `coverage` 列出每条检查的 `pass / fail / na`，`na` 必须带理由 —— 漏检要显式可见。
 3. **报告记 `probe_fingerprint` 与 skill 版本**；指纹相同而结论不同 = 执行偏离，不是资产变了。
 
-### 第零步：开跑前两道门（主进程，秒级）
+### 阶段一：初始化（主进程，秒级；失败不启动 agent）
+
+版本检查 → 静态预审（原包：结构/包络/实体/凭据/自包含/文档引用，`probe_package --static-only`）
+→ 建批次 + `state.json` 状态机 → 建副本（`work_copy.py init`）→ 外部资产校验与挂载
+（`external_refs.py`、`mount_external.py`）→ 副本二次静态审查 → 盘点台账（`build_inventory.py`）。
+
+静态审查出的 P0 分两类：`P0-STRUCT`/`P0-ENVELOPE`（包不可读）**阻断**；其余（`P0-COMPLETE`/`P0-VERIFY`/`P0-SECRET`）
+**记录并进报告**，避免交付方拿不到一份写清问题的报告。
+
+### 阶段二：逐资产校验（可并发 ≤8）
+
+写 `usage.md` → 逐资产产出被测产物到 `<run>/artifacts/<资产>/` → `run_cases.py`（用例并发、分片、按 case_id 排序合并）
+→ harbor 串行 → Sage 串行（模型固定 Sage-A1.5）→ 部署核验（model/environment，写 `deployment/*.json`）。
+每步结果更新 `state.json`。
+
+### 阶段三：汇总复核
+
+重跑判定（`probe_package --run-dir --evaluate`，纳入运行期事实）→ 覆盖度门禁 → 写报告
+→ 登记填表（`asset_ids` / `external_refs` / `build_list` / `check_list`）→ 报告门禁
+→ `prune_evidence` → `stamp_report` → `work_copy clean --verify`（复核原包未被改动）。
+
+### 旧版说明：开跑前两道门
 
 1. **版本检查**：`update_skill.py` 查远端 tag。有新版但装法/权限不支持自动更新 → 直接终止，
    要求「手动更新 skill 后重试」（`--ignore-update` 可强行继续）。

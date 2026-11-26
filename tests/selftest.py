@@ -2085,6 +2085,53 @@ def t20_verify_entry(tmp: Path) -> None:
     record("负例：报告写通过但 Sage/harbor 判定没跑完 → check_report 告警",
            "needs_detect" in out_cr and "harbor_run.py 尚未执行" in out_cr, f"rc={proc_cr.returncode}")
 
+    # 阶段一：副本 + 外部资产挂载 + 台账 + 状态机
+    s1pkg = tmp / "t20-stage1"
+    (s1pkg / "a1" / "validate").mkdir(parents=True)
+    (s1pkg / "a1" / "payload").mkdir(parents=True)
+    _body = "id,value\n1,2\n"
+    (s1pkg / "a1" / "payload" / "d.csv").write_text(_body, encoding="utf-8")
+    _s = __import__("hashlib").sha256(_body.encode()).hexdigest()
+    (s1pkg / "a1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD000009/ns/data/a1",
+        "asset_type": "data", "name": "a1", "description": "d", "asset_version": "1.0.0",
+        "lifecycle": "validated", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]},
+                 "artifacts": [{"id": "d", "artifact_type": "file", "uri": "payload/d.csv",
+                                "media_type": "text/csv", "role": "primary-data",
+                                "sha256": _s, "size_bytes": len(_body.encode())}],
+                 "domain_attributes": {}, "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    (s1pkg / "a1" / "validate" / "validate.py").write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+    (s1pkg / "a1" / "validate" / "cases.json").write_text(
+        json.dumps({"cases": [{"id": "C01"}]}), encoding="utf-8")
+    proc_s1 = run([str(SCRIPTS / "verify_entry.py"), "--package", str(s1pkg), "--init",
+                   "--ignore-update"], tmp, env_extra={"ASSET_WORK_ROOT": str(tmp / "work")})
+    _runs = sorted(s1pkg.glob("asset-runs/run-*"))
+    _run = _runs[-1] if _runs else None
+    _state = json.loads((_run / "state.json").read_text(encoding="utf-8")) if _run and (_run / "state.json").is_file() else {}
+    record("正例：阶段一建副本 + 台账 + 分阶段状态机（原包只写 asset-runs/）",
+           proc_s1.returncode == 0 and _run is not None
+           and (_run / "inventory.json").is_file() and (_run / "work-copy.json").is_file()
+           and _state.get("exec_mode") == "copy"
+           and _state.get("stages", {}).get("work_copy", {}).get("status") == "completed"
+           and not any(p.is_file() for p in s1pkg.glob("*.csv")),
+           f"rc={proc_s1.returncode} exec_mode={_state.get('exec_mode')}")
+
+    # 用例并发：分片 + 按 case_id 排序合并
+    proc_rc = run([str(SCRIPTS / "run_cases.py"), "--package", str(s1pkg),
+                   "--run-dir", str(_run), "--jobs", "2"], tmp) if _run else None
+    _cases = json.loads((_run / "cases.json").read_text(encoding="utf-8")) if _run and (_run / "cases.json").is_file() else {}
+    _shards = sorted(_run.glob("cases-a1.json")) if _run else []
+    record("正例：run_cases 并发跑用例并写分片 + 合并 cases.json（按 asset+case_id 排序）",
+           proc_rc is not None and proc_rc.returncode == 0 and bool(_shards)
+           and [c["case_id"] for c in _cases.get("cases", [])] == ["C01"],
+           f"rc={getattr(proc_rc, 'returncode', 'n/a')}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)

@@ -67,6 +67,14 @@ def asset_dirs_under(base: Path, max_depth: int):
             yield child.parent.resolve()
 
 
+def _subdirs(path: Path) -> list[Path]:
+    """列一级子目录，跳过无权限/消失的目录（包可能在 /tmp 这类共享目录下）。"""
+    try:
+        return sorted(p for p in path.iterdir() if p.is_dir())
+    except (OSError, PermissionError):
+        return []
+
+
 def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=(), into=None):
     """按优先级产出候选目录（去重保序；挂载目标自身与 .asset-work 一律排除）。"""
     seen = set()
@@ -95,7 +103,7 @@ def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=
         d = emit(root)
         if d:
             yield d
-        for sub in sorted(p for p in root.resolve().iterdir() if p.is_dir()) if root.is_dir() else []:
+        for sub in (_subdirs(root.resolve()) if root.is_dir() else []):
             if SKIP_PARTS & set(sub.name.split('/')):
                 continue
             d = emit(sub)
@@ -112,10 +120,10 @@ def candidate_dirs(package: Path, search_roots, asset_dir: Path | None, exclude=
 
     parent = package.resolve().parent
     if parent.is_dir():
-        for level1 in sorted(p for p in parent.iterdir() if p.is_dir()):
+        for level1 in _subdirs(parent):
             if level1.resolve() == package.resolve():
                 continue
-            for level2 in sorted(p for p in level1.iterdir() if p.is_dir()):
+            for level2 in _subdirs(level1):
                 got = emit(level2)
                 if got:
                     yield got
@@ -169,7 +177,7 @@ def discover(copy_root: Path):
 def asset_index(copy_root: Path) -> dict:
     """副本根下「资产目录 → (asset_id, asset_version)」，用于先在同包内匹配。"""
     idx = {}
-    for a in sorted(copy_root.iterdir()):
+    for a in _subdirs(copy_root):
         if not a.is_dir() or a.name in SKIP_PARTS:
             continue
         aj = a / 'asset.json'

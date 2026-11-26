@@ -68,20 +68,135 @@ def next_run_dir(package: Path, at: str | None = None) -> Path:
         when = when.fromtimestamp(when.timestamp() + 1)
 
 
-def render(package: Path, run: Path, intent: str) -> str:
+def render(package: Path, run: Path, intent: str, copy: str = "", mode: str = "copy") -> str:
     tpl = TEMPLATE.read_text(encoding="utf-8")
     meta = skill_meta()
     values = {
         "package": str(package),
         "run": str(run),
+        "run_name": run.name,
         "intent": intent,
         "skill_dir": str(SKILL_DIR),
+        "copy": copy or str(package),
+        "exec_root": copy or str(package),
+        "exec_mode": ("copy（副本内执行，原包只写 asset-runs/）" if copy else "inplace（原地执行）"),
+        "work_root": str((Path(copy).parent if copy else package.parent)),
         **meta,
     }
     out = tpl
     for k, v in values.items():
         out = out.replace("{" + k + "}", v)
     return out
+
+
+STAGES = ("version_check", "static_review_origin", "work_copy", "external_mount",
+          "static_review_copy", "inventory_usage", "cases", "harbor", "sage", "deployment",
+          "verdict_rerun", "report_gates", "registration", "prune_stamp", "cleanup")
+
+
+def _run_script(name: str, args: list[str], timeout: int = 600) -> tuple[int, str]:
+    proc = subprocess.run([sys.executable, str(SKILL_DIR / "scripts" / name), *args],
+                          capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def stage1_prepare(package: Path, run: Path, do_copy: bool = True) -> dict:
+    """阶段一收尾：建副本 → 外部资产校验/挂载 → 副本二次静态审查 → 盘点台账。
+
+    返回 {copy, mount, review, inventory}；任何一步失败都在这里暴露，
+    由调用方决定是终止（副本/挂载失败不可回退）还是继续（台账失败只提示）。
+    """
+    info: dict = {"copy": "", "errors": [], "notes": []}
+
+    if do_copy:
+        rc, out = _run_script("work_copy.py", ["init", str(package), "--run-id", run.name, "--manifest"])
+        state_f = run / "work-copy.json"
+        if rc != 0 or not state_f.is_file():
+            info["errors"].append(f"建副本失败（rc={rc}）：{out.strip()[-300:]}")
+            return info
+        try:
+            copy = json.loads(state_f.read_text(encoding="utf-8")).get("work_copy") or ""
+        except Exception:                                     # noqa: BLE001
+            copy = ""
+        info["copy"] = copy
+        info["notes"].append(f"副本：{copy or '(未记录)'}")
+    else:
+        info["notes"].append("按 --no-copy 原地执行，未建副本")
+
+    exec_root = Path(info["copy"]) if info["copy"] else package
+
+    # 外部资产：先校验引用，再按声明挂载（挂到副本里，不动原包）
+    rc, out = _run_script("external_refs.py", ["--package", str(exec_root), "--check",
+                                               "--json-out", str(run / "external-refs.json")])
+    info["external_refs_rc"] = rc
+    if rc == 1:
+        info["errors"].append(f"external_assets.json 校验未通过：{out.strip()[-300:]}")
+    if info["copy"]:
+        rc, out = _run_script("mount_external.py", ["--copy-root", str(exec_root),
+                                                    "--origin-package", str(package),
+                                                    "--json-out", str(run / "external-mounts.json")])
+        info["mount_rc"] = rc
+        if rc != 0:
+            info["errors"].append(f"外部资产挂载失败（rc={rc}）：{out.strip()[-300:]}")
+        else:
+            info["notes"].append("外部资产已按 external_assets.json 挂载到副本")
+
+    # 副本二次静态审查：挂载会改变结构，必须重查
+    rc, out = _run_script("probe_package.py", ["--package", str(exec_root), "--evaluate",
+                                               "--static-only", "--json-out", str(run / "probe-static.json")])
+    info["static_review_rc"] = rc
+    if rc not in (0,):
+        info["errors"].append(f"副本静态审查失败（rc={rc}）：{out.strip()[-300:]}")
+    else:
+        try:
+            v = json.loads((run / "probe-static.json").read_text(encoding="utf-8")).get("verdict") or {}
+            info["static_summary"] = v.get("summary")
+            p0 = [f for f in (v.get("findings") or []) if str(f.get("level")) == "P0"]
+            if p0:
+                # 静态审查出的 P0 是**判定结论**，写进报告而不是终止流程；
+                # 否则交付方拿不到一份写清问题的报告，只能反复退回。
+                info["static_p0"] = [f.get("check_id") for f in p0]
+                info["notes"].append(
+                    "副本静态审查预判 P0：" + "、".join(info["static_p0"]) + "（已记录，须在报告问题清单中体现）")
+        except Exception:                                     # noqa: BLE001
+            pass
+
+    # 盘点台账（check_coverage 的 --inventory 依赖它）
+    rc, out = _run_script("build_inventory.py", ["--probe-report", str(run / "probe-static.json"),
+                                                 "--package", str(exec_root),
+                                                 "--out", str(run / "inventory.json")])
+    info["inventory_rc"] = rc
+    if rc != 0:
+        info["notes"].append(f"盘点台账生成失败（rc={rc}）：{out.strip()[-200:]}")
+    else:
+        info["notes"].append(out.strip().splitlines()[-1] if out.strip() else "盘点台账已生成")
+    return info
+
+
+def write_state(run: Path, package: Path, intent: str, stage1: dict | None) -> dict:
+    """state.json：分阶段状态机（pending / running / completed / failed / blocked / not_applicable）。"""
+    state = {"tool": "verify_entry.py",
+             "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+             "package": str(package), "run": run.name, "intent": intent,
+             "contract": "verify-task.md",
+             "exec_mode": ("copy" if (stage1 or {}).get("copy") else "inplace"),
+             "work_copy": (stage1 or {}).get("copy") or "",
+             "stages": {name: {"status": "pending"} for name in STAGES},
+             **skill_meta()}
+    if stage1:
+        state["stages"]["version_check"]["status"] = "completed"
+        state["stages"]["static_review_origin"]["status"] = "completed"
+        state["stages"]["work_copy"] = {"status": ("completed" if stage1.get("copy") else "not_applicable"),
+                                        "path": stage1.get("copy") or ""}
+        state["stages"]["external_mount"] = {"status": ("completed" if stage1.get("mount_rc") == 0
+                                                        else ("not_applicable" if not stage1.get("copy")
+                                                              else "failed"))}
+        state["stages"]["static_review_copy"] = {"status": ("completed" if stage1.get("static_review_rc") == 0
+                                                            else "failed"),
+                                                 "summary": stage1.get("static_summary")}
+        state["stages"]["inventory_usage"] = {"status": ("completed" if stage1.get("inventory_rc") == 0
+                                                         else "failed")}
+    return state
 
 
 def update_gate() -> tuple[dict | None, int]:
@@ -291,6 +406,8 @@ def main(argv=None) -> int:
                     help="跳过启动前的远端版本检查/提示（不建议：新版本可能已修掉你要跑的问题）")
     ap.add_argument("--preflight", action="store_true",
                     help="只做环境与包格式预审（不建批次、不跑核验）")
+    ap.add_argument("--no-copy", action="store_true",
+                    help="不建副本，直接在原包里执行（默认建副本：原包只写 asset-runs/）")
     ap.add_argument("--skip-preflight", action="store_true",
                     help="跳过预审（仅在明确知道预审误报时使用）")
     ap.add_argument("--json-out")
@@ -334,6 +451,19 @@ def main(argv=None) -> int:
         return 0
 
     run.mkdir(parents=True, exist_ok=True)
+    stage1 = stage1_prepare(package, run, do_copy=not a.no_copy) if not a.emit_prompt else None
+    if stage1 and stage1.get("errors"):
+        print("[阶段一] 未通过，已终止（未启动 agent）：", file=sys.stderr)
+        for e in stage1["errors"]:
+            print(f"  - {e}", file=sys.stderr)
+        (run / "state.json").write_text(json.dumps(write_state(run, package, a.intent, stage1),
+                                                   ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print("修复后重试；确认误报可加 --no-copy 或 --skip-preflight。", file=sys.stderr)
+        return 1
+    if stage1:
+        for n in stage1.get("notes") or []:
+            print(f"[阶段一] {n}")
+    text = render(package, run, a.intent, copy=stage1.get("copy", "") if stage1 else "")
     (run / "verify-task.md").write_text(text + "\n", encoding="utf-8")
     if update_info is not None:
         (run / "skill-update.json").write_text(
@@ -346,10 +476,9 @@ def main(argv=None) -> int:
     if a.isolated:
         return isolated_exec(package, run, run / "verify-task.md", a.harness,
                              a.timeout, a.dsh_home, a.dry_run)
-    state = {"tool": "verify_entry.py", "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-             "package": str(package), "run": run.name, "intent": a.intent,
-             "contract": "verify-task.md", "stages": [], **skill_meta()}
-    (run / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (run / "state.json").write_text(
+        json.dumps(write_state(run, package, a.intent, stage1), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
     print(f"批次目录：{run}")
     print(f"执行合同：{run / 'verify-task.md'}")
     if a.json_out:
