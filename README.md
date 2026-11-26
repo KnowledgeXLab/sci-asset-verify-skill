@@ -252,45 +252,70 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 ## 执行流程
 
-上下两块：**上面是主流程**（主进程，秒级），**下面是「执行核验」的展开**（子进程，按固定合同执行）；
-每块内部自左向右排。**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行；橙色＝人工。**
+分两块看：**先看主流程**（主进程，秒级；不通过就直接终止，不烧核验时间），
+**再看「执行核验」的展开**（子进程按固定合同执行，分三步）。
+
+> 为什么拆成几张图：不同渲染器（GitHub / 各 IDE 预览 / 浏览器插件）对 mermaid 的
+> `subgraph direction` 支持不一致，写在子图里的横竖方向常被忽略。这里每张图都是独立的
+> `flowchart LR`，任何渲染器里都是横排，版式稳定。
+
+**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
+
+### ① 主流程（主进程）
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-flowchart TD
-    subgraph MAIN["① 主流程 · 主进程（秒级）"]
-        direction LR
-        A["入口<br/>verify_entry.py"] --> B["门1 版本检查<br/>update_skill.py"] --> C["门2 预审<br/>preflight.py"] --> D["执行核验<br/>verify_entry.py --isolated"] --> E["摘要 + 归档<br/>脚本 / 人工"]
-    end
+flowchart LR
+    A["入口<br/>verify_entry.py"] --> B["门1 版本检查<br/>update_skill.py"] --> C["门2 预审<br/>preflight.py"] --> D["执行核验<br/>verify_entry.py --isolated"] --> E["摘要 + 归档<br/>脚本 / 人工"]
 
-    subgraph DETAIL["② 执行核验展开 · 子进程按固定合同执行"]
-        direction TB
-        subgraph R1["第一步 机检 + 判定内核"]
-            direction LR
-            D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
-        end
-        subgraph R2["第二步 用例"]
-            direction LR
-            S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases / comparison"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"]
-        end
-        subgraph R3["第三步 报告与门禁"]
-            direction LR
-            S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
-            G -- 否 --> S3
-        end
-        R1 --> R2 --> R3
-    end
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
+    classDef focus fill:#e8f1ff,stroke:#3569a8,stroke-width:2px;
+    class A,B,C script;
+    class D focus;
+    class E human;
+```
 
-    D -. 展开 .-> D0
+`D` 就是下面三步的入口：它拉起独立进程，把固定合同交给 agent 执行。
+
+### ② 执行核验展开（子进程按固定合同执行）
+
+**第一步 机检 + 判定内核**（脚本）
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+flowchart LR
+    D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
+
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    class D0,S1,K script;
+```
+
+**第二步 用例**（AI 调度 + 脚本）
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+flowchart LR
+    S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"] --> S2b["harbor_run.py<br/>sage_probe.py detect / config"]
 
     classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
     classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
-    classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
-    classDef focus fill:#e8f1ff,stroke:#3569a8,stroke-width:2px;
-    class A,B,C,D0,S1,K,S2b,S3b,G,OUT script;
-    class D focus;
-    class S2,S3 ai;
-    class E human;
+    class S2 ai;
+    class S2b script;
+```
+
+**第三步 报告与门禁**（AI 写报告 + 脚本门禁，不通过就回写）
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+flowchart LR
+    S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
+    G -- 否 --> S3
+
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+    class S3 ai;
+    class S3b,G,OUT script;
 ```
 
 | 步骤 | 执行体 | 脚本 / 说明 |
