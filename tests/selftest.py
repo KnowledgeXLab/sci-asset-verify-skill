@@ -2167,6 +2167,29 @@ def t20_verify_entry(tmp: Path) -> None:
            proc_cc3.returncode == 1 and "COPY-FILE-MISSING" in proc_cc3.stdout,
            f"rc={proc_cc3.returncode}")
 
+    # 绝对路径软链：即使指向包内也应在原包预审就暴露（搬迁后会失效/指到旧位置）
+    absl = tmp / "t20-abslink"
+    (absl / "a1" / "payload").mkdir(parents=True)
+    (absl / "a1" / "payload" / "d.csv").write_text("x\n", encoding="utf-8")
+    (absl / "a1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD000010/ns/data/a1",
+        "asset_type": "data", "name": "a1", "description": "d", "asset_version": "1.0.0",
+        "lifecycle": "validated", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]}, "artifacts": [], "domain_attributes": {},
+                 "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    os.symlink(str(absl / "a1" / "payload" / "d.csv"), absl / "a1" / "payload" / "link.csv")
+    run([str(SCRIPTS / "probe_package.py"), "--package", str(absl), "--evaluate", "--static-only",
+         "--json-out", str(absl / "p.json")], tmp)
+    _pa = json.loads((absl / "p.json").read_text(encoding="utf-8"))
+    _abs = (_pa["checks"].get("outside_refs_profile") or {}).get("absolute_symlinks") or []
+    record("正例：原包预审能发现绝对路径软链（指向包内也算违规，搬迁即失效）",
+           bool(_abs) and any("link.csv" in x for x in _abs), f"absolute_symlinks={_abs[:2]}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)

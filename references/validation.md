@@ -260,3 +260,19 @@ harbor 任务包（含 `task.toml` / `dataset.toml`）不套用通用用例协�
 * **comparison.json**：每任务一行 `oracle_reward` / `nop_reward` / 判定 / 耗时 / 镜像 digest；reward 只从 job 输出解析
 * **覆盖度**：按 `case-minimums.json` 的 task 行（每任务含 nop 负例，`negative_expected=1` 天然满足）；低于「任务全数执行」即写「覆盖不足」
 * **Sage 不适用**：oracle/nop 是确定性伪 agent，不依赖模型；verifier 内部用 LLM 打分只在 P2 提示 reward 可能非确定
+
+## 绝对路径与软链（P0-COMPLETE）
+
+资产包会被搬迁（下载、解压、入库、容器内挂载），所以**任何绝对路径都是隐患**：
+
+- `spec.artifacts[].uri` 写成绝对路径 → 直接判 `P0-COMPLETE`（`outside_refs`）；
+- 包内脚本/文档里出现 `/home/...`、`C:\...`、`~/...` 形式的路径 → 同样计入越界引用；
+- **软链**分三种情况：
+  1. 解析后越出资产目录 → `escaping_symlinks`（P0-COMPLETE）；
+  2. 用**绝对路径**做链接目标（即使此刻指向包内自己的文件）→ `absolute_symlinks`（P0-COMPLETE）——
+     包一搬走就失效或指到旧位置，属于隐性 bug；
+  3. 唯一合法形态：相对路径软链，或按 `external_assets.json` 声明的 `target_path`
+     （核验期由 `mount_external.py` 挂载、带 `.mounted-external.json` 标记）。
+
+副本阶段还会用 `scripts/check_copy.py` 复核一遍：软链必须解析到**副本内部**，否则"在副本里跑"
+实际会读写原包（隔离失效，`COPY-SYMLINK-ESCAPE`）。

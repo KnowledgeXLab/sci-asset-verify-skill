@@ -21,6 +21,7 @@ import hashlib
 import json
 import re
 import sys
+import os
 from collections import Counter
 from pathlib import PurePosixPath
 from pathlib import Path
@@ -317,7 +318,7 @@ def _declared_targets(d: Path) -> set[str]:
 
 def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
     """声明引用包外路径（../、绝对、file://）与指向包外的软链。"""
-    outside, links = [], []
+    outside, links, absolute = [], [], []
     for d in assets:
         base = d.resolve()
         for i, a in enumerate((metas[d.name].get('spec') or {}).get('artifacts') or []):
@@ -338,16 +339,25 @@ def probe_outside_refs(root: Path, assets: list, metas: dict) -> dict:
                 tgt = p.resolve()
             except Exception:  # noqa: BLE001
                 continue
-            if d.resolve() in tgt.parents or tgt == d.resolve():
-                continue
             # 挂载进来的外部资产（external_assets.json 解析后由 mount_external 软链）是合规的
             if _is_mounted(tgt):
                 continue
             # 该软链若正是本资产 external_assets.json 里声明的 target_path，也属合规引用
             if PurePosixPath(str(p.relative_to(d))).as_posix().rstrip('/') in _declared_targets(d):
                 continue
+            # 绝对路径软链：即使现在指向包内，资产包一旦搬迁就失效或指到旧位置（规范禁止绝对路径）
+            try:
+                raw = os.readlink(p)
+            except OSError:
+                raw = ''
+            if raw.startswith('/'):
+                absolute.append(f'{d.name}:{p.relative_to(d)} -> {raw}')
+                continue
+            if d.resolve() in tgt.parents or tgt == d.resolve():
+                continue
             links.append(f'{d.name}:{p.relative_to(d)}')
-    return {'outside_refs': sorted(outside), 'escaping_symlinks': sorted(links)}
+    return {'outside_refs': sorted(outside), 'escaping_symlinks': sorted(links),
+            'absolute_symlinks': sorted(absolute)}
 
 
 def probe_doc_refs(root: Path, assets: list) -> dict:
@@ -682,6 +692,8 @@ def evaluate(checks: dict, intent: str = 'delivery') -> dict:
         complete_detail['outside_refs'] = out_refs['outside_refs']
     if out_refs.get('escaping_symlinks'):
         complete_detail['escaping_symlinks'] = out_refs['escaping_symlinks']
+    if out_refs.get('absolute_symlinks'):
+        complete_detail['absolute_symlinks'] = out_refs['absolute_symlinks']
     if complete_detail:
         add('P0-COMPLETE', complete_detail)
 
