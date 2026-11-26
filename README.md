@@ -214,7 +214,8 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 ## 检查范围
 
-核验按六个阶段执行，每个阶段对应一类不符合项。
+以下六个方面是**检查内容维度**（不是执行顺序）：它们分别落在上面流程图的「第一步 机检」「第二步 用例」「第三步 报告」里，
+每个方面对应一类不符合项。
 
 阶段一为资产盘点与使用说明。核查版本、入口、依赖、输入输出是否完整可追溯，常见问题包括目录名与版本号不一致、入口脚本缺失、依赖未声明。
 
@@ -228,7 +229,8 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 阶段六为 Sage A1.5 附加测试，仅针对涉及大模型调用的资产。切换后端执行后单独成节，不影响交付结论。
 
-核验结束后自动清理中间产物，仅保留报告类证据，随包提交的目录不会因执行核验而增大。
+中间产物可选清理：需要瘦身时跑 `scripts/prune_evidence.py --run <批次目录>`，只保留报告类证据；
+默认不自动删除，便于复核时翻执行日志。
 
 ## 结论判读
 
@@ -250,32 +252,64 @@ python3 scripts/verify_entry.py --package <包根> --isolated --dry-run   # 只�
 
 ## 执行流程
 
+左边是主流程（主进程，秒级），右边是「执行核验」这一步的展开（子进程，按固定合同执行）。
+**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
+
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontSize": "14px", "primaryColor": "#e8f1ff", "primaryBorderColor": "#3569a8", "lineColor": "#52606d", "secondaryColor": "#eef8f1", "tertiaryColor": "#fff5df"}}}%%
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
 flowchart LR
-    A[资产包]
-    B[盘点]
-    C{版本与入口<br/>可追溯?}
-    D[登记<br/>对外清单与自检]
-    E[部署<br/>MCP / 服务 / 模型探针]
-    F[用例执行<br/>副本内完成]
-    G[比对与报告<br/>覆盖度门禁]
-    H[Sage A1.5 附加测试]
-    I[清理中间产物]
-    X[中止并说明<br/>阻塞位置与缺失项]
+    subgraph MAIN["主流程 · 主进程 verify_entry.py"]
+        direction TB
+        A["入口<br/>verify_entry.py --package P"]
+        B["门1 版本检查<br/>update_skill.py check"]
+        C["门2 预审<br/>preflight.py"]
+        D["执行核验<br/>verify_entry.py --isolated"]
+        E["摘要 + 归档<br/>verify_entry.py / 人工复核"]
+        A --> B --> C --> D --> E
+    end
 
-    A --> B --> C
-    C -- 是 --> D --> E --> F --> G --> H --> I
-    C -- 否 --> X
-    X -. 补齐后继续 .-> B
+    subgraph DETAIL["执行核验展开 · 子进程按合同执行"]
+        direction TB
+        D0["选适配器 + bash -ic<br/>verify_entry.py + harnesses/*.py"]
+        S1["第一步 机检<br/>probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"]
+        K["判定内核<br/>probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
+        S2["AI 自主执行<br/>逐资产调 validate.py、算差异<br/>汇总 cases.json / comparison.json"]
+        S2b["harbor_run.py<br/>sage_probe.py detect / config"]
+        S3["AI 自主执行<br/>写 validation-report.md<br/>（只能引用 probe-report）"]
+        S3b["check_coverage.py<br/>check_report.py"]
+        G{"两关都 error 0?"}
+        OUT["回传摘要<br/>verify_entry.py"]
+        D0 --> S1 --> K --> S2 --> S2b --> S3 --> S3b --> G
+        G -- 否 --> S3
+        G -- 是 --> OUT
+    end
 
-    classDef gate fill:#fff5df,stroke:#c58a18,stroke-width:2px,color:#513b00;
-    classDef step fill:#eef8f1,stroke:#3f8f5b,stroke-width:1.5px;
-    class C gate;
-    class B,D,E,F,G,H,I step;
+    D -. 展开 .-> D0
+
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+    classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
+    classDef focus fill:#e8f1ff,stroke:#3569a8,stroke-width:2px;
+    class A,B,C,D0,S1,K,S2b,S3b,G,OUT script;
+    class D focus;
+    class S2,S3 ai;
+    class E human;
 ```
 
-各阶段均产出机器可读回执。执行中断时保留现场并记录原因，不清理既有结果。
+| 步骤 | 执行体 | 脚本 / 说明 |
+|---|---|---|
+| 门1 版本检查 | 脚本 | `update_skill.py`（`git ls-remote --tags`，有新版且不能自动更新则终止） |
+| 门2 预审 | 脚本 | `preflight.py`（环境 + 包格式，内部调 `validate_envelope.py`） |
+| 执行核验 | 脚本起进程 | `verify_entry.py --isolated` + `harnesses/*.py`（适配器）+ `run_skill_agent.py`（DSH_HOME 隔离与清理） |
+| 第一步 机检 | 脚本 ×3 | `probe_package.py`、`validate_envelope.py`、`check_selfcontained.py` |
+| 判定内核 | 脚本 | `probe_package.py --evaluate`（P0/P1 全部由它给出，AI 不得升降级） |
+| 第二步 用例 | **AI** + 资产脚本 | AI 逐条调资产自带 `validate/validate.py`、算 expected/actual 偏差并汇总 `cases.json` / `comparison.json` |
+| 第二步 harbor / Sage | 脚本 | `harbor_run.py`、`sage_probe.py detect/probe` |
+| 第三步 写报告 | **AI** | 无脚本；结论必须能对回 `probe-report.json` 的 `check_id` |
+| 第三步 门禁 | 脚本 ×2 | `check_coverage.py`（用例下限）、`check_report.py`（分级/归属/竖线/跨批次措辞） |
+| 摘要 / 归档 | 脚本 + 人工 | `verify_entry.py` 输出摘要；批次留 `asset-runs/run-<ts>/` 供复核 |
+
+每一步的真实输出都落在批次目录里，报告只引用本批次落盘事实，不引用历史会话或既有 `asset-runs/` 结论。
 
 ## 测试与验证环境
 
