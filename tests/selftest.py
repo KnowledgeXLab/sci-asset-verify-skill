@@ -2358,8 +2358,9 @@ def t20_verify_entry(tmp: Path) -> None:
     (tmp / "t20-empty-home").mkdir(exist_ok=True)
     _ps = run([str(SCRIPTS / "preflight.py"), "--package", str(_sagepkg)], tmp, env_extra=_env_sage)
     _pout = (_ps.stdout or "") + (_ps.stderr or "")
-    record("正例：预审阶段提示 Sage 需求与配置缺失（本包需要但没配）",
-           "PREFLIGHT-SAGE" in _pout and "需要" in _pout, f"rc={_ps.returncode}")
+    record("正例：预审阶段发现 Sage 需要却没配 → **暂停核验**并向用户索取配置",
+           _ps.returncode == 2 and "PREFLIGHT-SAGE" in _pout and "需要" in _pout
+           and "核验已暂停" in _pout and "SAGE_BASE_URL" in _pout, f"rc={_ps.returncode}")
 
     # collect：completed 但缺 usage.md → 报不合规
     _cr = tmp / "t20-collect2" / "run-y"; (_cr / "agents" / "a1").mkdir(parents=True)

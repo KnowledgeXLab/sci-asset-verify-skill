@@ -65,8 +65,9 @@ python3 scripts/dispatch_asset.py --run {run} --package {exec_root} --all
 
 **并发约束（硬性）**：harbor 与 Sage 必须串行——`harbor_run.py` 与 `sage_probe.py` 同一时刻只允许一个子智能体执行，
 否则会抢 docker 端口 / 触发服务端限流；其余资产可并行。
-**Sage 配置缺失**：子智能体不得自行判"跳过"，要向主智能体上抛；主智能体向用户索取
-`SAGE_BASE_URL` / `SAGE_API_KEY`（模型名固定 Sage-A1.5，只放环境变量）。
+**Sage 配置缺失**：正常情况下预审阶段已拦住（需要 Sage 却没配置 → 核验暂停并向用户索取配置，
+配置后重跑）。若此处仍缺配置，子智能体不得自行判"跳过"，要上抛主智能体向用户索取
+`SAGE_BASE_URL` / `SAGE_API_KEY`（模型名固定 Sage-A1.5，只放环境变量）；用户给不出 → `P0-SAGE`。
 
 ### 2.3 自查误判（子智能体必做，主进程强制检查）
 

@@ -93,10 +93,17 @@ def check_env(pkg: Path | None = None) -> dict:
             sage = {"configured": ok, "needed": needed, "reason": why,
                     "rc": p.returncode, "detail": (p.stdout or p.stderr or "").strip()[-200:]}
             if needed and not ok:
-                _add(warnings, "warn", "PREFLIGHT-SAGE",
-                     "本包**需要** Sage A1.5 附加测试（" + (why or "涉及大模型调用") + "），但当前未配置："
-                     "请提供 SAGE_BASE_URL / SAGE_API_KEY（模型名固定 Sage-A1.5，只放环境变量）；"
-                     "动态阶段拿不到配置会判 P0-SAGE 阻断交付")
+                # 需要 Sage 却没配置：**暂停核验**并请用户提供，提供后重跑即可继续
+                ask = ""
+                try:
+                    sys.path.insert(0, str(SKILL_DIR / "scripts"))
+                    import sage_probe as _sp                      # noqa: WPS433
+                    ask = "\n" + _sp.user_request_block(["base_url", "api_key"])
+                except Exception:                                 # noqa: BLE001
+                    ask = "\n请在环境变量里设置 SAGE_BASE_URL 与 SAGE_API_KEY（模型名固定 Sage-A1.5）"
+                _add(blockers, "error", "PREFLIGHT-SAGE",
+                     "本包**需要** Sage A1.5 附加测试（" + (why or "涉及大模型调用") + "），"
+                     "但当前环境未配置 Sage —— 核验已暂停，请提供配置后重跑：" + ask)
             elif not ok:
                 _add(warnings, "warn", "PREFLIGHT-SAGE",
                      "Sage-A1.5 未配置；本包检测为**不需要** Sage（若判断有误，动态阶段会按 P0-SAGE 处理）")

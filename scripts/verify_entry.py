@@ -276,6 +276,10 @@ def preflight_gate(package: Path) -> tuple[dict | None, int]:
     print(f"[预审] 未通过：阻断 {len(report['blockers'])} 条，已终止（未启动 agent、未消耗核验时间）",
           file=sys.stderr)
     pf.print_report(report, stream=sys.stderr)
+    sage_block = any(b.get("code") == "PREFLIGHT-SAGE" for b in report["blockers"])
+    if sage_block:
+        print("→ 这是**环境前置**（Sage 配置）而非资产缺陷：按上面的清单提供 SAGE_BASE_URL / SAGE_API_KEY 后，"
+              "重跑本命令即可继续核验。", file=sys.stderr)
     print("修复上述问题后重试；如确认是预审误报，可加 --skip-preflight 强制继续。", file=sys.stderr)
     return report, (2 if report["env_blocked"] else 1)
 
