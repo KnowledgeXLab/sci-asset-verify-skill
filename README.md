@@ -163,93 +163,86 @@ Sage A1.5 兼容性测试是**附加项**，单独成节，不计入上述交付
 
 ## 执行流程
 
-分两块看：**先看主流程**（主进程，秒级；不通过就直接终止，不烧核验时间），
-**再看「执行核验」的展开**（子进程按固定合同执行，分三步）。
+七步，分三段：**初始化**（1–5，主进程，秒级；出错就停）→ **动态检查**（6，逐资产派子智能体）→
+**汇总复核**（7，门禁闭环）。
 
-**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝AI 自主执行，没有对应脚本；橙色＝人工。**
+**实线框＝脚本自动执行（框内是脚本名）；紫色虚线框＝子智能体/AI 自主执行；红框＝会停下来等人。**
 
-### 1. 主流程（主进程）
+### ① 初始化（主进程）
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
 flowchart LR
-    A["版本检查<br/>update_skill.py"] --> B["静态预审<br/>preflight.py + probe --static-only"] --> C["建批次 + 状态机<br/>verify_entry.py"] --> D["建副本<br/>work_copy.py"] --> E["外部资产<br/>external_refs / mount_external"] --> F["副本可信性检查 + 台账<br/>probe / build_inventory"]
+    A["1 版本检查<br/>update_skill.py"] --> B["2 建批次 + 状态机<br/>verify_entry.py"] --> C["3 静态预审<br/>preflight.py + probe --static-only"] --> D["4 建副本（含挂载+可信性）<br/>work_copy / external_refs / mount_external / check_copy"] --> E["5 盘点台账<br/>build_inventory.py"]
 
     classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-    classDef human fill:#fff7ed,stroke:#f97316,stroke-width:1.5px;
-    classDef focus fill:#e8f1ff,stroke:#3569a8,stroke-width:2px;
-    class A,B,C script;
-    class D focus;
-    class E human;
+    classDef stop fill:#fff1f0,stroke:#ef4444;
+    class A,B,C,D,E script
+    class C stop
 ```
 
-1. 版本检查（`scripts/update_skill.py`）
-    | 情况 | 行为 |
-    |---|---|
-    | 已是最新 | 记录 `skill-update.json`，继续 |
-    | 有新版 + 能自动更新（git、干净、可写、非开发分支） | 提示可跑 `scripts/update_skill.py --apply`，本次仍按当前版本核验 |
-    | **有新版 + 不能自动完成**（非 git 安装 / 无写权限 / 工作区脏 / 开发分支） | **终止**并提示「发现新版本 X（当前 Y），但当前安装方式/权限不支持自动更新，请手动更新 skill 后重试」 |
-2. 快速预审（`scripts/preflight.py`）
-    | 层 | 检查 | 级别 |
-    |---|---|---|
-    | 环境 | Python ≥3.9、skill 文件完整、**至少一个可用 harness** | 阻断 |
-    | 环境 | docker / harbor CLI 缺失、Sage-A1.5 未配置 | 提示 |
-    | 格式 | 包根不得有 `asset.json`、一级子目录必须是资产目录、`asset.json` 可解析且必需字段齐全、`asset_type` 属八类、`asset_id` 四段式（`sciasset://<项目编号>/<命名空间>/<类型>/<名称>`）、`asset_id` 不重复 | 阻断 |
-    | 格式 | `validate/`、`cases.json` 缺失 | 提示 |
+| # | 步骤 | 脚本 | 关键点 |
+|---|---|---|---|
+| 1 | 版本检查与更新 | `scripts/update_skill.py` | 有新版且**不能**自动更新（非 git / 无写权限 / 工作区脏 / 开发分支）→ **停下**，提示手动更新后继续 |
+| 2 | 建批次目录 + 状态机 | `scripts/verify_entry.py` | `asset-runs/run-YYYYMMDD-hhmmss/`；`state.json` 记 13 个阶段的状态（pending/running/completed/failed/blocked/not_applicable），支持中断续跑 |
+| 3 | 静态预审 | `scripts/preflight.py` | ① 环境（harness / docker / harbor / **Sage 需求判定**）；② 通用检查；③ 按**资产**并行跑各类型 `asset_types/<type>/static.py` 拿判据；④ 统一判级。**主智能体复核筛除程序性误报**；仍有 P0 → 阻断并反馈用户修订后重跑 |
+| 4 | 建资产副本 | `work_copy.py` → `external_refs.py` / `mount_external.py` → `check_copy.py` | 复制（自带文件数/字节自检）→ 校验并挂载外部资产 → 副本可信性（文件集忠实 / 软链不越出副本 / required 已挂载） |
+| 5 | 盘点台账 | `scripts/build_inventory.py` | 基于副本静态事实产出 `inventory.json`（资产清单 + 关键文件摘要 + 待补项） |
 
-    若命中任一**阻断**项，则跳过后续核验流程，直接打印问题清单并退出（退出码 1=包问题 / 2=环境问题）。
-3. 执行核验：拉起独立进程，把固定合同交给 agent 执行（见下节）。
+**两处人工介入点（都不会被静默跳过）**
 
-### 2. 执行核验展开（子进程按固定合同执行）
+| 情形 | 行为 |
+|---|---|
+| 有新版但无法自动更新 | **终止**，提示「手动更新 skill 后重试」（`--ignore-update` 可强行继续） |
+| 包**需要** Sage A1.5 但环境未配置 | **暂停核验**，附上索取清单（`SAGE_BASE_URL` / `SAGE_API_KEY`，模型名固定 `Sage-A1.5`，只放环境变量）；用户配好后重跑同一条命令即可继续 |
 
-1. 机检 + 判定内核（脚本）
-    ```mermaid
-    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-    flowchart LR
-        D0["选适配器 + bash -ic<br/>harnesses/*.py"] --> S1["probe_package.py<br/>validate_envelope.py<br/>check_selfcontained.py"] --> K["probe_package.py --evaluate<br/>16 项 → P0 8 / P1 8"]
+### ② 动态检查（逐资产派子智能体）
 
-        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-        class D0,S1,K script;
-    ```
-2. 跑用例（AI 调度 + 脚本）
-    ```mermaid
-    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-    flowchart LR
-        S2["AI 产出产物 → run_cases.py（≤8 并发）<br/>每资产分片，按 case_id 排序合并"] --> S2b["harbor_run.py（串行）<br/>sage_probe.py（串行）<br/>部署核验 model/environment"]
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+flowchart LR
+    G0["6.1 生成派活合约<br/>dispatch_asset.py --all"] --> G1["6.2 每资产一个子智能体<br/>agents/<资产>/contract.md<br/>（按类型合约执行）"] --> G2["6.3 自查误判 + 落盘<br/>findings.json / usage.md / deployment.json"] --> G3["6.4 汇总<br/>collect_asset_reports.py"]
 
-        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-        classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
-        class S2 ai;
-        class S2b script;
-    ```
-3. 报告与复核（AI 写报告 + 脚本复核，不通过就回写）
-    ```mermaid
-    %%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
-    flowchart LR
-        S3["AI 自主执行<br/>写 validation-report.md"] --> S3b["check_coverage.py<br/>check_report.py"] --> G{"两关都 error 0?"} --> OUT["回传摘要<br/>verify_entry.py"]
-        G -- 否 --> S3
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+    class G0,G3 script
+    class G1,G2 ai
+```
 
-        classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
-        classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
-        class S3 ai;
-        class S3b,G,OUT script;
-    ```
+子智能体在**独立会话**里只读自己那份合约（`asset_types/<类型>/contract.md` 渲染），做四件事：
 
-### 3. 各步骤的关联执行体
-| 步骤 | 执行体 | 脚本 / 说明 |
+1. **配置独立运行环境**（只在资产目录或 `agents/<资产>/env/` 内）；
+2. **执行用例**（按 `<资产>/validate/run.json` 契约，或 `run_cases.py --only <资产>`）；
+3. **核验结果** + **部署核验**（model 权重加载+一次推理 / environment 环境+探针 / MCP `initialize`+`tools/list`+最小调用）；
+4. **写 `usage.md`** + **自查误判**（证据是否落实、是否属「明确不判」范围、是否其实是环境问题）。
+
+并发 ≤8；**harbor 与 Sage 必须串行**（抢 docker 端口 / 触发服务端限流）。结果由
+`collect_asset_reports.py` 汇总成 `asset-findings.json`：只计 `confirmed`，`dismissed`（自查排除的误报）单列留档，
+`blocked` 不算通过。
+
+### ③ 汇总复核（门禁闭环）
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "13px", "lineColor": "#52606d"}}}%%
+flowchart LR
+    H1["7.1 重跑判定<br/>probe_package --run-dir --evaluate"] --> H2["7.2 写报告 + 登记填表<br/>asset_ids / external_refs / build_list / check_list"] --> H3["7.3 两道门禁<br/>check_coverage + check_report"] --> H4["7.4 裁剪 + 打戳<br/>prune_evidence / stamp_report"] --> H5["7.5 清副本并复核原包<br/>work_copy clean --verify"]
+
+    classDef script fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px;
+    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,stroke-dasharray:4 3;
+    class H1,H3,H4,H5 script
+    class H2 ai
+```
+
+| # | 步骤 | 说明 |
 |---|---|---|
-| 版本检查 | 脚本 | `update_skill.py`（`git ls-remote --tags`，有新版且不能自动更新则终止） |
-| 快速预审 | 脚本 | `preflight.py`（环境 + 包格式，内部调 `validate_envelope.py`） |
-| 执行核验 | 脚本起进程 | `verify_entry.py --isolated` + `harnesses/*.py`（适配器）+ `run_skill_agent.py`（DSH_HOME 隔离与清理） |
-| -- 机检 | 脚本 ×3 | `probe_package.py`、`validate_envelope.py`、`check_selfcontained.py` |
-| -- 判定内核 | 脚本 | `probe_package.py --evaluate`（P0/P1 全部由它给出，AI 不得升降级） |
-| -- 跑用例 | **AI** + 资产脚本 | AI 逐条调资产自带 `validate/validate.py`、算 expected/actual 偏差并汇总 `cases.json` / `comparison.json` |
-| -- harbor / Sage | 脚本 | `harbor_run.py`、`sage_probe.py detect/probe` |
-| -- 写报告 | **AI** | 无脚本；结论必须能对回 `probe-report.json` 的 `check_id` |
-| -- 复核 | 脚本 ×2 | `check_coverage.py`（用例下限）、`check_report.py`（分级/归属/竖线/跨批次措辞） |
-| 摘要 / 归档 | 脚本 + 人工 | `verify_entry.py` 输出摘要；批次留 `asset-runs/run-<ts>/` 供复核 |
+| 7.1 | 重跑判定 | 静态那份里 `P0-SAGE`/`P0-HARB-RUN`/`P1-HARB-LINT` 必为 `na`，重跑后才是真结论 |
+| 7.2 | 报告 + 登记 | 问题清单素材取 `asset-findings.json` 的 `confirmed`，`dismissed` 进附录；清单 23 列由脚本生成并自检 |
+| 7.3 | 两道门禁 | 覆盖度（每类型用例下限，不足必须写「覆盖不足」）+ 报告结构（分级/归属/竖线/措辞/是否真跑过），**都 error 0 才结案** |
+| 7.4 | 裁剪与打戳 | `prune_evidence` 瘦身；`stamp_report` 写 front matter 与证据版本戳 |
+| 7.5 | 清副本并复核 | `clean --verify` 删副本并用 `manifest-before.json` 确认**原包未被改动**；差异必须写进报告 |
 
-每一步的真实输出都落在批次目录里，报告只引用本批次落盘事实，不引用历史会话或既有 `asset-runs/` 结论。
+**P0 之后的处理**：只改文档 → 重跑静态预审即可；改了代码/数据/用例 → 动态结论失效，必须整体重跑。
+`P0 = 0` 且 `P1 > 0` 记「**附条件交付**」（按 P1 清单整改后重交）；P2 只是建议。
 
 ## Harness 支持
 
@@ -263,7 +256,7 @@ flowchart LR
 
 ## 测试与验证环境
 
-除 `tests/selftest.py`（`191` 项断言，含正例与负例）外，还有一份**正向命中自检** `tests/probe_hits.py`：
+除 `tests/selftest.py`（`203` 项断言，含正例与负例）外，还有一份**正向命中自检** `tests/probe_hits.py`：
 为 `probe_package.py` 的每项检查各造一个**故意违规的合成包**，断言对应字段必须命中。
 
 它防的不是覆盖率，而是**"检查永远不触发"的静默失效**——这类 bug 不会让测试变红，只会让报告漏问题。
@@ -281,13 +274,13 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 203 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部 26 个可执行脚本（另有 4 个内部模块），共 203 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
 ```
 
-二、完整流程验证。在数据、工具、工作流三类交付包上执行完整六阶段流程，159 条用例与判据全部完成判定，无遗留项；覆盖度门禁各类型均达标；数据侧逐文件核验 327 个实体、534,694 行记录，与声明不符 0 处。
+二、完整流程验证。在数据、工具、工作流三类交付包上执行完整流程（当时为六阶段，现行七步），159 条用例与判据全部完成判定，无遗留项；覆盖度门禁各类型均达标；数据侧逐文件核验 327 个实体、534,694 行记录，与声明不符 0 处。
 
 三、附加测试路径验证。涉及大模型调用的资产已完成 Sage A1.5 附加测试，15 组用例通过 8 组。失败集中在问答与报告正文生成环节，原因在于被核验资产所依赖的后端服务，按既定规则不计入交付结论。
 
@@ -333,7 +326,12 @@ asset_types/<type>/
 
 ## 版本记录
 
-> 当前开发版 `1.4-beta.1-dev`（未发版）：**跨 harness 统一入口**——`scripts/verify_entry.py` 把核验流程固化成
+> 当前开发版 `1.4-beta.1-dev`（未发版）累计：harness 适配器架构（8 个 harness + 优先级）、
+> `--isolated` 独立进程执行、类型目录化（`asset_types/<type>/`：静态脚本 + 动态合约 + 工具）、
+> 静态检查按**资产**并行、逐资产派子智能体 + 误报自查、执行合同七步闭环（两道门禁 + 清理复核原包）、
+> 三份自检（203 项行为断言 / 20 项违规样本命中 / 50 项适配器契约）。
+
+> **跨 harness 统一入口**——`scripts/verify_entry.py` 把核验流程固化成
 > 由 skill 生成的「执行合同」（`prompts/verify-task.md.tmpl` → `<run>/verify-task.md`），任何 agent 框架都照同一份合同跑；
 > 结论仍由脚本门禁校验，不依赖模型自觉，也不要求对方支持子智能体。
 
@@ -534,7 +532,8 @@ asset_types/<type>/
 | dev | 开发：只在这里改代码 | VERSION 带 -dev 后缀 |
 | main | 部署：用户实际跑的那份 |	只放已发布 tag（git clone --branch <tag>），由 scripts/update_skill.py 自动跟进 |
 
-脚本变更后应先执行 `python tests/selftest.py`，80 项断言全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
+脚本变更后应先执行 `python tests/selftest.py`（203 项断言）、`tests/probe_hits.py`、
+`tests/harness_contract.py`，全部通过方可提交。版本号遵循：口径发生破坏性变更时递增次版本号，仅文档或脚本修补时递增修订号；发布时同步更新 tag 与本文档的版本记录。
 
 ---
 上海人工智能实验室领域 - 知识集成团队。仓库：`KnowledgeXLab/sci-asset-verify-skill`。
