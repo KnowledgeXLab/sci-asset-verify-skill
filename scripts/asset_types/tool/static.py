@@ -42,9 +42,6 @@ def probe_tool_contract(assets: list, metas: dict) -> dict:
     return {'assets': dict(sorted(rows.items()))}
 
 
-def probe(ctx: Ctx) -> dict:
-    return {'tool_contract_profile': probe_tool_contract(ctx.assets, ctx.metas)}
-
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="tool 资产：错误契约一致性 静态检查")
@@ -62,6 +59,17 @@ def main(argv=None) -> int:
         p.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"type": TYPE, "keys": sorted(checks), "assets": len(names)}, ensure_ascii=False))
     return 0
+
+
+
+
+def probe_assets(root: Path, assets: list, metas: dict) -> dict:
+    """按资产分片调用：只处理传入的这批资产（通常一个），返回 checks 片段。"""
+    return {'tool_contract_profile': probe_tool_contract(assets, metas)}
+
+
+def probe(ctx: Ctx) -> dict:
+    return probe_assets(ctx.root, ctx.assets, ctx.metas)
 
 
 if __name__ == "__main__":

@@ -497,29 +497,140 @@ def probe_harbor_run(run_dir: Path) -> dict:
 RUNTIME_CHECKS = ('P0-SAGE', 'P0-HARB-RUN', 'P1-HARB-LINT')
 
 
-def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False) -> dict:
+def _asset_partial_picklable(args: tuple) -> dict:
+    root_s, metas, d_s = args
+    return asset_partial(Path(root_s), metas, Path(d_s))
+
+
+ASSET_KEYS_COUNTER = ('artifacts_checked',)
+
+
+def asset_partial(root: Path, metas: dict, d: Path) -> dict:
+    """单个资产的静态事实（供按资产并行；键与 checks 一致，值为该资产的片段）。"""
+    atype = str((metas.get(d.name) or {}).get('asset_type') or '')
+    part = {
+        'artifact_integrity': probe_artifacts(root, [d], metas),
+        'cases_profile': probe_cases([d]),
+        'external_refs_profile': probe_external_refs([d]),
+        'outside_refs_profile': probe_outside_refs(root, [d], metas),
+        'doc_refs_profile': probe_doc_refs(root, [d]),
+        'version_profile': probe_version_consistency([d], metas),
+        'verify_doc_profile': probe_verify_docs([d]),
+        'verify_entry_profile': probe_verify_entry([d]),
+        'secret_profile': probe_secrets(root, [d]),
+        '_type': asset_types.probe_asset(atype, root, [d], metas),
+    }
+    return part
+
+
+def merge_partials(parts: list[dict]) -> dict:
+    """把各资产的片段合并成与顺序执行完全一致的聚合结构。"""
+    out: dict = {k: {} for k in ('artifact_integrity', 'cases_profile', 'external_refs_profile',
+                                 'outside_refs_profile', 'doc_refs_profile', 'version_profile',
+                                 'verify_doc_profile', 'verify_entry_profile', 'secret_profile')}
+    counts = {'artifacts_checked': 0, 'assets_with_cases': 0, 'secret_hits': 0}
+    lists: dict = {('artifact_integrity', k): [] for k in ('missing', 'size_mismatch', 'sha_mismatch')}
+    lists.update({('outside_refs_profile', k): [] for k in ('outside_refs', 'escaping_symlinks', 'absolute_symlinks')})
+    lists[('verify_entry_profile', 'without_entry')] = []
+    lists[('secret_profile', 'hits')] = []
+    dicts: dict = {('cases_profile', 'assets'): {}, ('external_refs_profile', 'assets'): {},
+                   ('doc_refs_profile', 'missing'): {}, ('doc_refs_profile', 'case_only_mismatch'): {},
+                   ('version_profile', 'mismatch'): {}, ('verify_doc_profile', 'mismatch'): {},
+                   ('verify_entry_profile', 'assets'): {}}
+    type_merged = {'harbor_profile': {'assets': {}, 'unregistered_task_dirs': []}}
+    type_lists: dict = {}
+    type_dicts: dict = {}
+
+    for part in parts:
+        ai = part.get('artifact_integrity') or {}
+        counts['artifacts_checked'] += int(ai.get('artifacts_checked') or 0)
+        for k in ('missing', 'size_mismatch', 'sha_mismatch'):
+            lists[('artifact_integrity', k)].extend(ai.get(k) or [])
+        cp = part.get('cases_profile') or {}
+        dicts[('cases_profile', 'assets')].update(cp.get('assets') or {})
+        counts['assets_with_cases'] += int(cp.get('assets_with_cases') or 0)
+        for e in part.get('external_refs_profile', {}).get('assets') or {}:
+            dicts[('external_refs_profile', 'assets')][e] = part['external_refs_profile']['assets'][e]
+        for k in ('missing', 'case_only_mismatch'):
+            dicts[('doc_refs_profile', k)].update((part.get('doc_refs_profile') or {}).get(k) or {})
+        for k in ('missing', 'version_profile', 'verify_doc_profile'):
+            pass
+        dicts[('version_profile', 'mismatch')].update((part.get('version_profile') or {}).get('mismatch') or {})
+        dicts[('verify_doc_profile', 'mismatch')].update((part.get('verify_doc_profile') or {}).get('mismatch') or {})
+        ve = part.get('verify_entry_profile') or {}
+        dicts[('verify_entry_profile', 'assets')].update(ve.get('assets') or {})
+        lists[('verify_entry_profile', 'without_entry')].extend(ve.get('without_entry') or [])
+        for k in ('outside_refs', 'escaping_symlinks', 'absolute_symlinks'):
+            lists[('outside_refs_profile', k)].extend((part.get('outside_refs_profile') or {}).get(k) or [])
+        sp = part.get('secret_profile') or {}
+        lists[('secret_profile', 'hits')].extend(sp.get('hits') or [])
+        counts['secret_hits'] += int(sp.get('count') or 0)
+        for k, v in (part.get('_type') or {}).items():
+            if isinstance(v, dict) and 'assets' in v:
+                type_dicts.setdefault((k, 'assets'), {}).update(v.get('assets') or {})
+                for kk, vv in v.items():
+                    if isinstance(vv, list):
+                        type_lists.setdefault((k, kk), []).extend(vv)
+                    elif kk != 'assets':
+                        type_merged.setdefault(k, {})[kk] = vv
+                type_merged.setdefault(k, {})
+            elif isinstance(v, dict) and 'unregistered_task_dirs' in v:
+                type_merged[k] = v
+            elif isinstance(v, dict):
+                type_merged.setdefault(k, {}).update(v)
+
+    out['artifact_integrity'] = {'artifacts_checked': counts['artifacts_checked'],
+                                 'missing': sorted(set(lists[('artifact_integrity', 'missing')])),
+                                 'size_mismatch': sorted(set(lists[('artifact_integrity', 'size_mismatch')])),
+                                 'sha_mismatch': sorted(set(lists[('artifact_integrity', 'sha_mismatch')]))}
+    out['cases_profile'] = {'assets': dict(sorted(dicts[('cases_profile', 'assets')].items())),
+                            'assets_with_cases': counts['assets_with_cases'],
+                            'assets_without_cases': sorted(
+                                k for k, v in dicts[('cases_profile', 'assets')].items()
+                                if not (v or {}).get('case_count'))}
+    out['external_refs_profile'] = {'assets': dict(sorted(dicts[('external_refs_profile', 'assets')].items()))}
+    out['outside_refs_profile'] = {k: sorted(set(lists[('outside_refs_profile', k)]))
+                                   for k in ('outside_refs', 'escaping_symlinks', 'absolute_symlinks')}
+    out['doc_refs_profile'] = {'missing': dict(sorted(dicts[('doc_refs_profile', 'missing')].items())),
+                               'case_only_mismatch': dict(sorted(dicts[('doc_refs_profile', 'case_only_mismatch')].items()))}
+    out['version_profile'] = {'mismatch': dict(sorted(dicts[('version_profile', 'mismatch')].items()))}
+    out['verify_doc_profile'] = {'mismatch': dict(sorted(dicts[('verify_doc_profile', 'mismatch')].items()))}
+    out['verify_entry_profile'] = {'assets': dict(sorted(dicts[('verify_entry_profile', 'assets')].items())),
+                                   'without_entry': sorted(set(lists[('verify_entry_profile', 'without_entry')]))}
+    out['secret_profile'] = {'hits': lists[('secret_profile', 'hits')][:50], 'count': counts['secret_hits']}
+    for (k, kk), v in type_dicts.items():
+        type_merged.setdefault(k, {})[kk] = dict(sorted(v.items()))
+    for (k, kk), v in type_lists.items():
+        type_merged.setdefault(k, {})[kk] = sorted(set(v))
+    out.update(type_merged)
+    return out
+
+
+def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False,
+              jobs: int = 1) -> dict:
     assets = package_asset_dirs(root)
     metas = {}
     for d in assets:
         metas[d.name] = load(d / 'asset.json') or {}
+    # 逐资产静态事实：并发轴是**资产**（不是类型）——一种类型的包也能并行
+    if jobs > 1 and len(assets) > 1:
+        import concurrent.futures as _cf
+        with _cf.ProcessPoolExecutor(max_workers=min(jobs, len(assets))) as pool:
+            parts = list(pool.map(_asset_partial_picklable,
+                                  [(str(root), metas, str(d)) for d in assets]))
+    else:
+        parts = [asset_partial(root, metas, d) for d in assets]
+    per_asset = merge_partials(parts)
+    # harbor 任务包结构是包级事实（要能发现"不在任何 asset.json 下"的 task 目录）
+    per_asset['harbor_profile'] = asset_types.probe_asset('task', root, assets, metas).get(
+        'harbor_profile', {'assets': {}, 'unregistered_task_dirs': []})
     return {
         'package_summary': probe_package(root, assets),
         'governance_profile': probe_governance(metas),
         'lifecycle_profile': probe_lifecycle(metas),
-        'artifact_integrity': probe_artifacts(root, assets, metas),
-        'cases_profile': probe_cases(assets),
-        'external_refs_profile': probe_external_refs(assets),
-        # 各类型的静态检查：asset_types/<type>/static.py，按包内实际类型**并行**跑
-        **asset_types.run_static_parallel(asset_types.Ctx(root=root, assets=assets, metas=metas,
-                                                          run_dir=run_dir, static_only=static_only)),
+        **per_asset,
         'structure_profile': probe_structure(root, assets),
         'envelope_profile': probe_envelope(root),
-        'outside_refs_profile': probe_outside_refs(root, assets, metas),
-        'doc_refs_profile': probe_doc_refs(root, assets),
-        'version_profile': probe_version_consistency(assets, metas),
-        'verify_doc_profile': probe_verify_docs(assets),
-        'verify_entry_profile': probe_verify_entry(assets),
-        'secret_profile': probe_secrets(root, assets),
         'harbor_run_profile': ({} if static_only else (probe_harbor_run(run_dir) if run_dir else {})),
         'sage_profile': ({} if static_only else (probe_sage(run_dir) if run_dir else {})),
         'static_only': static_only,
@@ -748,6 +859,8 @@ def main(argv=None) -> int:
     ap.add_argument('--print-hash', action='store_true', help='只打印事实指纹（用于验证可复现性）')
     ap.add_argument('--evaluate', action='store_true', help='按 assets/audit-checks.json 输出固定严重度的结论')
     ap.add_argument('--run-dir', help='本次核验的 run 目录：从中读 sage-need/sage-config/sage 报告，判 P0-SAGE')
+    ap.add_argument('--jobs', type=int, default=0,
+                    help='逐资产并发的进程数（0=自动：资产数<16 用 1，否则 min(8,CPU)）')
     ap.add_argument('--static-only', action='store_true',
                     help='只做静态审查（跳过依赖 run 产物的 P0-SAGE/P0-HARB-RUN/P1-HARB-LINT，覆盖表记 deferred）')
     ap.add_argument('--intent', choices=['delivery', 'review'], default='delivery',
@@ -762,7 +875,9 @@ def main(argv=None) -> int:
     if run_dir is not None and not run_dir.is_dir():
         print(f'run 目录不存在：{run_dir}', file=sys.stderr)
         return 2
-    checks = checks_of(root, run_dir, static_only=args.static_only)
+    jobs = args.jobs if args.jobs > 0 else (1 if len(package_asset_dirs(root)) < 16
+                                            else min(8, os.cpu_count() or 4))
+    checks = checks_of(root, run_dir, static_only=args.static_only, jobs=jobs)
     fp = fingerprint(checks)
     if args.print_hash:
         print(fp)

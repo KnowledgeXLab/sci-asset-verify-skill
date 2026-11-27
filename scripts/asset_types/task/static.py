@@ -24,14 +24,6 @@ except Exception:         # noqa: BLE001
 TYPE = "task"
 
 
-def probe(ctx: Ctx) -> dict:
-    """harbor 任务包结构事实（oracle/nop 的运行结果属运行期，见 probe_package）。"""
-    prof = (probe_harbor(ctx.root, ctx.assets) if probe_harbor
-            else {'assets': {}, 'unregistered_task_dirs': []})
-    for name, e in (prof.get('assets') or {}).items():
-        e['declared_asset_type'] = (ctx.metas.get(name) or {}).get('asset_type')
-    return {'harbor_profile': prof}
-
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="task 资产：harbor 任务包结构 静态检查")
@@ -49,6 +41,21 @@ def main(argv=None) -> int:
         p.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"type": TYPE, "keys": sorted(checks), "assets": len(names)}, ensure_ascii=False))
     return 0
+
+
+
+
+def probe_assets(root: Path, assets: list, metas: dict) -> dict:
+    """按资产分片调用：只处理传入的这批资产（通常一个），返回 checks 片段。"""
+    prof = (probe_harbor(root, assets) if probe_harbor
+            else {'assets': {}, 'unregistered_task_dirs': []})
+    for name, e in (prof.get('assets') or {}).items():
+        e['declared_asset_type'] = (metas.get(name) or {}).get('asset_type')
+    return {'harbor_profile': prof}
+
+
+def probe(ctx: Ctx) -> dict:
+    return probe_assets(ctx.root, ctx.assets, ctx.metas)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,8 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 
 ### 阶段一：初始化（主进程，秒级；失败不启动 agent）
 
-版本检查 → 静态预审（原包：结构/包络/实体/凭据/自包含/文档引用，`probe_package --static-only`）
+版本检查 → 静态预审（原包：结构/包络/实体/凭据/自包含/文档引用，`probe_package --static-only`，
+**按资产并行** `--jobs`：并发轴是资产，不是类型）
 → 建批次 + `state.json` 状态机 → **准备副本**（一个阶段、三个子动作：
 ① `work_copy.py init` 复制（含文件数/字节自检）② `external_refs.py` + `mount_external.py` 校验并挂载外部资产
 ③ `check_copy.py` 副本可信性：文件集忠实 / 软链不越出副本 / required 已挂载）
