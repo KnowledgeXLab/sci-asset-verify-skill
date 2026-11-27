@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """task 资产：harbor 任务包结构 —— 静态检查（判据生成）。
 
-用法：python3 scripts/asset_types/task/static.py --package <包根> [--json-out F]
+用法：python3 asset_types/task/static.py --package <包根> [--json-out F]
 
 输出：{"type": "task", "checks": {<键>: <结构>}, "assets": [<资产目录>...]}
 判据由主进程汇总后统一判级（assets/audit-checks.json）；本脚本**不判 P0/P1**。
@@ -13,7 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))                 # asset_types 包所在
+sys.path.insert(0, str(_ROOT / "scripts"))     # _layout / _version 等内部模块
 from asset_types.base import Ctx, collect_ctx          # noqa: E402
 
 try:                      # harbor 任务包探测（与对象签同源）

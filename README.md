@@ -297,7 +297,7 @@ python tests/selftest.py
 SKILL.md                    作业手册，agent 按此执行
 references/                 登记字段口径与示例、比较规则与报告格式、资产发现方法
 scripts/                    核验脚本（入口 verify_entry.py、机检 probe_package.py、门禁 check_*.py 等）
-scripts/asset_types/        按资产类型拆分的专项检查（一个类型一个模块，接口统一）
+asset_types/                按资产类型拆分的专项检查（一个类型一个目录：静态脚本 + 动态合约 + 工具）
 scripts/harnesses/          harness 适配器（dsh / codex / claude / opencode / cursor / kimi / qwen / zcode）
 prompts/                    固定执行合同模板
 assets/                     内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限、P0/P1 固定清单
@@ -305,10 +305,10 @@ tests/                      selftest.py（行为断言）+ probe_hits.py（每�
 vendor/                     随包分发的依赖库
 ```
 
-**`scripts/asset_types/` 的定位**：一个类型一个**目录**，内含静态检查脚本、动态检查合约与本类型工具：
+**`asset_types/` 的定位**：一个类型一个**目录**，内含静态检查脚本、动态检查合约与本类型工具：
 
 ```
-scripts/asset_types/<type>/
+asset_types/<type>/
 ├── static.py      静态检查（判据生成，可独立运行；不判 P0/P1）
 ├── contract.md    动态检查合约（子智能体读；dispatch_asset.py 填充占位符）
 └── tools/         该类型动态检查专用的脚本
@@ -328,7 +328,7 @@ scripts/asset_types/<type>/
 | `task.py` | task | harbor 任务包结构与 oracle/nop（`_harbor`） |
 | `model.py` `environment.py` `trajectory.py` `benchmark.py` | 对应类型 | 占位（暂无专项检查，声明层由通用检查覆盖） |
 
-新增类型检查 = 加一个文件 + 在 `asset_types/__init__.py` 的 `MODULES` 追加一行，`probe_package.py` 不用改。
+新增类型检查 = 加一个目录（static.py + contract.md）+ 在 `asset_types/__init__.py` 里它会自动被发现（目录扫描），`probe_package.py` 不用改。
 输出键名与拆分前完全一致（`data_declaration_profile` 等），对下游脚本与报告透明。
 
 ## 版本记录

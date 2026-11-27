@@ -108,7 +108,7 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 
 ### 阶段二：逐资产校验（主智能体委派子智能体）
 
-1. `dispatch_asset.py --all` 按资产类型从 `scripts/asset_types/<类型>/contract.md` 生成
+1. `dispatch_asset.py --all` 按资产类型从 `asset_types/<类型>/contract.md` 生成
    `<run>/agents/<资产>/contract.md`（类型化的动态检查合约）；
 2. 每个资产派**一个全新子智能体**（独立会话），只读自己那份合约：配置独立环境 → 执行用例
    （`run_cases.py` 或资产自带 `validate/run.json` 契约）→ 核验结果 → **自查误判**；

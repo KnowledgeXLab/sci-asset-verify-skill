@@ -1,8 +1,8 @@
 """按资产类型组织的检查模块：一个类型一个目录。
 
-每个 `scripts/asset_types/<type>/` 里：
+每个 `asset_types/<type>/` 里：
   static.py     静态检查脚本（判据生成，**不判 P0/P1**）；可独立运行：
-                `python3 scripts/asset_types/<type>/static.py --package <包根> --json-out F`
+                `python3 asset_types/<type>/static.py --package <包根> --json-out F`
   contract.md   动态检查合约（子智能体读它，占位符由 scripts/dispatch_asset.py 填充）
   tools/        该类型动态检查时用到的专用脚本
 

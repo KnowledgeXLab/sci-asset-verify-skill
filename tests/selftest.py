@@ -2232,7 +2232,8 @@ def t20_verify_entry(tmp: Path) -> None:
            proc_ext.returncode in (1, 2) and "PREFLIGHT-EXTERNAL" in (proc_ext.stdout + proc_ext.stderr),
            f"rc={proc_ext.returncode}")
 
-    # 类型专项检查已拆到 scripts/asset_types/（一个类型一个模块），probe_package 不再自带实现
+    # 类型专项检查已拆到仓库根的 asset_types/（一个类型一个目录），probe_package 不再自带实现
+    sys.path.insert(0, str(SKILL))          # asset_types 在仓库根
     sys.path.insert(0, str(SCRIPTS))
     from asset_types import TYPES as _AT, applies_to                 # noqa: WPS433
     _names = list(_AT)
@@ -2246,7 +2247,7 @@ def t20_verify_entry(tmp: Path) -> None:
            f"modules={_names}")
 
     # 类型目录：8 个目录，各有 contract.md / static.py / tools/
-    _type_dirs = sorted(d for d in (SCRIPTS / "asset_types").iterdir() if d.is_dir())
+    _type_dirs = sorted(d for d in (SKILL / "asset_types").iterdir() if d.is_dir())
     record("正例：asset_types 下 8 个类型目录，各自带 contract.md + static.py + tools/",
            [d.name for d in _type_dirs] == ["benchmark", "data", "environment", "model",
                                             "skill", "task", "tool", "trajectory"]
@@ -2272,7 +2273,7 @@ def t20_verify_entry(tmp: Path) -> None:
                        "privacy": "none", "usage_constraints": []},
         "spec": {"metadata": {"format": ["csv"]}, "artifacts": [], "domain_attributes": {},
                  "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
-    _p = run([str(SCRIPTS / "asset_types" / "data" / "static.py"), "--package", str(_dpkg),
+    _p = run([str(SKILL / "asset_types" / "data" / "static.py"), "--package", str(_dpkg),
               "--json-out", str(_dpkg / "static.json")], tmp)
     _sd = json.loads((_dpkg / "static.json").read_text(encoding="utf-8")) if (_dpkg / "static.json").is_file() else {}
     record("正例：单个类型静态脚本可独立运行，输出 type + checks",

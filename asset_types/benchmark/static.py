@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""trajectory 资产：轨迹结构 —— 静态检查（判据生成）。
+"""benchmark 资产：评测口径 —— 静态检查（判据生成）。
 
-用法：python3 scripts/asset_types/trajectory/static.py --package <包根> [--json-out F]
+用法：python3 asset_types/benchmark/static.py --package <包根> [--json-out F]
 
-输出：{"type": "trajectory", "checks": {<键>: <结构>}, "assets": [<资产目录>...]}
+输出：{"type": "benchmark", "checks": {<键>: <结构>}, "assets": [<资产目录>...]}
 判据由主进程汇总后统一判级（assets/audit-checks.json）；本脚本**不判 P0/P1**。
 """
 from __future__ import annotations
@@ -13,10 +13,12 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))                 # asset_types 包所在
+sys.path.insert(0, str(_ROOT / "scripts"))     # _layout / _version 等内部模块
 from asset_types.base import Ctx, collect_ctx          # noqa: E402
 
-TYPE = "trajectory"
+TYPE = "benchmark"
 
 
 def probe(ctx: Ctx) -> dict:
@@ -25,14 +27,14 @@ def probe(ctx: Ctx) -> dict:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="trajectory 资产：轨迹结构 静态检查")
+    ap = argparse.ArgumentParser(description="benchmark 资产：评测口径 静态检查")
     ap.add_argument("--package", required=True)
     ap.add_argument("--json-out")
     args = ap.parse_args(argv)
     ctx = collect_ctx(Path(args.package).expanduser().resolve())
     checks = probe(ctx)
     names = sorted(d.name for d in ctx.of_type(TYPE))
-    payload = {"tool": "asset_types/trajectory/static.py", "type": TYPE,
+    payload = {"tool": "asset_types/benchmark/static.py", "type": TYPE,
                "assets": names, "checks": checks}
     if args.json_out:
         p = Path(args.json_out)
