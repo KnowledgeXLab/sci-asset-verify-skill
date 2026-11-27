@@ -26,6 +26,8 @@ from collections import Counter
 from pathlib import PurePosixPath
 from pathlib import Path
 
+import asset_types
+
 try:
     from _layout import is_mounted_external as _is_mounted
 except Exception:                        # noqa: BLE001
@@ -141,27 +143,6 @@ def probe_cases(assets: list) -> dict:
             'assets_without_cases': sorted(k for k, v in rows.items() if v['case_count'] == 0)}
 
 
-def probe_validate_readme(assets: list, metas: dict) -> dict:
-    rows = {}
-    for d in assets:
-        f = d / 'validate' / 'readme.md'
-        if not f.is_file():
-            rows[d.name] = {'present': False, 'is_skill': str((metas.get(d.name) or {}).get('asset_type')) == 'skill'}
-            continue
-        text = f.read_text(encoding='utf-8', errors='replace')
-        heads = [h.strip().lower() for h in re.findall(r'^#{2,4}\s*(.+)$', text, re.M)]
-        rows[d.name] = {'present': True,
-                        'is_skill': str((metas.get(d.name) or {}).get('asset_type')) == 'skill',
-                        'has_agent_section': any(k in h for h in heads for k in ('agent', 'harness')),
-                        'has_task_section': any(k in h for h in heads for k in ('任务', '怎么测')),
-                        'has_gate_section': any(k in h for h in heads for k in ('门槛', '验收')),
-                        'mentions_artifact': 'artifact' in text.lower() or '产物' in text}
-    return {'assets': dict(sorted(rows.items())),
-            'complete': sorted(k for k, v in rows.items()
-                               if v.get('present') and v.get('has_agent_section')
-                               and v.get('has_task_section') and v.get('has_gate_section'))}
-
-
 def probe_external_refs(assets: list) -> dict:
     rows = {}
     for d in assets:
@@ -176,87 +157,6 @@ def probe_external_refs(assets: list) -> dict:
             if not tp or tp.startswith('/') or '..' in Path(tp).parts or '\\' in tp:
                 bad.append(tp or '(空)')
         rows[d.name] = {'declared': len(items), 'invalid_target_path': sorted(bad)}
-    return {'assets': dict(sorted(rows.items()))}
-
-
-def probe_tool_contract(assets: list, metas: dict) -> dict:
-    """工具类资产：声明的错误码/错误名 vs 实现里出现的，做成事实对比（不判对错）。"""
-    rows = {}
-    for d in assets:
-        if str(metas[d.name].get('asset_type')) != 'tool':
-            continue
-        impl_text = ''
-        for f in sorted(d.rglob('*.py')):
-            impl_text += f.read_text(encoding='utf-8', errors='replace')
-        decl_text = ''
-        for f in sorted(list(d.rglob('*.json')) + list(d.rglob('*.md'))):
-            if f.name == 'asset.json' or '.mounted-external' in f.name:
-                continue
-            decl_text += f.read_text(encoding='utf-8', errors='replace')
-        impl_rc = sorted(set(int(m) for m in re.findall(r'(?:sys\.exit|SystemExit)\((\d)\)', impl_text)))
-        impl_errs = sorted(set(re.findall(r"['\"]error['\"]\s*:\s*['\"]([a-z0-9_]+)['\"]", impl_text)))
-        decl_errs = sorted(set(re.findall(r'\b([a-z]+(?:_[a-z]+)+)\b', decl_text)))
-        rows[d.name] = {'impl_exit_codes': impl_rc, 'impl_error_names': impl_errs,
-                        'impl_error_names_not_declared': sorted(set(impl_errs) - set(decl_errs))}
-    return {'assets': dict(sorted(rows.items()))}
-
-
-def probe_data_declarations(assets: list, metas: dict) -> dict:
-    """data 资产：metadata.json 的声明 vs 实体（记录数/列名/bbox/网格/公式复算）。"""
-    import csv as _csv
-    import math as _math
-
-    rows = {}
-    for d in assets:
-        if str((metas.get(d.name) or {}).get('asset_type')) != 'data':
-            continue
-        meta = load(d / 'metadata.json')
-        if not isinstance(meta, dict):
-            rows[d.name] = {'has_metadata': False}
-            continue
-        payload = None
-        for cand in sorted(d.rglob('*.csv')):
-            payload = cand
-            break
-        info = {'has_metadata': True, 'payload': str(payload.relative_to(d)) if payload else None,
-                'records_mismatch': None, 'columns_mismatch': None,
-                'bbox_mismatch': None, 'grid_incomplete': None, 'formula_max_dev': None,
-                'formula_tolerance': (meta.get('formula') or {}).get('tolerance')}
-        if payload is None:
-            rows[d.name] = info
-            continue
-        with payload.open(encoding='utf-8', errors='replace') as f:
-            data = list(_csv.DictReader(f))
-        if isinstance(meta.get('records'), int):
-            info['records_mismatch'] = None if len(data) == meta['records'] else {'declared': meta['records'], 'actual': len(data)}
-        if isinstance(meta.get('columns'), list):
-            cols = list(data[0].keys()) if data else []
-            info['columns_mismatch'] = None if cols == meta['columns'] else {'declared': meta['columns'], 'actual': cols}
-        if isinstance(meta.get('bbox'), dict) and data and 'x' in data[0] and 'y' in data[0]:
-            xs = [float(r['x']) for r in data]
-            ys = [float(r['y']) for r in data]
-            bx, by = meta['bbox'].get('x'), meta['bbox'].get('y')
-            if bx and by and ([min(xs), max(xs)] != bx or [min(ys), max(ys)] != by):
-                info['bbox_mismatch'] = {'declared': meta['bbox'], 'actual': {'x': [min(xs), max(xs)], 'y': [min(ys), max(ys)]}}
-        grid = meta.get('grid') or {}
-        if grid.get('nx') and grid.get('ny') and data and 'x' in data[0] and 'y' in data[0]:
-            cells = {(int(float(r['x'])), int(float(r['y']))) for r in data}
-            want = {(x, y) for x in range(int(grid['nx'])) for y in range(int(grid['ny']))}
-            if cells != want:
-                info['grid_incomplete'] = {'missing': len(want - cells), 'extra': len(cells - want)}
-        formula = meta.get('formula') or {}
-        if formula.get('expr') and data and {'x', 'y'} <= set(data[0]) and 'value' in data[0]:
-            ns0 = {'sin': _math.sin, 'cos': _math.cos, 'sqrt': _math.sqrt, 'pi': _math.pi, 'exp': _math.exp}
-            base = int(formula.get('i_base', 1))
-            worst = 0.0
-            try:
-                for k, r in enumerate(data, start=base):
-                    env = dict(ns0, x=float(r['x']), y=float(r['y']), i=k)
-                    worst = max(worst, abs(eval(formula['expr'], {'__builtins__': {}}, env) - float(r['value'])))
-                info['formula_max_dev'] = worst
-            except Exception as exc:  # noqa: BLE001
-                info['formula_error'] = str(exc)[:120]
-        rows[d.name] = info
     return {'assets': dict(sorted(rows.items()))}
 
 
@@ -602,20 +502,16 @@ def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False
     metas = {}
     for d in assets:
         metas[d.name] = load(d / 'asset.json') or {}
-    harbor_prof = (probe_harbor(root, assets) if probe_harbor
-                   else {'assets': {}, 'unregistered_task_dirs': []})
-    for name, e in (harbor_prof.get('assets') or {}).items():
-        e['declared_asset_type'] = (metas.get(name) or {}).get('asset_type')
     return {
         'package_summary': probe_package(root, assets),
         'governance_profile': probe_governance(metas),
         'lifecycle_profile': probe_lifecycle(metas),
         'artifact_integrity': probe_artifacts(root, assets, metas),
         'cases_profile': probe_cases(assets),
-        'validate_readme_profile': probe_validate_readme(assets, metas),
         'external_refs_profile': probe_external_refs(assets),
-        'tool_contract_profile': probe_tool_contract(assets, metas),
-        'data_declaration_profile': probe_data_declarations(assets, metas),
+        # 各类型的专项检查在 asset_types/ 里（一个类型一个模块）
+        **asset_types.run_all(asset_types.Ctx(root=root, assets=assets, metas=metas,
+                                              run_dir=run_dir, static_only=static_only)),
         'structure_profile': probe_structure(root, assets),
         'envelope_profile': probe_envelope(root),
         'outside_refs_profile': probe_outside_refs(root, assets, metas),
@@ -624,7 +520,6 @@ def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False
         'verify_doc_profile': probe_verify_docs(assets),
         'verify_entry_profile': probe_verify_entry(assets),
         'secret_profile': probe_secrets(root, assets),
-        'harbor_profile': harbor_prof,
         'harbor_run_profile': ({} if static_only else (probe_harbor_run(run_dir) if run_dir else {})),
         'sage_profile': ({} if static_only else (probe_sage(run_dir) if run_dir else {})),
         'static_only': static_only,

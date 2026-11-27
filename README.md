@@ -281,7 +281,7 @@ flowchart LR
 
 测试内容如下。
 
-一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 193 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
+一、脚本自测。`tests/selftest.py` 覆盖全部二十个脚本，共 194 项断言，含正例与负例，全部通过。该套件不依赖真实资产包、不需要网络，执行时间约 3 秒。断言校验至具体报错字段与提示文案，不以退出码作为唯一依据。
 
 ```
 python tests/selftest.py
@@ -294,13 +294,30 @@ python tests/selftest.py
 ## 仓库结构
 
 ```
-SKILL.md           六阶段流程的完整作业手册，agent 按此执行
-references/        登记字段口径与示例、比较规则与报告格式、资产发现方法
-scripts/           二十个自检脚本（另有 4 个内部模块）
-assets/            内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限
-tests/selftest.py  脚本自测套件
-vendor/            随包分发的依赖库
+SKILL.md                    作业手册，agent 按此执行
+references/                 登记字段口径与示例、比较规则与报告格式、资产发现方法
+scripts/                    核验脚本（入口 verify_entry.py、机检 probe_package.py、门禁 check_*.py 等）
+scripts/asset_types/        按资产类型拆分的专项检查（一个类型一个模块，接口统一）
+scripts/harnesses/          harness 适配器（dsh / codex / claude / opencode / cursor / kimi / qwen / zcode）
+prompts/                    固定执行合同模板
+assets/                     内置标准：23 列清单 schema、包络 JSON Schema、用例数量下限、P0/P1 固定清单
+tests/                      selftest.py（行为断言）+ probe_hits.py（每项检查的违规样本）+ harness_contract.py
+vendor/                     随包分发的依赖库
 ```
+
+**`scripts/asset_types/` 的定位**：`probe_package.py` 只做**通用**检查（结构 / 包络 / 实体完整性 / 凭据 /
+越界引用 / 文档引用 / 版本 / 用例 / 验证入口），各类型的专项检查在这里：
+
+| 模块 | 负责的资产类型 | 专项检查 |
+|---|---|---|
+| `data.py` | data | `metadata.json` 声明 vs 实体（记录数 / 列名 / bbox / 网格 / 公式复算） |
+| `tool.py` | tool | 声明的错误码 / 错误名 vs 实现（事实对比） |
+| `skill.py` | 全部（含 task） | `validate/readme.md` 是否写清 Agent / 测试任务 / 通过门槛 |
+| `task.py` | task | harbor 任务包结构与 oracle/nop（`_harbor`） |
+| `model.py` `environment.py` `trajectory.py` `benchmark.py` | 对应类型 | 占位（暂无专项检查，声明层由通用检查覆盖） |
+
+新增类型检查 = 加一个文件 + 在 `asset_types/__init__.py` 的 `MODULES` 追加一行，`probe_package.py` 不用改。
+输出键名与拆分前完全一致（`data_declaration_profile` 等），对下游脚本与报告透明。
 
 ## 版本记录
 

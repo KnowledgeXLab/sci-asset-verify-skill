@@ -2232,6 +2232,19 @@ def t20_verify_entry(tmp: Path) -> None:
            proc_ext.returncode in (1, 2) and "PREFLIGHT-EXTERNAL" in (proc_ext.stdout + proc_ext.stderr),
            f"rc={proc_ext.returncode}")
 
+    # 类型专项检查已拆到 scripts/asset_types/（一个类型一个模块），probe_package 不再自带实现
+    sys.path.insert(0, str(SCRIPTS))
+    from asset_types import MODULES, applies_to                     # noqa: WPS433
+    _names = [m.NAME for m in MODULES]
+    _probe_src = (SCRIPTS / "probe_package.py").read_text(encoding="utf-8")
+    record("正例：类型专项检查拆到 asset_types/（8 个模块，probe_package 不再内联实现）",
+           _names == ["data", "tool", "skill", "task", "model", "environment", "trajectory", "benchmark"]
+           and "def probe_data_declarations" not in _probe_src
+           and "def probe_tool_contract" not in _probe_src
+           and "def probe_validate_readme" not in _probe_src
+           and "data" in applies_to("data") and "tool" in applies_to("tool"),
+           f"modules={_names}")
+
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"
     run_h.mkdir(parents=True, exist_ok=True)
