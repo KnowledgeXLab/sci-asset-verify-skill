@@ -105,15 +105,21 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 静态审查出的 P0 分两类：`P0-STRUCT`/`P0-ENVELOPE`（包不可读）**阻断**；其余（`P0-COMPLETE`/`P0-VERIFY`/`P0-SECRET`）
 **记录并进报告**，避免交付方拿不到一份写清问题的报告。
 
-### 阶段二：逐资产校验（可并发 ≤8）
+### 阶段二：逐资产校验（主智能体委派子智能体）
 
-写 `usage.md` → 逐资产产出被测产物到 `<run>/artifacts/<资产>/` → `run_cases.py`（用例并发、分片、按 case_id 排序合并）
-→ harbor 串行 → Sage 串行（模型固定 Sage-A1.5）→ 部署核验（model/environment，写 `deployment/*.json`）。
-每步结果更新 `state.json`。
+1. `dispatch_asset.py --all` 按资产类型从 `scripts/asset_types/<类型>/contract.md` 生成
+   `<run>/agents/<资产>/contract.md`（类型化的动态检查合约）；
+2. 每个资产派**一个全新子智能体**（独立会话），只读自己那份合约：配置独立环境 → 执行用例
+   （`run_cases.py` 或资产自带 `validate/run.json` 契约）→ 核验结果 → **自查误判**；
+3. harbor 与 Sage 全局串行；其余资产可并发（建议 ≤8）；
+4. 每个子智能体写 `<run>/agents/<资产>/findings.json`（`confirmed` / `dismissed` / `blocked`）；
+5. `collect_asset_reports.py --run <run>` 汇总：只计 `confirmed`，`dismissed` 留档，
+   结构不合规的报告直接报错。
 
 ### 阶段三：汇总复核
 
 重跑判定（`probe_package --run-dir --evaluate`，纳入运行期事实）→ 覆盖度门禁 → 写报告
+（问题清单素材取 `asset-findings.json` 的 `confirmed`，`dismissed` 进附录）
 → 登记填表（`asset_ids` / `external_refs` / `build_list` / `check_list`）→ 报告门禁
 → `prune_evidence` → `stamp_report` → `work_copy clean --verify`（复核原包未被改动）。
 

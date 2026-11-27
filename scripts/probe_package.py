@@ -509,9 +509,9 @@ def checks_of(root: Path, run_dir: Path | None = None, static_only: bool = False
         'artifact_integrity': probe_artifacts(root, assets, metas),
         'cases_profile': probe_cases(assets),
         'external_refs_profile': probe_external_refs(assets),
-        # 各类型的专项检查在 asset_types/ 里（一个类型一个模块）
-        **asset_types.run_all(asset_types.Ctx(root=root, assets=assets, metas=metas,
-                                              run_dir=run_dir, static_only=static_only)),
+        # 各类型的静态检查：asset_types/<type>/static.py，按包内实际类型**并行**跑
+        **asset_types.run_static_parallel(asset_types.Ctx(root=root, assets=assets, metas=metas,
+                                                          run_dir=run_dir, static_only=static_only)),
         'structure_profile': probe_structure(root, assets),
         'envelope_profile': probe_envelope(root),
         'outside_refs_profile': probe_outside_refs(root, assets, metas),

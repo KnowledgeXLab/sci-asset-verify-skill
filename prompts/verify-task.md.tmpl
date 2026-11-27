@@ -34,63 +34,44 @@
 **执行范围**：所有会运行包内代码或写中间文件的动作都在 `{exec_root}` 里做；**原包只允许写 `{run}`**，
 不得改动原包的其它文件（收尾会用 `manifest-before.json` 复核）。
 
-## 阶段二：逐资产校验
+## 阶段二：逐资产校验（主智能体委派子智能体，每个资产一个）
 
-### 2.1 先写使用说明
+**每个资产派一个子智能体**：独立会话、只读自己那份动态检查合约、只判自己的资产。
+不要在一个上下文里连跑多个资产（噪音会互相污染，且失败无法单独重跑）。
 
-读 `inventory.json`、`probe-static.json` 与各资产 readme，写 `{run}/usage.md`：
-每个资产的用途与适用边界、输入/输出字段及单位、运行环境、实际入口与示例命令（区分本地路径/服务端路径/下载 URL）。
-
-### 2.2 逐资产产出被测产物
-
-按资产自带 `validate/readme.md` 的说明运行资产入口，把产物写到 `{run}/artifacts/<资产目录>/`。
-跑不动的资产（缺依赖/缺 GPU/缺服务）不要跳过：写清阻塞原因并更新 `state.json`。
-
-### 2.3 用例执行（可并发，最多 8 路）
+### 2.1 生成派活合约
 
 ```bash
 cd {skill_dir}
-python3 scripts/run_cases.py --package {exec_root} --run-dir {run} \
-    --artifacts {run}/artifacts --jobs 4        # 建议 4，上限 8
+python3 scripts/dispatch_asset.py --run {run} --package {exec_root} --all
 ```
 
-它对每个带 `validate/cases.json` 的资产按其**自声明的调用契约**执行：优先读 `<资产>/validate/run.json`
-（`{"runner": "...", "args": ["--case","{case}","--artifact","{artifact}"]}`，占位符支持 `{case}` `{artifact}`
-`{asset}` `{work}` `{package}`），单个用例还可用 `cases.json` 里的 `"args": [...]` 覆盖
-（典型用途：预期错误用例需要"缺依赖"的隔离环境）；两者都没有时按
-`validate/validate.py --case <id> --artifact <产物目录>` 默认调用。资产没有 runner 时记 `blocked/no_runner`，不静默当作未判定。
+它对每个资产按其 `asset_type` 取 `scripts/asset_types/<类型>/contract.md` 渲染成
+`{run}/agents/<资产>/contract.md`（含该类型的检查要点、可用脚本、输出格式），并写 `task.json` 留痕。
+单个资产重派：`--asset <资产目录名>`。
 
+### 2.2 派子智能体（可并发，建议 ≤8）
 
-**每资产写一个分片 `cases-<资产>.json`，最后按 (asset, case_id) 排序合并成 `cases.json`**——
-并发也要保证同一包两次运行逐字节一致。用例较多时可分批：`--only <资产目录>`。
+对每个资产启动一个**全新子智能体**，把 `{run}/agents/<资产>/contract.md` 的路径作为它的唯一指令来源：
 
-**不要用本脚本并发跑下面两件事**（会互相踩端口/限流）：harbor 与 Sage 必须串行。
+- DSH：用 `subagent`（全新，不要 fork 父会话）；其他 harness 用等价的"新会话 / headless 进程"，
+  例如 `python3 {skill_dir}/scripts/verify_entry.py --help` 里的 harness 适配器思路；
+- 子智能体按合约做四件事：**配置独立运行环境 → 执行用例 → 核验结果 → 自查误判**；
+- **harbor 与 Sage 必须串行**（全局锁）：同一时刻只允许一个子智能体执行 `harbor_run.py` / `sage_probe.py`；
+  其余资产可并行。
 
-### 2.4 Harbor 任务包（串行）
+子智能体唯一交付物：`{run}/agents/<资产>/findings.json`，格式见合约；`confirmed` 只能放**自查后仍然成立**的问题，
+误报写进 `dismissed` 并说明理由。
+
+### 2.3 汇总（含假阳性筛除）
 
 ```bash
-python3 scripts/harbor_run.py --package {exec_root} --run-dir {run}
+python3 scripts/collect_asset_reports.py --run {run}
 ```
 
-期望 oracle `reward=1`、nop `reward=0`；跑不了记 blocked 并写明原因（缺 docker/harbor CLI），不得当作通过。
-
-### 2.5 Sage A1.5 附加测试（串行）
-
-```bash
-python3 scripts/sage_probe.py detect {exec_root} --json-out {run}/sage-need.json
-python3 scripts/sage_probe.py config --probe --json-out {run}/sage-config.json
-```
-
-模型名固定 **Sage-A1.5**，只需 `SAGE_BASE_URL` 与 `SAGE_API_KEY`（只放环境变量）。配置缺失 → **先向用户索取**；
-用户给不出可用配置 → 判 **P0-SAGE**，不得以「未测」结案。
-
-### 2.6 部署核验（model / environment 类资产，串行）
-
-- 有 MCP：注册到目标客户端，执行 `initialize` + `tools/list`，核对工具名与 schema，再做一次最小业务调用；
-  仅生成配置/进程能起/HTTP 200 都不算注册成功；
-- 有模型：核对权重与预处理/词表/架构版本，加载权重并做一次推理，记录实际权重 hash、设备、依赖版本与响应；
-- 结果写 `{run}/deployment/<资产目录>.json`（脱敏），并把 `state.json` 的 `deployment` 阶段置 completed/blocked；
-- 包内确实没有该类型资产 → `not_applicable_no_such_asset`；有该类型但本 skill 无对应验收步骤 → `not_supported_by_skill`（不得用 not_applicable 掩盖）。
+它只把 `confirmed` 计入结论，`dismissed` 单独保留（进报告附录，可追溯）；结构不合规的
+`findings.json` 会直接报错，不会被静默丢弃；`status=blocked` 的资产进 `blocked` 列表（附原因）。
+产物：`{run}/asset-findings.json`。
 
 ## 阶段三：汇总复核
 
@@ -116,6 +97,10 @@ python3 scripts/check_coverage.py --cases {run}/cases.json --inventory {run}/inv
 
 按 `references/validation.md` 的模板写 `{run}/validation-report.md`（结论 / 对比对象 / 结果对比表 / 问题清单 / 覆盖度 / 未执行项）。
 报告只能引用本批次落盘事实，问题清单每条必须写**归属**。
+
+- 问题清单的素材来自 `{run}/asset-findings.json` 的 `confirmed`（已通过子智能体自查）；
+- `dismissed` 不进问题清单，但要在报告附录「自查排除的疑似问题」里列一行/条（含排除理由），便于复核者追溯；
+- `blocked` 资产必须写进「未执行项」并说明原因，不得算作通过。
 
 ### 3.4 登记填表（对外清单 23 列）
 

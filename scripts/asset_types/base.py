@@ -36,3 +36,11 @@ def load(path: Path):
         return json.loads(path.read_text(encoding='utf-8'))
     except Exception:  # noqa: BLE001
         return None
+
+
+def collect_ctx(root: Path) -> Ctx:
+    """独立运行某个类型的 static.py 时用它构造上下文（与 probe_package 内的一致）。"""
+    from _layout import package_asset_dirs        # noqa: WPS433
+    assets = package_asset_dirs(root)
+    metas = {d.name: (load(d / 'asset.json') or {}) for d in assets}
+    return Ctx(root=root, assets=assets, metas=metas)
