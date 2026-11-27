@@ -29,6 +29,31 @@ validate/readme.md 是否写清 Agent / 测试任务 / 通过门槛三段
    - 是否因**环境问题**（缺依赖/缺 GPU/缺服务）而非资产缺陷——环境问题记 `blocked`，不要当缺陷报。
    自查后把确认为误报的写进 `dismissed`，每条写一句排除理由。
 
+## 使用说明（`usage.md`，你负责写）
+
+把**这个资产**怎么用写进 `{run}/agents/{asset}/usage.md`（主进程会合并成批次级 `usage.md`）：
+
+```
+# {asset}
+
+- 用途与适用边界：
+- 输入：字段/单位/取值域（逐项）
+- 输出：字段/单位/取值范围
+- 运行环境：解释器/依赖/设备/网络
+- 入口与示例命令：`<命令>`（本地路径 / 服务端路径 / 下载 URL 分别标注）
+- 已知限制：
+```
+
+
+## 部署核验（本类型必须做）
+
+agent 侧验收即由本合约的用例执行覆盖；若 skill 声明了 MCP 或外部服务，按 tool 类同样做注册与最小调用。
+
+结果写 `{run}/agents/{asset}/deployment.json`：`{"status": "completed|blocked|not_applicable_no_such_asset|not_supported_by_skill", "detail": {...}, "evidence": [...]}`。
+- 仅生成配置 / 进程能起 / HTTP 200 都**不算**注册或部署成功；
+- 缺目标平台、凭证或硬件 → 记 `blocked` 并写清阻塞点（不要静默跳过、不要用 `not_applicable` 掩盖能力缺口）。
+
+
 ## 输出（唯一交付物）
 
 写 `{run}/agents/{asset}/findings.json`：
@@ -42,6 +67,8 @@ validate/readme.md 是否写清 Agent / 测试任务 / 通过门槛三段
   "cases": {"planned": 0, "executed": 0, "passed": 0, "failed": 0, "blocked": 0},
   "confirmed": [{"level": "P0", "check_id": "", "summary": "", "evidence": "相对路径:行号", "criterion": ""}],
   "dismissed": [{"level": "P1", "summary": "", "why_false_positive": ""}],
+  "usage": "usage.md",
+  "deployment": "deployment.json",
   "notes": []
 }
 ```

@@ -2299,6 +2299,7 @@ def t20_verify_entry(tmp: Path) -> None:
                        "evidence": "metadata.json:1", "criterion": "声明与实体一致"}],
         "dismissed": [{"level": "P0", "summary": "示例路径", "why_false_positive": "文档占位值"}],
         "notes": []}, ensure_ascii=False), encoding="utf-8")
+    (_run2 / "agents" / "a1" / "usage.md").write_text("# a1\n\n- 用途：演示\n", encoding="utf-8")
     _p3 = run([str(SCRIPTS / "collect_asset_reports.py"), "--run", str(_run2)], tmp)
     _af = json.loads((_run2 / "asset-findings.json").read_text(encoding="utf-8"))
     record("正例：collect_asset_reports 只计 confirmed，dismissed 单独留档",
@@ -2316,6 +2317,60 @@ def t20_verify_entry(tmp: Path) -> None:
     record("负例：自创级别/误报缺理由 → collect_asset_reports 报不合规",
            _p4.returncode == 1 and "必须是 P0/P1" in _out4 and "why_false_positive" in _out4,
            f"rc={_p4.returncode}")
+
+    # 合同必须包含关键环节（防止以后重写时静默丢步骤）
+    _tpl = (SKILL / "prompts" / "verify-task.md.tmpl").read_text(encoding="utf-8")
+    _need = ["重跑判定", "check_coverage.py", "check_report.py", "asset-findings.json",
+             "harbor 与 Sage 必须串行", "部署核验", "usage.md", "dismissed", "clean --verify",
+             "附条件交付", "未执行项"]
+    _missing = [k for k in _need if k not in _tpl]
+    record("正例：执行合同包含全部关键环节（重跑判定/两道门禁/部署核验/usage/自查误报/清理复核）",
+           not _missing, f"缺失={_missing}")
+
+    # 类型合约：每个目录都要有 usage.md 与部署核验小节
+    _bad_contracts = []
+    for _d in sorted((SKILL / "asset_types").iterdir()):
+        _c = _d / "contract.md"
+        if not (_d.is_dir() and _c.is_file()):
+            continue
+        _txt = _c.read_text(encoding="utf-8")
+        if "usage.md" not in _txt or "deployment.json" not in _txt:
+            _bad_contracts.append(_d.name)
+    record("正例：每个类型合约都要求子智能体交付 usage.md 与 deployment.json",
+           not _bad_contracts, f"缺={_bad_contracts}")
+
+    # 预审阶段：包需要 Sage 且未配置 → 明确提示（不是静默跳过）
+    _sagepkg = tmp / "t20-sagepre"
+    (_sagepkg / "s1").mkdir(parents=True)
+    (_sagepkg / "s1" / "asset.json").write_text(json.dumps({
+        "schema_version": "1.0.0", "asset_id": "sciasset://2026ZD000013/ns/skill/s1",
+        "asset_type": "skill", "name": "s1", "description": "d", "asset_version": "1.0.0",
+        "lifecycle": "validated", "domains": [{"id": "domain:earth-science"}],
+        "task_classes": [{"id": "operation:analysis"}],
+        "provenance": {"created_time": "2026-01-01T00:00:00+08:00",
+                       "provider": [{"name": "示例单位", "role": "provider"}], "source": {"kind": "original"}},
+        "governance": {"license": "CC-BY-4.0", "access": "public", "risk_level": "low",
+                       "privacy": "none", "usage_constraints": []},
+        "spec": {"metadata": {"format": ["csv"]}, "artifacts": [], "domain_attributes": {},
+                 "asset_protocol": {}}}, ensure_ascii=False), encoding="utf-8")
+    _env_sage = {k: "" for k in ("SAGE_BASE_URL", "SAGE_API_KEY", "SAGE_LLM_BASE_URL", "SAGE_LLM_API_KEY")}
+    _env_sage["HOME"] = str(tmp / "t20-empty-home")
+    (tmp / "t20-empty-home").mkdir(exist_ok=True)
+    _ps = run([str(SCRIPTS / "preflight.py"), "--package", str(_sagepkg)], tmp, env_extra=_env_sage)
+    _pout = (_ps.stdout or "") + (_ps.stderr or "")
+    record("正例：预审阶段提示 Sage 需求与配置缺失（本包需要但没配）",
+           "PREFLIGHT-SAGE" in _pout and "需要" in _pout, f"rc={_ps.returncode}")
+
+    # collect：completed 但缺 usage.md → 报不合规
+    _cr = tmp / "t20-collect2" / "run-y"; (_cr / "agents" / "a1").mkdir(parents=True)
+    (_cr / "agents" / "a1" / "findings.json").write_text(json.dumps({
+        "asset": "a1", "asset_type": "data", "status": "completed", "blocked_reason": "",
+        "cases": {"planned": 1, "executed": 1, "passed": 1, "failed": 0, "blocked": 0},
+        "confirmed": [], "dismissed": [], "notes": []}, ensure_ascii=False), encoding="utf-8")
+    _pc = run([str(SCRIPTS / "collect_asset_reports.py"), "--run", str(_cr)], tmp)
+    _cout = (_pc.stdout or "") + (_pc.stderr or "")
+    record("负例：资产 completed 但缺 usage.md → collect 报不合规",
+           _pc.returncode == 1 and "缺 usage.md" in _cout, f"rc={_pc.returncode}")
 
     # 报告引用跨会话记忆必须告警
     run_h = tmp / "t20" / "hist"

@@ -46,7 +46,7 @@ def _add(store: list, level: str, code: str, msg: str, where: str = "") -> None:
     store.append({"level": level, "code": code, "message": msg, "where": where})
 
 
-def check_env() -> dict:
+def check_env(pkg: Path | None = None) -> dict:
     blockers, warnings = [], []
     if sys.version_info < (3, 9):
         _add(blockers, "error", "PREFLIGHT-PY", f"Python 版本过低：{sys.version.split()[0]}（需 ≥3.9）")
@@ -79,9 +79,27 @@ def check_env() -> dict:
                                text=True, timeout=25)
             ok = p.returncode == 0
             sage = {"configured": ok, "rc": p.returncode, "detail": (p.stdout or p.stderr or "").strip()[-200:]}
-            if not ok:
+            # 该包到底需不需要 Sage：detect 是纯静态扫描，预审阶段就能判
+            needed, why = False, ''
+            if pkg is not None and pkg.is_dir():
+                try:
+                    d = subprocess.run([sys.executable, str(probe.parent / "sage_probe.py"), "detect",
+                                        str(pkg)], capture_output=True, text=True, timeout=60)
+                    need = json.loads(d.stdout or "{}") if d.stdout.strip().startswith("{") else {}
+                    needed = bool(need.get("needed"))
+                    why = "、".join((need.get("reasons") or [])[:2])
+                except Exception:                             # noqa: BLE001
+                    needed = False
+            sage = {"configured": ok, "needed": needed, "reason": why,
+                    "rc": p.returncode, "detail": (p.stdout or p.stderr or "").strip()[-200:]}
+            if needed and not ok:
                 _add(warnings, "warn", "PREFLIGHT-SAGE",
-                     "Sage-A1.5 未配置：若资产包需要 Sage（有模型 API 调用）会按 P0-SAGE 阻断")
+                     "本包**需要** Sage A1.5 附加测试（" + (why or "涉及大模型调用") + "），但当前未配置："
+                     "请提供 SAGE_BASE_URL / SAGE_API_KEY（模型名固定 Sage-A1.5，只放环境变量）；"
+                     "动态阶段拿不到配置会判 P0-SAGE 阻断交付")
+            elif not ok:
+                _add(warnings, "warn", "PREFLIGHT-SAGE",
+                     "Sage-A1.5 未配置；本包检测为**不需要** Sage（若判断有误，动态阶段会按 P0-SAGE 处理）")
         except Exception as exc:                               # noqa: BLE001
             sage = {"configured": False, "error": str(exc)}
             _add(warnings, "warn", "PREFLIGHT-SAGE", f"Sage 配置探测失败：{exc}")
@@ -233,7 +251,7 @@ def check_package(pkg: Path) -> dict:
 
 
 def run(pkg: Path) -> dict:
-    env = check_env()
+    env = check_env(pkg)
     pkgr = check_package(pkg)
     blockers = env["blockers"] + pkgr["blockers"]
     warnings = env["warnings"] + pkgr["warnings"]

@@ -53,6 +53,7 @@ def validate(doc: dict, asset: str) -> list[str]:
 
 def collect(run: Path) -> dict:
     confirmed, dismissed, blocked, per_asset, errors = [], [], [], [], []
+    usage_parts: list[str] = []
     for f in sorted((run / 'agents').glob('*/findings.json')):
         asset = f.parent.name
         doc = load(f)
@@ -63,7 +64,18 @@ def collect(run: Path) -> dict:
         if errs:
             errors.append({'asset': asset, 'errors': errs})
         cases = doc.get('cases') or {}
+        adir = f.parent
+        usage_f, deploy_f = adir / 'usage.md', adir / 'deployment.json'
+        if usage_f.is_file():
+            usage_parts.append(usage_f.read_text(encoding='utf-8').strip())
+        elif doc.get('status') == 'completed':
+            errors.append({'asset': asset, 'errors': ['status=completed 但缺 usage.md（使用说明是交付物之一）']})
+        deploy = {}
+        if deploy_f.is_file():
+            deploy = load(deploy_f) or {}
         per_asset.append({'asset': asset, 'asset_type': doc.get('asset_type'),
+                          'usage': str(usage_f.name) if usage_f.is_file() else '',
+                          'deployment_status': (deploy or {}).get('status', ''),
                           'status': doc.get('status'), 'cases': cases,
                           'confirmed': len(doc.get('confirmed') or []),
                           'dismissed': len(doc.get('dismissed') or [])})
@@ -73,10 +85,13 @@ def collect(run: Path) -> dict:
             dismissed.append({'asset': asset, **x})
         if doc.get('status') == 'blocked':
             blocked.append({'asset': asset, 'reason': doc.get('blocked_reason')})
+    if usage_parts:
+        (run / 'usage.md').write_text('\n\n'.join(usage_parts) + '\n', encoding='utf-8')
     totals = {lv: sum(1 for c in confirmed if c.get('level') == lv) for lv in LEVELS}
     return {'tool': 'collect_asset_reports.py', 'run': str(run),
             'assets': per_asset, 'confirmed': confirmed, 'dismissed': dismissed,
             'blocked': blocked, 'errors': errors, 'totals': totals,
+            'usage': str(run / 'usage.md') if usage_parts else '',
             'case_totals': {k: sum(int((a['cases'] or {}).get(k) or 0) for a in per_asset)
                             for k in ('planned', 'executed', 'passed', 'failed', 'blocked')}}
 

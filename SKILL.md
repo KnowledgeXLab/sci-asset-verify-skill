@@ -109,18 +109,23 @@ python scripts/probe_package.py --package <包根> --evaluate --json-out <run>/p
 ### 阶段二：逐资产校验（主智能体委派子智能体）
 
 1. `dispatch_asset.py --all` 按资产类型从 `asset_types/<类型>/contract.md` 生成
-   `<run>/agents/<资产>/contract.md`（类型化的动态检查合约）；
-2. 每个资产派**一个全新子智能体**（独立会话），只读自己那份合约：配置独立环境 → 执行用例
-   （`run_cases.py` 或资产自带 `validate/run.json` 契约）→ 核验结果 → **自查误判**；
-3. harbor 与 Sage 全局串行；其余资产可并发（建议 ≤8）；
-4. 每个子智能体写 `<run>/agents/<资产>/findings.json`（`confirmed` / `dismissed` / `blocked`）；
-5. `collect_asset_reports.py --run <run>` 汇总：只计 `confirmed`，`dismissed` 留档，
-   结构不合规的报告直接报错。
+   `<run>/agents/<资产>/contract.md`；
+2. 每个资产派**一个全新子智能体**（独立会话），只读自己那份合约：
+   配置独立环境 → 执行用例（`run_cases.py` 或资产自带 `validate/run.json`）→ 核验结果 →
+   **部署核验**（model 权重+推理 / environment 环境+探针 / MCP initialize+tools/list+最小调用）→
+   **写 `usage.md`** → **自查误判**；
+3. **harbor 与 Sage 必须串行**；其余资产可并发（建议 ≤8）；
+   Sage 配置缺失时子智能体上抛，由主智能体向用户索取 `SAGE_BASE_URL`/`SAGE_API_KEY`；
+4. 每个子智能体写 `agents/<资产>/findings.json`（`confirmed` / `dismissed` / `blocked`）
+   + `usage.md` + `deployment.json`；
+5. `collect_asset_reports.py --run <run>` 汇总：只计 `confirmed`、`dismissed` 留档、
+   合并 `usage.md`；完成态缺 `usage.md` 或结构不合规直接报错。
 
 ### 阶段三：汇总复核
 
-重跑判定（`probe_package --run-dir --evaluate`，纳入运行期事实）→ 覆盖度门禁 → 写报告
-（问题清单素材取 `asset-findings.json` 的 `confirmed`，`dismissed` 进附录）
+重跑判定（`probe_package --run-dir --evaluate`，把 `P0-SAGE`/`P0-HARB-RUN`/`P1-HARB-LINT`
+从 na 变成真结论）→ 汇总复核（冲突以机检为准；blocked 不算通过）→ 写报告 + 登记填表
+→ `check_coverage` + `check_report` 两道门禁（都 error 0）
 → 登记填表（`asset_ids` / `external_refs` / `build_list` / `check_list`）→ 报告门禁
 → `prune_evidence` → `stamp_report` → `work_copy clean --verify`（复核原包未被改动）。
 

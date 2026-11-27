@@ -25,7 +25,7 @@
 | 动作 | 产物 |
 |---|---|
 | 版本检查 | `skill-update.json` |
-| 静态预审（原包）：结构 / 包络 / 实体完整性 / 凭据 / 自包含 / 文档引用 / `external_assets.json` 格式 | `preflight-report.json` |
+| 静态预审（原包）：环境（harness / docker / harbor / **Sage 配置与需求判定**）+ 结构 / 包络 / 实体完整性 / 凭据 / 自包含 / 文档引用 / `external_assets.json` 格式 | `preflight-report.json` |
 | **准备副本**（一个步骤、三个子动作）：<br/>① 复制到 `.asset-work/<run>/`（含文件数/字节自检）<br/>② 按 `external_assets.json` 校验并挂载外部资产<br/>③ 副本可信性检查（文件集忠实 / 软链不越出副本 / required 已挂载） | `work-copy.json`、`external-refs.json`、`external-mounts.json`、`copy-check.json` |
 | 副本静态事实（供台账与报告引用，非门禁） | `probe-static.json` |
 | 盘点台账 | `inventory.json` |
@@ -37,7 +37,7 @@
 ## 阶段二：逐资产校验（主智能体委派子智能体，每个资产一个）
 
 **每个资产派一个子智能体**：独立会话、只读自己那份动态检查合约、只判自己的资产。
-不要在一个上下文里连跑多个资产（噪音会互相污染，且失败无法单独重跑）。
+不要在一个上下文里连跑多个资产（噪音互相污染，失败也无法单独重跑）。
 
 ### 2.1 生成派活合约
 
@@ -46,32 +46,44 @@ cd {skill_dir}
 python3 scripts/dispatch_asset.py --run {run} --package {exec_root} --all
 ```
 
-它对每个资产按其 `asset_type` 取 `scripts/asset_types/<类型>/contract.md` 渲染成
-`{run}/agents/<资产>/contract.md`（含该类型的检查要点、可用脚本、输出格式），并写 `task.json` 留痕。
-单个资产重派：`--asset <资产目录名>`。
+按 `asset_type` 从 `asset_types/<类型>/contract.md` 渲染成 `{run}/agents/<资产>/contract.md`
+（含该类型检查要点、可用脚本、部署核验要求、输出格式）；单个资产重派用 `--asset <目录名>`。
 
 ### 2.2 派子智能体（可并发，建议 ≤8）
 
-对每个资产启动一个**全新子智能体**，把 `{run}/agents/<资产>/contract.md` 的路径作为它的唯一指令来源：
+对每个资产启动一个**全新子智能体**，把 `{run}/agents/<资产>/contract.md` 作为它的唯一指令来源
+（DSH 用 `subagent`，全新而非 fork；其他 harness 用等价的新会话/headless 进程）。子智能体做四件事：
 
-- DSH：用 `subagent`（全新，不要 fork 父会话）；其他 harness 用等价的"新会话 / headless 进程"，
-  例如 `python3 {skill_dir}/scripts/verify_entry.py --help` 里的 harness 适配器思路；
-- 子智能体按合约做四件事：**配置独立运行环境 → 执行用例 → 核验结果 → 自查误判**；
-- **harbor 与 Sage 必须串行**（全局锁）：同一时刻只允许一个子智能体执行 `harbor_run.py` / `sage_probe.py`；
-  其余资产可并行。
+1. **配置独立运行环境**（只在资产目录或 `{run}/agents/<资产>/env/` 内）；
+2. **执行用例**（按 `<资产>/validate/run.json` 契约，或用 `run_cases.py --only <资产>`）；
+3. **核验结果**（actual vs expected，给差值与判定；未判定要说清缺什么）；
+4. **自查误判**（见 2.3）。
 
-子智能体唯一交付物：`{run}/agents/<资产>/findings.json`，格式见合约；`confirmed` 只能放**自查后仍然成立**的问题，
-误报写进 `dismissed` 并说明理由。
+**部署核验也在这一步**（按类型合约）：`model` 加载权重+一次推理；`environment` 建环境+运行时探针；
+声明了 MCP 的做 `initialize` + `tools/list` + 最小业务调用。结果写 `agents/<资产>/deployment.json`。
+**`usage.md` 也由子智能体写**（`agents/<资产>/usage.md`，主进程会合并成批次级 `usage.md`）。
 
-### 2.3 汇总（含假阳性筛除）
+**并发约束（硬性）**：harbor 与 Sage 必须串行——`harbor_run.py` 与 `sage_probe.py` 同一时刻只允许一个子智能体执行，
+否则会抢 docker 端口 / 触发服务端限流；其余资产可并行。
+**Sage 配置缺失**：子智能体不得自行判"跳过"，要向主智能体上抛；主智能体向用户索取
+`SAGE_BASE_URL` / `SAGE_API_KEY`（模型名固定 Sage-A1.5，只放环境变量）。
+
+### 2.3 自查误判（子智能体必做，主进程强制检查）
+
+对每条拟报问题逐条确认：证据是否落到实处（文件+行号）、是否属于「明确不判」范围
+（`governance` 取值、包根一级文件、`asset_protocol`、`lifecycle`、实现风格、示例占位值）、
+是否其实是环境问题（缺依赖/GPU/服务 → 记 `blocked`，不是缺陷）。
+确认误报的写进 `dismissed` 并写一句排除理由。
+
+### 2.4 汇总（含假阳性筛除）
 
 ```bash
 python3 scripts/collect_asset_reports.py --run {run}
 ```
 
-它只把 `confirmed` 计入结论，`dismissed` 单独保留（进报告附录，可追溯）；结构不合规的
-`findings.json` 会直接报错，不会被静默丢弃；`status=blocked` 的资产进 `blocked` 列表（附原因）。
-产物：`{run}/asset-findings.json`。
+只计 `confirmed`；`dismissed` 单列留档；`status=completed` 却缺 `usage.md` 会报不合规；
+结构不合规（自创 P2 级别、缺证据、误报缺理由）直接报错。产物：`{run}/asset-findings.json`
+（+ 合并后的 `{run}/usage.md`）。
 
 ## 阶段三：汇总复核
 
@@ -82,27 +94,23 @@ python3 scripts/probe_package.py --package {exec_root} --run-dir {run} --evaluat
     --json-out {run}/probe-report.json
 ```
 
-`verdict.findings` 就是 P0/P1 结论。确认 `P0-SAGE` / `P0-HARB-RUN` / `P1-HARB-LINT` 不再因为"还没跑"而 `na`；
-若仍 `na`，理由必须写明是「本包不适用」还是「环境不具备（缺 docker/harbor）」。
-阶段一那份 `probe-static.json` 只是预审留痕，**不能替代这份**。
+静态那份（`probe-static.json`）里 `P0-SAGE` / `P0-HARB-RUN` / `P1-HARB-LINT` 必然 `na`；
+重跑后这三项才是真实结论。若仍 `na`，`na_reason` 必须写明「本包不适用」还是「环境不具备」。
 
-### 3.2 覆盖度门禁
+### 3.2 汇总复核
 
-```bash
-python3 scripts/check_coverage.py --cases {run}/cases.json --inventory {run}/inventory.json \
-    --run-dir {run} --report {run}/validation-report.md
-```
+对照 `{run}/asset-findings.json` 与 `{run}/probe-report.json`：
+- 静态 P0/P1 只能来自 `probe-report.json` 的 `check_id`；动态问题来自 `confirmed`；
+- 两者冲突（如静态判 P0 而动态判通过）时以机检事实为准，并在报告里说明原因；
+- `blocked` 资产（缺依赖/GPU/服务）**不算通过**，必须进「未执行项」。
 
-### 3.3 写报告
+### 3.3 写报告与登记填表
 
-按 `references/validation.md` 的模板写 `{run}/validation-report.md`（结论 / 对比对象 / 结果对比表 / 问题清单 / 覆盖度 / 未执行项）。
-报告只能引用本批次落盘事实，问题清单每条必须写**归属**。
+按 `references/validation.md` 写 `{run}/validation-report.md`（结论 / 对比对象 / 结果对比表 /
+问题清单 / 覆盖度 / 未执行项）；问题清单每条必须写**归属**；`dismissed` 进附录「自查排除的疑似问题」。
+`usage.md` 引用批次级那份。
 
-- 问题清单的素材来自 `{run}/asset-findings.json` 的 `confirmed`（已通过子智能体自查）；
-- `dismissed` 不进问题清单，但要在报告附录「自查排除的疑似问题」里列一行/条（含排除理由），便于复核者追溯；
-- `blocked` 资产必须写进「未执行项」并说明原因，不得算作通过。
-
-### 3.4 登记填表（对外清单 23 列）
+登记填表（对外清单 23 列）：
 
 ```bash
 python3 scripts/asset_ids.py --package {exec_root} --rows {run}/registration/rows.json --inject
@@ -112,23 +120,29 @@ python3 scripts/build_list.py --rows {run}/registration/rows.json \
 python3 scripts/check_list.py {run}/registration/科学数字资产清单.xlsx
 ```
 
-资产ID 由包络生成、不带版本号；「资产关联」列只放 `external_assets.json` 声明的 `asset_id`（去 `sciasset://` 前缀）。
-
-### 3.5 报告门禁与收尾
+### 3.4 两道门禁（都 error 0 才算过）
 
 ```bash
-python3 scripts/check_report.py --report {run}/validation-report.md
-python3 scripts/prune_evidence.py --run {run}            # 裁剪可重建的大体积中间产物
-python3 scripts/stamp_report.py --run {run}              # 报告 front matter + 证据 JSON 版本戳
+python3 scripts/check_coverage.py --cases {run}/cases.json --inventory {run}/inventory.json \
+    --run-dir {run} --report {run}/validation-report.md     # 每类型用例下限；不足必须写「覆盖不足」
+python3 scripts/check_report.py --report {run}/validation-report.md   # 分级/归属/竖线/措辞/是否真跑过
 ```
 
-两条门禁都必须 error 0。收尾（仅在真建了副本时）：把 `state.json` 各阶段置终态，然后
+### 3.5 收尾
 
 ```bash
-python3 scripts/work_copy.py clean {package} --run-id {run_name} --verify
+python3 scripts/prune_evidence.py --run {run}     # 裁剪可重建的大体积中间产物
+python3 scripts/stamp_report.py --run {run}       # 报告 front matter + 证据 JSON 版本戳
+python3 scripts/work_copy.py clean {package} --run-id {run_name} --verify   # 删副本 + 复核原包未被改动
 ```
 
-`clean --verify` 会删副本并用 `manifest-before.json` 复核**原包未被改动**；报出差异就必须在报告里说明原因。
+`clean --verify` 会用 `manifest-before.json` 对比原包：报出差异必须在报告里说明原因。
+最后向用户汇报：结论 / P0·P1 清单（含归属）/ 未执行项及原因 / 报告与清单路径。
+
+### 3.6 P0 之后的处理
+
+- 用户修订后重跑：**只改文档 → 重跑静态预审即可；改了代码/数据/用例 → 动态结论失效，必须整体重跑**；
+- `P1 > 0` 而 `P0 = 0`：结论写「附条件交付」，按 P1 清单整改后重交；P2 只是建议，不影响结论。
 
 ## 判定口径（不得自行升降级）
 
